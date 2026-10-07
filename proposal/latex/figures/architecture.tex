@@ -1,0 +1,63 @@
+% Figure 2: Gloss Agent architecture -- a small kernel, everything else is a plugin.
+\begin{tikzpicture}[gl]
+  % ---------------- core agent loop (itself a loop plugin) ----------------
+  \node[io] (in) at (0,6.1) {\textbf{User goal}\\+ workspace\\{\tiny papers, slides,}\\{\tiny notes, repos}};
+  \node[gstep] (route)   at (2.55,6.1) {\textbf{1 Route}\\decider picks\\workflow};
+  \node[gstep] (plan)    at (4.55,6.1) {\textbf{2 Plan}\\typed step\\DAG + budget};
+  \node[gstep] (exec)    at (6.55,6.1) {\textbf{3 Execute}\\parallel\\sub-agents};
+  \node[gstep] (verify)  at (8.55,6.1) {\textbf{4 Verify}\\claim $\leftrightarrow$\\source span};
+  \node[gstep] (reflect) at (10.55,6.1) {\textbf{5 Reflect}\\coverage,\\conflicts, cost};
+  \node[io] (out) at (13.1,6.1) {\textbf{Grounded output}\\{\tiny report $\cdot$ table $\cdot$ code}\\{\tiny quiz $\cdot$ memory}\\{\tiny + stop reason}};
+  \draw[flow] (in) -- (route);
+  \draw[flow] (route) -- (plan);
+  \draw[flow] (plan) -- (exec);
+  \draw[flow] (exec) -- (verify);
+  \draw[flow] (verify) -- (reflect);
+  \draw[flow] (reflect) -- node[above, font=\sffamily\tiny] {stop} (out);
+  \draw[flow, glpurple] (reflect.north) to[bend right=22]
+     node[above, font=\sffamily\tiny, text=glpurple] {replan: re-search, follow citations, repair unsupported claims} (plan.north);
+  \begin{scope}[on background layer]
+    \node[frame=glpurple, fit=(route)(reflect), inner ysep=14pt, yshift=6pt] (coreframe) {};
+  \end{scope}
+  \node[framelabel=glpurple] at (coreframe.south)
+    {Core agent = a swappable \textit{loop} plugin (ReAct / plan-execute-verify)};
+
+  % ---------------- context manager ----------------
+  \node[ctx] (wc) at (1.75,4.15) {\textbf{Working context}\\goal $\cdot$ plan $\cdot$ top-$k$ cards\\compacted scratchpad};
+  \node[ctx] (ev) at (5.15,4.15) {\textbf{Evidence store}\\span ID $\to$ (doc, page, bbox)\\pass pointers, not text};
+  \node[ctx] (ss) at (8.55,4.15) {\textbf{Session tier}\\doc sent once, forked;\\sub-agents return digests};
+  \node[ctx] (lt) at (11.95,4.15) {\textbf{Long-term memory}\\library $\cdot$ project $\cdot$ learner\\distilled SKILL.md};
+  \begin{scope}[on background layer]
+    \node[frame=glblue, fit=(wc)(lt), inner ysep=7pt, yshift=-2pt] (ctxframe) {};
+  \end{scope}
+  \node[framelabel=glblue, anchor=west] at ($(ctxframe.south west)+(0.15,0)$) {Context manager};
+  \draw[<->, glblue, line width=0.8pt] (ctxframe.north -| wc) -- (coreframe.south -| wc);
+  \draw[<->, glblue, line width=0.8pt] (ctxframe.north -| lt) -- (coreframe.south -| lt);
+
+  % ---------------- kernel ----------------
+  \foreach \x/\n/\t in {1.35/k1/{Capability\\registry}, 4.0/k2/{Scheduler \&\\task manager},
+                        6.65/k3/{Permission \&\\sandbox gate}, 9.3/k4/{Budget meter\\{\tiny (usage ledger)}},
+                        11.95/k5/{Trace log\\\& events}}
+    \node[kern] (\n) at (\x,2.55) {\t};
+  \begin{scope}[on background layer]
+    \node[frame=glgray, fit=(k1)(k5), inner ysep=6pt, yshift=-2pt] (kframe) {};
+  \end{scope}
+  \node[framelabel=glgray, anchor=west] at ($(kframe.south west)+(0.15,0)$) {Kernel (small, fixed)};
+
+  % ---------------- adapters ----------------
+  \foreach \i/\t in {0/{Native Python\\{\tiny first-party}}, 1/{Declarative\\manifest {\tiny v1$\to$v2}},
+                     2/{Agent Skills\\{\tiny SKILL.md}}, 3/{MCP\\{\tiny client + server}},
+                     4/{CLI agents\\{\tiny Claude Code, Codex}}, 5/{LLM providers\\{\tiny Claude, GPT/HKU, vLLM}}}
+    \node[adp] (a\i) at ({1.0+\i*2.42},1.2) {\t};
+  \begin{scope}[on background layer]
+    \node[frame=glgreen!80!black, fit=(a0)(a5), inner ysep=7pt, yshift=-2pt] (aframe) {};
+  \end{scope}
+  \node[framelabel=glgreen!70!black, anchor=west] at ($(aframe.south west)+(0.15,0)$)
+    {Adapters $\Rightarrow$ one Capability ABI: $\langle$card, I/O schema, permissions, cost, handler$\rangle$};
+
+  % ---------------- plugin kinds ----------------
+  \foreach \i/\t in {0/source,1/tool,2/agent,3/loop,4/decider,5/workflow,6/memory,7/provider,8/view}
+    \node[chip] (c\i) at ({0.62+\i*1.54},-0.12) {\t};
+  \node[font=\sffamily\tiny, text=glorange!80!black, anchor=north] at (6.78,-0.37)
+    {plugin kinds (manifest \texttt{kind} field) --- every box above except the kernel is mounted as one of these};
+\end{tikzpicture}

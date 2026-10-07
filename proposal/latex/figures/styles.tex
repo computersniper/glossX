@@ -1,0 +1,26 @@
+% Shared TikZ styles for all Gloss proposal figures.
+% Loaded by main.tex and by the standalone wrappers in ../../tools/.
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc,shapes.geometric}
+
+\definecolor{glpurple}{HTML}{6D4AFF}
+\definecolor{glblue}{HTML}{2F7CF6}
+\definecolor{glgreen}{HTML}{1F9D6B}
+\definecolor{glorange}{HTML}{E8871E}
+\definecolor{glred}{HTML}{D64545}
+\definecolor{glgray}{HTML}{6B7280}
+\definecolor{glink}{HTML}{1F2937}
+
+\tikzset{
+  gl/.style={font=\sffamily\scriptsize, >=Stealth, line width=0.5pt, text=glink},
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=2.5pt},
+  gstep/.style={box, fill=glpurple!10, draw=glpurple, minimum width=1.78cm, minimum height=0.95cm},
+  ctx/.style={box, fill=glblue!8, draw=glblue, minimum width=3.15cm, minimum height=0.95cm},
+  kern/.style={box, fill=glgray!10, draw=glgray, minimum width=2.4cm, minimum height=0.75cm},
+  adp/.style={box, fill=glgreen!9, draw=glgreen!80!black, minimum width=2.1cm, minimum height=0.8cm},
+  chip/.style={draw=glorange, fill=glorange!12, rounded corners=5pt, inner sep=2pt,
+               font=\sffamily\tiny\bfseries, minimum height=0.38cm, minimum width=1.2cm},
+  frame/.style={draw=#1, rounded corners=4pt, dashed, inner sep=4pt},
+  framelabel/.style={font=\sffamily\tiny\bfseries, text=#1, fill=white, inner sep=1pt},
+  flow/.style={->, draw=glink},
+  io/.style={box, fill=white, draw=glink, minimum width=2.0cm, minimum height=1.3cm},
+}

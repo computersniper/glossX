@@ -1,0 +1,36 @@
+% Figure 3 (appendix): the literature-review workflow plugin, step by step.
+\begin{tikzpicture}[gl, node distance=0.42cm]
+  \tikzset{w/.style={gstep, minimum width=1.55cm, minimum height=1.15cm},
+           kind/.style={font=\sffamily\tiny\bfseries, text=glorange!85!black}}
+  \node[w] (plan) {\textbf{Plan}\\sub-questions,\\queries, budget};
+  \node[w, right=of plan] (search) {\textbf{Search}\\arXiv $\cdot$ S2\\Zotero (MCP)};
+  \node[w, right=of search] (screen) {\textbf{Screen}\\relevance\\+ confidence};
+  % reader swarm as stacked boxes
+  \node[w, right=0.62cm of screen, fill=glpurple!6] (r3) {};
+  \node[w, fill=glpurple!8] (r2) at ($(r3)+(-0.08,0.08)$) {};
+  \node[w] (read) at ($(r3)+(-0.16,0.16)$) {\textbf{Read} $\times N$\\one sub-agent\\per document};
+  \node[w, right=0.62cm of r3] (verify) {\textbf{Verify}\\atomic claims\\vs.\ spans};
+  \node[w, right=of verify] (reflect) {\textbf{Reflect}\\coverage $\geq\tau$?\\budget left?};
+  \node[w, right=of reflect] (write) {\textbf{Write}\\report with\\span citations};
+
+  \draw[flow] (plan) -- (search);
+  \draw[flow] (search) -- (screen);
+  \draw[flow] (screen) -- (read.west |- screen);
+  \draw[flow] (r3) -- (verify);
+  \draw[flow] (verify) -- (reflect);
+  \draw[flow] (reflect) -- node[above, font=\sffamily\tiny]{yes} (write);
+  \draw[flow, glpurple] (reflect.south) -- ++(0,-0.78) -| node[pos=0.25, below, font=\sffamily\tiny, text=glpurple]
+     {no: new queries / citation chasing / read more} (search.south);
+  \draw[flow, glred] (verify.north) -- ++(0,0.62) -| node[pos=0.25, above, font=\sffamily\tiny, text=glred]
+     {unsupported claim: re-read or drop} (read.north);
+
+  % plugin kinds under each step
+  \foreach \n/\k in {plan/agent: planner, search/tool, screen/decider, verify/agent + decider,
+                     reflect/loop, write/agent: writer}
+    \node[kind, below=0.06cm of \n, xshift=-0.32cm] {\k};
+  \node[kind, below=0.16cm of r3] {agent: reader};
+
+  % context annotations
+  \node[font=\sffamily\tiny, text=glblue!80!black, align=center, above=0.75cm of read]
+    {each reader forks the shared doc session and returns a schema-bound digest of span IDs};
+\end{tikzpicture}

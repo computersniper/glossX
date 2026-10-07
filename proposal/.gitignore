@@ -1,0 +1,10 @@
+# LaTeX build outputs (the shipped PDF lives at proposal/GlossX_Proposal.pdf)
+latex/*.aux
+latex/*.log
+latex/*.out
+latex/*.fls
+latex/*.fdb_latexmk
+latex/*.bbl
+latex/*.blg
+latex/main.pdf
+tools/.build/

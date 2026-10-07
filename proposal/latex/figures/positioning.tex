@@ -1,0 +1,39 @@
+% Figure 1: where Gloss sits among today's agent categories.
+\begin{tikzpicture}[gl]
+  % three existing agent categories
+  \begin{scope}[blend group=multiply]
+    \fill[glblue!22]   (-1.0, 0.55) circle (1.6);
+    \fill[glgreen!22]  ( 1.0, 0.55) circle (1.6);
+    \fill[glorange!24] ( 0.0,-1.15) circle (1.6);
+  \end{scope}
+  \draw[glblue]   (-1.0, 0.55) circle (1.6);
+  \draw[glgreen!80!black]  ( 1.0, 0.55) circle (1.6);
+  \draw[glorange] ( 0.0,-1.15) circle (1.6);
+
+  \node[align=center, text=glblue!70!black] at (-1.62, 1.35)
+    {\textbf{Coding agents}\\Claude Code\\Codex};
+  \node[align=center, text=glgreen!60!black] at (1.62, 1.35)
+    {\textbf{Office agents}\\WorkBuddy\\M365 Copilot};
+  \node[align=center, text=glorange!75!black] at (0, -2.18)
+    {\textbf{Personal assistants}\\Meta Muse\\OpenAI Dots};
+
+  % what research needs from each overlap
+  \node[align=center, font=\sffamily\tiny, text=glgray] at (0, 1.06) {figures,\\reports};
+  \node[align=center, font=\sffamily\tiny, text=glgray] at (-0.95,-0.52) {analyse,\\reproduce};
+  \node[align=center, font=\sffamily\tiny, text=glgray] at ( 0.95,-0.52) {tutor,\\remember};
+
+  % Gloss at the intersection
+  \node[circle, draw=glpurple, line width=1pt, fill=glpurple!18, minimum size=1.22cm,
+        align=center, inner sep=0pt] (gloss) at (0, 0.0)
+    {\textbf{\normalsize \sysname}\\[-1pt]{\tiny research \&}\\[-2pt]{\tiny learning}};
+
+  % general-purpose open harnesses (domain-agnostic) frame the whole space
+  \draw[glgray, dashed, rounded corners=6pt] (-3.05,-2.85) rectangle (3.05, 2.72);
+  \node[anchor=north, font=\sffamily\tiny, text=glgray, align=center] at (0, 2.68)
+    {\textbf{open, domain-agnostic harnesses}: DSH (``everything is a plugin'')};
+
+  % closed single-workflow research tools
+  \node[box, draw=glred, fill=glred!6, font=\sffamily\tiny, align=center, anchor=north]
+    (closed) at (0,-3.0)
+    {\textbf{closed, single-workflow research tools}: OpenScholar, PaperQA2, NotebookLM};
+\end{tikzpicture}
