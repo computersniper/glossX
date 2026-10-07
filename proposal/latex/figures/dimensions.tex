@@ -1,0 +1,51 @@
+% Figure 1(b): two-dimensional positioning map (qualitative, our assessment).
+\begin{tikzpicture}[gl, x=6.0cm, y=4.6cm]
+  % quadrant shading: the target region
+  \fill[glpurple!7] (0.62,0.66) rectangle (1.04,1.04);
+  \node[anchor=north east, font=\sffamily\tiny, text=glpurple!80!black] at (1.03,1.03) {target};
+
+  % axes
+  \draw[->, glink] (0,0) -- (1.06,0);
+  \draw[->, glink] (0,0) -- (0,1.08);
+  \node[anchor=north, align=center, font=\sffamily\tiny] at (0.53,-0.04)
+    {\textbf{specialisation to scholarly sources} $\rightarrow$\\(spans, citations, verification, learning)};
+  \node[anchor=south, rotate=90, align=center, font=\sffamily\tiny] at (-0.04,0.54)
+    {\textbf{openness / extensibility} $\rightarrow$\\(closed product \ldots{} everything is a plugin)};
+  \node[anchor=north, font=\sffamily\tiny, text=glgray] at (0.03,-0.01) {general};
+  \node[anchor=north, font=\sffamily\tiny, text=glgray] at (1.0,-0.01) {deep};
+
+  \tikzset{pt/.style={circle, inner sep=1.6pt, fill=#1, draw=white, line width=0.3pt},
+           lab/.style={font=\sffamily\tiny, text=#1, inner sep=1.2pt}}
+
+  % personal assistants
+  \node[pt=glorange] (muse) at (0.10,0.28) {};
+  \node[lab=glorange!80!black, below right=0pt and -2pt of muse] {Meta Muse};
+  \node[pt=glorange] (dots) at (0.14,0.42) {};
+  \node[lab=glorange!80!black, right=0pt of dots] {OpenAI Dots};
+  % office agents
+  \node[pt=glgreen] (m365) at (0.20,0.20) {};
+  \node[lab=glgreen!60!black, right=0pt of m365] {M365 Copilot};
+  \node[pt=glgreen] (wb) at (0.22,0.56) {};
+  \node[lab=glgreen!60!black, right=0pt of wb] {WorkBuddy};
+  % coding agents
+  \node[pt=glblue] (cc) at (0.27,0.74) {};
+  \node[lab=glblue!70!black, right=0pt of cc] {Claude Code, Codex};
+  % open harness
+  \node[pt=glgray] (dsh) at (0.07,0.95) {};
+  \node[lab=glgray, right=0pt of dsh] {DSH (general harness)};
+  % research / learning tools
+  \node[pt=glred] (nlm) at (0.58,0.10) {};
+  \node[lab=glred!80!black, right=0pt of nlm] {NotebookLM};
+  \node[pt=glred] (dr) at (0.52,0.24) {};
+  \node[lab=glred!80!black, right=0pt of dr] {Deep Research};
+  \node[pt=glred] (os) at (0.80,0.33) {};
+  \node[lab=glred!80!black, below=0pt of os] {OpenScholar};
+  \node[pt=glred] (pqa) at (0.74,0.44) {};
+  \node[lab=glred!80!black, left=0pt of pqa] {PaperQA2};
+  % Gloss today and GlossX
+  \node[pt=glpurple!55] (gloss) at (0.80,0.56) {};
+  \node[lab=glpurple, right=0pt of gloss] {Gloss v1.0.2};
+  \node[circle, inner sep=2.6pt, fill=glpurple, draw=white] (gx) at (0.88,0.90) {};
+  \node[font=\sffamily\scriptsize\bfseries, text=glpurple, left=1pt of gx] {\sysname};
+  \draw[->, glpurple, line width=0.8pt, shorten >=2pt, shorten <=2pt] (gloss) -- node[right, font=\sffamily\tiny, text=glpurple] {this project} (gx);
+\end{tikzpicture}

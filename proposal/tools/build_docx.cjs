@@ -117,20 +117,35 @@ function figureParts(file, widthIn, caption) {
 }
 const figure = figureParts;
 
-// Text on the left, figure on the right (Word stand-in for LaTeX's wrapfigure).
-function sideBySide(paragraphs, fig, leftDxa = 5160, rightDxa = 4200) {
-  const cell = (children, w, margins) => new TableCell({
-    width: { size: w, type: WidthType.DXA }, margins,
-    borders: { top: none, bottom: none, left: none, right: none }, children,
-  });
-  return new Table({
-    width: { size: leftDxa + rightDxa, type: WidthType.DXA }, columnWidths: [leftDxa, rightDxa],
-    layout: TableLayoutType.FIXED,
-    rows: [new TableRow({ children: [
-      cell(paragraphs, leftDxa, { right: 160 }),
-      cell(fig, rightDxa, { left: 120 }),
-    ] })],
-  });
+// Two figure panels side by side with sub-labels and one shared caption (LaTeX Figure 1).
+function twoPanels(left, right, caption) {
+  const panel = (file, widthIn, label, w) => {
+    const buf = fs.readFileSync(path.join(ROOT, "word", "figures", file));
+    const pw = buf.readUInt32BE(16), ph = buf.readUInt32BE(20);
+    const width = Math.round(widthIn * 96), height = Math.round((width * ph) / pw);
+    return new TableCell({
+      width: { size: w, type: WidthType.DXA }, verticalAlign: "bottom",
+      borders: { top: none, bottom: none, left: none, right: none },
+      children: [
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 20 }, keepNext: true,
+          children: [new ImageRun({ type: "png", data: buf, transformation: { width, height },
+            altText: { title: label, description: label, name: file } })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 0 }, keepNext: true,
+          children: [new TextRun({ text: label, font: FONT, size: 18 })] }),
+      ],
+    });
+  };
+  return [
+    new Table({
+      width: { size: 9360, type: WidthType.DXA }, columnWidths: [4300, 5060], layout: TableLayoutType.FIXED,
+      rows: [new TableRow({ cantSplit: true, children: [
+        panel(left.file, left.widthIn, left.label, 4300),
+        panel(right.file, right.widthIn, right.label, 5060),
+      ] })],
+    }),
+    new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { before: 80, after: 160 },
+      children: [new TextRun({ text: `${caption.label}: `, font: FONT, size: 18 }), ...runs(caption.text, { size: 18 })] }),
+  ];
 }
 
 // ---------- tables ----------
@@ -251,23 +266,20 @@ const body = [
     children: [new TextRun({ text: "The University of Hong Kong", font: FONT, size: BODY, bold: true })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 40, after: 200 },
     children: [new TextRun({ text: "* Contact member: ", font: FONT, size: SMALL, italics: true }), new TextRun({ text: "u3679152@connect.hku.hk", font: MONO, size: SMALL })] }),
-  new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new TextRun({ text: "Abstract", bold: true, font: FONT, size: 24 })] }),
-  P(`Research and study are long, tool-heavy activities—finding, reading, comparing, verifying, reproducing and learning—yet today's agents specialise elsewhere: coding agents (Claude Code, Codex), office agents (WorkBuddy) and personal assistants (Meta Muse, OpenAI Dots). We propose ${S}, which evolves Gloss, our released open-source paper reader, into an *open, plugin-native agent harness for research and learning*. A small kernel exposes one *Capability ABI* through which document sources, tools, sub-agents, loops, deciders, memories, Agent Skills, MCP servers and coding agents are all mounted as plugins. A core agent routes each request to a workflow, plans a typed step graph, executes sub-agents in parallel, verifies every claim against source spans and reflects until an explicit stop condition holds, while a tiered context manager passes pointers instead of text. We will evaluate on PaperArena, AutoResearchBench, LitSearch, ScholarQABench, QASPER, SciFact, PaperBench Code-Dev and TutorBench, plus harness-level tests of routing, robustness, cost and extensibility.`,
-    { indent: { left: 720, right: 720 }, after: 200 }),
-
   H1("1  Project Objective"),
   P(`**What Gloss is today.** Gloss [@gloss2026] is an open-source, self-hosted AI companion for reading research papers that we built and released (v1.0.2, July 2026; Windows desktop app and npm package; CI on Linux and Windows). A FastAPI backend serves a React/PDF.js reader with a real text layer and drives four interchangeable LLM providers: the local Claude Code [@claudecode] and Codex [@codex] CLIs (subscription login, no API key), the Anthropic API, and any OpenAI-compatible endpoint (e.g., HKU's GenAI service or a local vLLM). Its features are grounded in the paper: structured summaries, deep reading notes, an interactive mind map, cached sentence-level translation, BM25-grounded multi-session chat, auto-highlights anchored to PDF coordinates, reference resolution via Crossref/arXiv, and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace (nine plugins; introduced in v1.0.1 on 21 July 2026, before DSH [@dsh2026] was released), cancellable background tasks with observable progress, per-feature model settings, a token-saving *shared paper session*, and a local usage ledger.`),
   P(`**The gap.** Gloss is not yet an agent. Every feature is a single-prompt pipeline and the *user* is the planner. Plugins are prompt templates that cannot call tools or each other. The local CLIs run with all tools disabled, so their coding ability is unused. Only PDFs and arXiv LaTeX can be read.`),
   P(`**Objective.** Build ${S}, an open agent harness specialised for research and learning in which *everything is a plugin* and a core agent decides what to do next. Measurable goals: **(O1)** a small kernel and one plugin ABI, so that new workflows need *zero* kernel changes; **(O2)** agentic workflows (literature review, cross-paper QA, claim verification, reproduction, tutoring) that outperform Gloss's own single-prompt pipelines while every claim is traceable to a source span; **(O3)** a systematic evaluation of quality, reliability, latency, cost and extensibility.`),
 
   H1("2  Motivation and Challenges"),
-  sideBySide([
-    P(`Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78–90% of its citations [@asai2024openscholar], and a recent survey names verification as the main gap of AI-scientist systems [@ding2026verification]. The tasks are also hard: the best agentic workflow scores only 38.8% on cross-paper PaperArena questions [@wang2025paperarena]. Figure 1 shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents [@workbuddy2026] and assistants [@muse2026,dots2026] act on apps and errands rather than scholarly corpora. Research tools (OpenScholar [@asai2024openscholar], PaperQA2 [@skarlinski2024paperqa2], NotebookLM [@notebooklm]) are closed, single-workflow systems. Open harnesses such as DSH [@dsh2026] are domain-agnostic. ${S} targets the intersection: a research-and-learning harness that is open like DSH and *delegates* code to existing coding agents instead of re-implementing them.`),
-  ], figureParts("positioning.png", 2.75, { label: "Figure 1", title: "Positioning of GlossX",
-    text: `**Positioning.** Research needs code (analyse, reproduce), office output (reports, tables) and assistant behaviour (tutoring, memory). ${S} sits at their intersection, specialised to scholarly sources, and is open like DSH rather than closed like existing research tools.` })),
+  P(`Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78–90% of its citations [@asai2024openscholar], and a recent survey names verification as the main gap of AI-scientist systems [@ding2026verification]. The tasks are also hard: the best agentic workflow scores only 38.8% on cross-paper PaperArena questions [@wang2025paperarena]. Figure 1 shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents [@workbuddy2026] and assistants [@muse2026,dots2026] act on apps and errands rather than scholarly corpora. Research tools (OpenScholar [@asai2024openscholar], PaperQA2 [@skarlinski2024paperqa2], NotebookLM [@notebooklm]) are closed, single-workflow systems. Open harnesses such as DSH [@dsh2026] are domain-agnostic. ${S} targets the intersection: a research-and-learning harness that is open like DSH and *delegates* code to existing coding agents instead of re-implementing them.`),
+  ...twoPanels(
+    { file: "positioning.png", widthIn: 2.75, label: "(a) Intersection view" },
+    { file: "dimensions.png", widthIn: 3.3, label: "(b) Two-dimensional view (qualitative)" },
+    { label: "Figure 1", text: `**Positioning.** (a) Research needs code (analyse, reproduce), office output (reports, tables) and assistant behaviour (tutoring, memory); ${S} sits at their intersection. (b) Coding, office and assistant agents are extensible but not specialised to scholarly sources; research tools are specialised but closed, single-workflow systems; DSH is open but domain-agnostic. ${S} targets the open *and* specialised corner, starting from Gloss v1.0.2. Placements are our qualitative assessment.` }),
   P(`**Challenges.** **C1 Unification:** Python functions, prompt plugins, SKILL.md skills, MCP servers, CLI coding agents and specialised models must look the same to a single planner. **C2 Context:** one paper is 10–30k tokens; multi-paper workflows overflow the context window and multiply cost when text is re-sent. **C3 Grounding:** outputs must be verifiable at span level, not merely "cited". **C4 Openness vs. safety:** third-party plugins, code execution, and documents that contain prompt injections. **C5 Evaluation:** outputs are open-ended and the API budget is a student budget.`),
 
-  H1(`3  Proposed Solution: the ${S} Design`),
+  H1(`3  Potential Solutions: the ${S} Approach and Methodology`),
   H2("3.1  Everything is a plugin: one Capability ABI (C1)"),
   P(`The kernel is deliberately small: a capability registry, a scheduler (Gloss's existing task manager, which already supports unbounded concurrency, cancellation and progress), a permission and sandbox gate, a budget meter (the existing usage ledger), and a trace log (Figure 2). Everything else is a plugin with a manifest (\`api_version: 2\`, \`kind\` ∈ {source, tool, agent, loop, decider, workflow, memory, provider, view}; example in Appendix A). Adapters compile every plugin into a *Capability* ⟨card, I/O schema, requirements, permissions, cost and side-effect hints, handler⟩. The *card* is a description of at most 100 tokens that the planner sees; the full schema and instructions are loaded only when the capability is selected (progressive disclosure, as in Agent Skills [@agentskills2025]). There are five adapters: (i) *native Python* for trusted first-party plugins; (ii) *declarative manifests*, so all nine v1 plugins upgrade automatically into tools whose prompt becomes the handler; (iii) *SKILL.md* skills from Claude, Codex or agentskills.io; (iv) *MCP* [@mcp2024], where ${S} is both a client (e.g., Zotero and arXiv servers become tools) and a server (exposing the library, spans and annotations to external agents); (v) *CLI agents*, where Claude Code and Codex become sandboxed \`delegate\` tools with their tools enabled in a per-project workspace. Because the loop and the decider are plugins too, a ReAct loop [@yao2023react], a plan–execute–verify loop, or a Jev-backed decider [@jev2026] can be swapped in without touching the kernel.`),
   ...figure("architecture.png", 6.5, { label: "Figure 2", title: "GlossX architecture",
@@ -283,7 +295,7 @@ const body = [
   tcap("Table 1", "**Planned plugins**, the agentic behaviour each exercises, and its evaluation. Dataset details are in Appendix C."),
   table([2050, 3060, 3560, 690], ["Plugin (kind)", "Agentic behaviour", "Benchmark / metric", "Tier"], plugins),
 
-  H1("4  Experimental Datasets and Evaluation Plan"),
+  H1("4  Experimental Dataset Description and Evaluation Plan"),
   P(`**Data sources.** (a) The public benchmarks in Table 1, subsampled to 50–100 items each to fit the API budget. (b) *${S}-Route-100*: 100 heterogeneous research and study requests (find, compare, verify, reproduce, learn), each labelled with its gold workflow and capability set, written and cross-checked by group members. (c) Slides and notes from this course, for the study workflow. (d) A fault-injection suite: offline network, provider timeouts, malformed PDFs, failing plugins, and instructions injected into documents.`),
   P(`**Metrics.** *Quality:* each benchmark's native metric (Recall@k/nDCG, accuracy/F1, rubric score) plus citation precision/recall and the span-level support rate. *Reliability:* task success, recovery rate under faults, and variance over 3 runs. *Efficiency:* latency, tokens and cost from the usage ledger, and the number of tool calls. *Extensibility:* manifest/code lines needed to add a workflow, and the size of the kernel diff (target: none).`),
   P(`**Baselines and ablations.** B0 is Gloss v1.0.2's single-prompt features, B1 is standard RAG, and B2 is ${S}; published scores are given for reference. Ablations remove the verifier or reflection, compare a single agent with a reader swarm, vary the loop budget (1/2/3 rounds), compare full context with pointers plus a shared session, compare an LLM decider with a Jev decider, and swap model backends (HKU GPT models, Claude, Codex, and an open model on vLLM). Rubric judgements use an LLM judge, and humans spot-check 20% of them (Cohen's κ). Failures are categorised as retrieval miss, wrong tool, unsupported claim, non-termination or budget overrun.`),

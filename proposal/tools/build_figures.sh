@@ -6,7 +6,7 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 py="${1:-python3}"
 out="$here/word/figures"; build="$here/tools/.build"
 mkdir -p "$out" "$build"
-for fig in positioning architecture workflow; do
+for fig in positioning dimensions architecture workflow; do
   cat > "$build/$fig.tex" <<TEX
 \documentclass[border=6pt]{standalone}
 \usepackage[T1]{fontenc}

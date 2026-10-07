@@ -54,9 +54,6 @@
 \begin{document}
 \maketitle
 
-\begin{abstract}
-Research and study are long, tool-heavy activities---finding, reading, comparing, verifying, reproducing and learning---yet today's agents specialise elsewhere: coding agents (Claude Code, Codex), office agents (WorkBuddy) and personal assistants (Meta Muse, OpenAI Dots). We propose \sysname{}, which evolves \gloss{}, our released open-source paper reader, into an \emph{open, plugin-native agent harness for research and learning}. A small kernel exposes one \emph{Capability ABI} through which document sources, tools, sub-agents, loops, deciders, memories, Agent Skills, MCP servers and coding agents are all mounted as plugins. A core agent routes each request to a workflow, plans a typed step graph, executes sub-agents in parallel, verifies every claim against source spans and reflects until an explicit stop condition holds, while a tiered context manager passes pointers instead of text. We will evaluate on PaperArena, AutoResearchBench, LitSearch, ScholarQABench, QASPER, SciFact, PaperBench Code-Dev and TutorBench, plus harness-level tests of routing, robustness, cost and extensibility.
-\end{abstract}
 
 % =====================================================================
 \section{Project Objective}
@@ -75,14 +72,22 @@ Research and study are long, tool-heavy activities---finding, reading, comparing
 \section{Motivation and Challenges}
 \label{sec:motivation}
 
-\begin{wrapfigure}{r}{0.47\textwidth}
-  \vspace{-14pt}
+\begin{figure}[t]
   \centering
-  \resizebox{0.46\textwidth}{!}{\input{figures/positioning}}
-  \caption{\textbf{Positioning.} Research needs code (analyse, reproduce), office output (reports, tables) and assistant behaviour (tutoring, memory). \sysname{} sits at their intersection, specialised to scholarly sources, and is open like DSH rather than closed like existing research tools.}
+  \begin{minipage}[b]{0.44\textwidth}
+    \centering
+    \resizebox{\linewidth}{!}{\input{figures/positioning}}\\[-2pt]
+    {\small (a) Intersection view}
+  \end{minipage}\hfill
+  \begin{minipage}[b]{0.53\textwidth}
+    \centering
+    \resizebox{\linewidth}{!}{\input{figures/dimensions}}\\[-2pt]
+    {\small (b) Two-dimensional view (qualitative)}
+  \end{minipage}
+  \caption{\textbf{Positioning.} (a)~Research needs code (analyse, reproduce), office output (reports, tables) and assistant behaviour (tutoring, memory); \sysname{} sits at their intersection. (b)~Coding, office and assistant agents are extensible but not specialised to scholarly sources; research tools are specialised but closed, single-workflow systems; DSH is open but domain-agnostic. \sysname{} targets the open \emph{and} specialised corner, starting from Gloss v1.0.2. Placements are our qualitative assessment.}
   \label{fig:positioning}
-  \vspace{-12pt}
-\end{wrapfigure}
+  \vspace{-8pt}
+\end{figure}
 
 Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78--90\% of its citations~\cite{asai2024openscholar}, and a recent survey names verification as the main gap of AI-scientist systems~\cite{ding2026verification}. The tasks are also hard: the best agentic workflow scores only 38.8\% on cross-paper PaperArena questions~\cite{wang2025paperarena}. Figure~\ref{fig:positioning} shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents~\cite{workbuddy2026} and assistants~\cite{muse2026,dots2026} act on apps and errands rather than scholarly corpora. Research tools (OpenScholar~\cite{asai2024openscholar}, PaperQA2~\cite{skarlinski2024paperqa2}, NotebookLM~\cite{notebooklm}) are closed, single-workflow systems. Open harnesses such as DSH~\cite{dsh2026} are domain-agnostic. \sysname{} targets the intersection: a research-and-learning harness that is open like DSH and \emph{delegates} code to existing coding agents instead of re-implementing them.
 
@@ -94,7 +99,7 @@ Students and researchers switch between a PDF reader, a reference manager, a cha
 \textbf{C5 Evaluation:} outputs are open-ended and the API budget is a student budget.
 
 % =====================================================================
-\section{Proposed Solution: the \sysname{} Design}
+\section{Potential Solutions: the \sysname{} Approach and Methodology}
 \label{sec:design}
 
 \begin{figure}[t]
@@ -162,7 +167,7 @@ Together they cover every agentic capability in the project brief: planning (Pla
 \end{table}
 
 % =====================================================================
-\section{Experimental Datasets and Evaluation Plan}
+\section{Experimental Dataset Description and Evaluation Plan}
 \label{sec:eval}
 
 \textbf{Data sources.}
