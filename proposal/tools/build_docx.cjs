@@ -167,10 +167,10 @@ const tcap = (label, text) => new Paragraph({
 // ---------- content ----------
 const S = SYS;
 const members = [
-  ["Cai Jiechao*", "UID: 303679152"],
-  ["Cai Zhuorui", "UID: 303679195"],
-  ["Sun Zhiwei", "UID: 303679115"],
-  ["Zhang Guanyi", "UID: 303679381"],
+  ["Cai Jiechao*", "UID: 3036791526"],
+  ["Cai Zhuorui", "UID: 3036xxxxxx"],
+  ["Sun Zhiwei", "UID: 3036xxxxxx"],
+  ["Zhang Guanyi", "UID: 3036793811"],
 ];
 const memberTable = new Table({
   width: { size: 9360, type: WidthType.DXA }, columnWidths: [2340, 2340, 2340, 2340], layout: TableLayoutType.FIXED,
