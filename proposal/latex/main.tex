@@ -59,7 +59,7 @@
 \section{Project Objective}
 \label{sec:objective}
 
-\textbf{What \gloss{} is today.} \gloss{}~\cite{gloss2026} is an open-source, self-hosted AI companion for reading research papers that we built and released (v1.0.2, July 2026; Windows desktop app and npm package; CI on Linux and Windows). A FastAPI backend serves a React/PDF.js reader with a real text layer and drives four interchangeable LLM providers: the local Claude Code~\cite{claudecode} and Codex~\cite{codex} CLIs (subscription login, no API key), the Anthropic API, and any OpenAI-compatible endpoint (e.g., HKU's GenAI service or a local vLLM). Its features are grounded in the paper: structured summaries, deep reading notes, an interactive mind map, cached sentence-level translation, BM25-grounded multi-session chat, auto-highlights anchored to PDF coordinates, reference resolution via Crossref/arXiv, and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace (nine plugins; introduced in v1.0.1 on 21 July 2026, before DSH~\cite{dsh2026} was released), cancellable background tasks with observable progress, per-feature model settings, a token-saving \emph{shared paper session}, and a local usage ledger.
+\textbf{What \gloss{} is today.} \gloss{}~\cite{gloss2026} is our open-source, self-hosted AI reading companion, a local re-implementation of the Moonlight~\cite{moonlight} idea (v1.0.2, July 2026; Windows app and npm package; CI on Linux and Windows). A FastAPI backend serves a React reader built on PDF.js~\cite{pdfjs} and PyMuPDF~\cite{pymupdf}, and drives four interchangeable providers: the local Claude Code~\cite{claudecode} and Codex~\cite{codex} CLIs (no API key needed), the Anthropic API, and any OpenAI-compatible endpoint (e.g., HKU's GenAI service or vLLM). Its features are grounded in the paper: structured summaries; deep reading notes in the style of the DeepPaperNote skill~\cite{deeppapernote2026}; an interactive React Flow~\cite{xyflow} mind map inspired by Understand-Anything~\cite{understandanything2026} (${\sim}$85k GitHub stars); cached sentence-level translation; BM25-grounded chat; PDF-anchored auto-highlights; Crossref/arXiv reference resolution; and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace (nine plugins, since v1.0.1 on 21 July 2026, before DSH~\cite{dsh2026} was released), cancellable observable tasks, per-feature model settings, a token-saving \emph{shared paper session}, and a local usage ledger.
 
 \textbf{The gap.} \gloss{} is not yet an agent. Every feature is a single-prompt pipeline and the \emph{user} is the planner. Plugins are prompt templates that cannot call tools or each other. The local CLIs run with all tools disabled, so their coding ability is unused. Only PDFs and arXiv \LaTeX{} can be read.
 
@@ -110,11 +110,44 @@ Students and researchers switch between a PDF reader, a reference manager, a cha
   \vspace{-6pt}
 \end{figure}
 
+\begin{table}[!t]
+  \caption{\textbf{Plugin roadmap.} Top: existing \gloss{} modules and how v2 upgrades them. Bottom: new plugins. Tier: \textbf{C} = core, S = stretch. Dataset details are in App.~\ref{app:bench}.}
+  \label{tab:plugins}
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{4.15cm}c@{}}
+    \toprule
+    \textbf{Plugin} (\textit{kind}) & \textbf{What it does in v2} & \textbf{Validation} & \textbf{Tier} \\
+    \midrule
+    \multicolumn{4}{@{}l}{\textit{Existing modules $\to$ agent capabilities}} \\
+    Summary, Deep Note, Mind Map (\textit{agent}) & emit span-anchored claims that must pass the verifier before saving & span support rate; QASPER~\cite{dasigi2021qasper} evidence recall vs.\ B0 & C \\
+    Chat (\textit{workflow}) & BM25 RAG $\to$ agentic QA that picks retrieval, tables, figures, other papers or web; multi-hop & PaperArena~\cite{wang2025paperarena} acc.; QASPER F1 & C \\
+    Scholar, References (\textit{tool}) & single API calls $\to$ search tools with fallback chains (arXiv $\to$ S2 $\to$ Zotero MCP $\to$ library), driven by the review loop & LitSearch~\cite{ajith2024litsearch} Recall@$k$; AutoResearchBench~\cite{xiong2026autoresearchbench} & C \\
+    Evidence Table, Critical Review (\textit{agent}) & every row and critique is checked against spans; conflicts across papers are flagged & ArxivDIGESTables~\cite{newman2024arxivdigestables}; ScholarQABench citation P/R & C \\
+    Repro.\ Checklist, Impl.\ Blueprint (\textit{workflow}) & checklist $\to$ plan $\to$ code and run via Claude Code/Codex in a sandbox $\to$ compare with reported numbers & PaperBench Code-Dev~\cite{starace2025paperbench} rubric (3--5 papers) & C \\
+    Reading Plan, Glossary, Equation/Figure Guide, Slides Outline (\textit{workflow}) & one study-and-tutor workflow over papers, slides and notes: concept map $\to$ quiz $\to$ adapt to a learner model & TutorBench~\cite{srinivasa2025tutorbench} subset; course slides, human rating & C \\
+    Translate, Explain, Highlight, Skills (\textit{tool}) & become tools other agents call; highlights become evidence spans; SKILL.md skills load by progressive disclosure & anchoring precision; routing accuracy with/without skills & C \\
+    \midrule
+    \multicolumn{4}{@{}l}{\textit{New plugins}} \\
+    Agent cluster (\textit{agent+workflow}) & planner, $N$ parallel readers, critic and writer; map--reduce plus critic-vs-author debate over spans & single vs.\ $N{=}4/8$ swarm: accuracy, latency, cost on PaperArena/AutoResearchBench & C \\
+    Loop strategies (\textit{loop}) & ReAct, plan--execute--verify and Reflexion-style loops~\cite{shinn2023reflexion} with explicit stop reasons; scheduled \emph{Research Radar} & quality vs.\ budget over 1/2/3 rounds; non-termination rate; radar precision@10 & C \\
+    Verification (\textit{agent+decider}) & atomic claims $\to$ span retrieval $\to$ entailment; citation existence via Crossref/arXiv; cross-source consistency & SciFact~\cite{wadden2020scifact} acc./F1, ECE; fabricated-citation rate & C \\
+    MCP bridge, new sources (\textit{tool/source}) & Zotero/arXiv MCP tools in, library and spans out; Markdown, slides and web pages into the span store & interop with Claude Code/Codex; QA parity across formats & C \\
+    Jev decider (\textit{decider}) & typed, calibrated decisions for routing, screening, verification and stopping~\cite{jev2026}; LLM+JSON fallback & accuracy, ECE, latency, cost vs.\ LLM decider on Route-100 and SciFact & S \\
+    Self-evolution (\textit{memory}) & distil successful traces into tested SKILL.md files and retrieve them next time & held-out re-runs: success, tokens, steps; regression rate & S \\
+    A2A gateway (\textit{provider}) & expose \sysname{} workflows as A2A agents~\cite{a2a2025}; delegate to external agents (e.g., office agents for slides) & hand-off success and latency in interop tests & S \\
+    \bottomrule
+  \end{tabularx}
+  \vspace{-8pt}
+\end{table}
+
 \subsection{Everything is a plugin: one Capability ABI (C1)}
 The kernel is deliberately small: a capability registry, a scheduler (\gloss{}'s existing task manager, which already supports unbounded concurrency, cancellation and progress), a permission and sandbox gate, a budget meter (the existing usage ledger), and a trace log (Fig.~\ref{fig:arch}). Everything else is a plugin with a manifest (\texttt{api\_version: 2}, \texttt{kind} $\in$ \{source, tool, agent, loop, decider, workflow, memory, provider, view\}; example in App.~\ref{app:manifest}). Adapters compile every plugin into a \emph{Capability} $\langle$card, I/O schema, requirements, permissions, cost and side-effect hints, handler$\rangle$. The \emph{card} is a description of at most 100 tokens that the planner sees; the full schema and instructions are loaded only when the capability is selected (progressive disclosure, as in Agent Skills~\cite{agentskills2025}). There are five adapters:
 (i)~\emph{native Python} for trusted first-party plugins;
 (ii)~\emph{declarative manifests}, so all nine v1 plugins upgrade automatically into tools whose prompt becomes the handler;
-(iii)~\emph{SKILL.md} skills from Claude, Codex or agentskills.io;
+(iii)~\emph{SKILL.md} skills;
 (iv)~\emph{MCP}~\cite{mcp2024}, where \sysname{} is both a client (e.g., Zotero and arXiv servers become tools) and a server (exposing the library, spans and annotations to external agents);
 (v)~\emph{CLI agents}, where Claude Code and Codex become sandboxed \texttt{delegate} tools with their tools enabled in a per-project workspace.
 Because the loop and the decider are plugins too, a ReAct loop~\cite{yao2023react}, a plan--execute--verify loop, or a Jev-backed decider~\cite{jev2026} can be swapped in without touching the kernel.
@@ -133,38 +166,11 @@ Because the loop and the decider are plugins too, a ReAct loop~\cite{yao2023reac
 \textbf{Long-term memory} covers the library, project memory (findings, decisions, preferences), a learner model, and SKILL.md files distilled from successful traces for reuse in later tasks.
 
 \subsection{Openness vs.\ safety (C4)}
-Plugins have trust tiers. First-party plugins may contain code. Third-party plugins stay declarative compositions of existing capabilities, which keeps \gloss{}'s rule of never executing downloaded code. Code runs only through sandboxed delegates, under approval and a budget. MCP servers get scoped permissions. Document text and tool outputs are tagged as untrusted data and can never issue tool calls.
+First-party plugins may contain code; third-party plugins stay declarative compositions of existing capabilities, keeping \gloss{}'s rule of never executing downloaded code. Code runs only in sandboxed delegates under approval and budget, MCP servers get scoped permissions, and document text and tool outputs are untrusted data that can never issue tool calls.
 
-\subsection{Plugin roadmap}
-Table~\ref{tab:plugins} lists the plugins we plan to build, the agentic behaviour each one exercises, and how each will be evaluated. Core rows are committed; stretch rows depend on time and API access.
-Together they cover every agentic capability in the project brief: planning (Plan), tool selection (Route over capability cards), multi-step execution (Execute), iterative verification (Verify), external environments (MCP, web search, coding agents), memory (the context tiers), reflection and error recovery (Reflect), and multi-agent collaboration (the reader swarm and the planner, reader, verifier and writer roles).
+\subsection{Plugin roadmap: upgrading existing modules and adding new ones}
+\gloss{} already ships ten built-in features and nine marketplace plugins (six more are listed as planned), but each is a one-shot prompt. Table~\ref{tab:plugins} shows how they become v2 capabilities that agents can call, and which new plugins we add; each row gives the change and how it will be validated. Together they cover every agentic capability in the project brief, including multi-agent collaboration and error recovery.
 
-\begin{table}[t]
-  \caption{\textbf{Planned plugins}, the agentic behaviour each exercises, and its evaluation. Dataset details are in App.~\ref{app:bench}.}
-  \label{tab:plugins}
-  \centering
-  \scriptsize
-  \setlength{\tabcolsep}{3pt}
-  \renewcommand{\arraystretch}{1.08}
-  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.75cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{4.6cm}c@{}}
-    \toprule
-    \textbf{Plugin} (\textit{kind}) & \textbf{Agentic behaviour} & \textbf{Benchmark / metric} & \textbf{Tier} \\
-    \midrule
-    Literature review (\textit{workflow}) & plan sub-questions, search, parallel readers, verify, re-search until coverage & AutoResearchBench~\cite{xiong2026autoresearchbench}, LitSearch~\cite{ajith2024litsearch}: Recall@$k$, nDCG & core \\
-    Cross-paper QA (\textit{workflow}) & select tools across papers, tables and figures; multi-hop & PaperArena~\cite{wang2025paperarena} acc.; QASPER~\cite{dasigi2021qasper} F1, evidence recall & core \\
-    Claim verifier (\textit{agent+decider}) & claim decomposition, span retrieval, self-correction & SciFact~\cite{wadden2020scifact} acc./F1, ECE; ScholarQABench citation P/R & core \\
-    Reproduction (\textit{workflow+delegate}) & read method $\to$ plan $\to$ code via Claude Code/Codex $\to$ run $\to$ compare & PaperBench Code-Dev~\cite{starace2025paperbench} rubric (3--5 papers) & core \\
-    Study \& tutor (\textit{workflow+memory}) & slides/notes $\to$ concept map $\to$ quiz $\to$ adapt to the learner model & TutorBench~\cite{srinivasa2025tutorbench} rubric subset; course slides, human rating & core \\
-    New sources (\textit{source}) & Markdown, slides, web, \LaTeX{} $\to$ span store & QA parity of PDF vs.\ other formats; parse fidelity & core \\
-    MCP bridge (\textit{tool/provider}) & Zotero/arXiv tools in; \sysname{} exposed out & routing success; interop with Claude Code/Codex & core \\
-    Comparison tables (\textit{agent}) & multi-paper aspect extraction & ArxivDIGESTables~\cite{newman2024arxivdigestables} (AstaBench~\cite{bragg2025astabench}) & stretch \\
-    Skill distillation (\textit{memory}) & write reusable SKILL.md from successful traces & success and token change on re-runs & stretch \\
-    Jev decider (\textit{decider}) & typed, calibrated routing and verification & accuracy, ECE, latency, cost vs.\ LLM decider & stretch \\
-    Research radar (\textit{loop}) & scheduled arXiv watch against project memory & precision@10 vs.\ member labels & stretch \\
-    \bottomrule
-  \end{tabularx}
-  \vspace{-8pt}
-\end{table}
 
 % =====================================================================
 \section{Experimental Dataset Description and Evaluation Plan}
@@ -172,22 +178,20 @@ Together they cover every agentic capability in the project brief: planning (Pla
 
 \textbf{Data sources.}
 (a)~The public benchmarks in Table~\ref{tab:plugins}, subsampled to 50--100 items each to fit the API budget.
-(b)~\emph{\sysname{}-Route-100}: 100 heterogeneous research and study requests (find, compare, verify, reproduce, learn), each labelled with its gold workflow and capability set, written and cross-checked by group members.
-(c)~Slides and notes from this course, for the study workflow.
+(b)~\emph{\sysname{}-Route-100}: 100 heterogeneous research and study requests (find, compare, verify, reproduce, learn) labelled with their gold workflow and capabilities and cross-checked by group members.
+(c)~Slides and notes from this course.
 (d)~A fault-injection suite: offline network, provider timeouts, malformed PDFs, failing plugins, and instructions injected into documents.
 
 \textbf{Metrics.}
-\emph{Quality:} each benchmark's native metric (Recall@$k$/nDCG, accuracy/F1, rubric score) plus citation precision/recall and the span-level support rate.
+\emph{Quality:} each benchmark's native metric plus citation precision/recall and the span-level support rate.
 \emph{Reliability:} task success, recovery rate under faults, and variance over 3 runs.
-\emph{Efficiency:} latency, tokens and cost from the usage ledger, and the number of tool calls.
-\emph{Extensibility:} manifest/code lines needed to add a workflow, and the size of the kernel diff (target: none).
+\emph{Efficiency:} latency, tokens, cost (from the usage ledger) and tool calls.
+\emph{Extensibility:} lines needed to add a workflow, and the kernel diff (target: none).
 
-\textbf{Baselines and ablations.}
-B0 is \gloss{} v1.0.2's single-prompt features, B1 is standard RAG, and B2 is \sysname{}; published scores are given for reference.
-Ablations remove the verifier or reflection, compare a single agent with a reader swarm, vary the loop budget (1/2/3 rounds), compare full context with pointers plus a shared session, compare an LLM decider with a Jev decider, and swap model backends (HKU GPT models, Claude, Codex, and an open model on vLLM).
-Rubric judgements use an LLM judge, and humans spot-check 20\% of them (Cohen's $\kappa$). Failures are categorised as retrieval miss, wrong tool, unsupported claim, non-termination or budget overrun.
+\textbf{Baselines and protocol.}
+B0 is \gloss{} v1.0.2's single-prompt features, B1 is standard RAG, and B2 is \sysname{}. Besides the per-plugin comparisons in Table~\ref{tab:plugins}, ablations remove the verifier or reflection, compare full context with pointers plus a shared session, and swap model backends (HKU GPT models, Claude, Codex, an open model on vLLM). An LLM judge scores rubric tasks and humans spot-check 20\% (Cohen's $\kappa$). Failures are categorised as retrieval miss, wrong tool, unsupported claim, non-termination or budget overrun.
 
-\textbf{Success criteria.} B2 beats B0 and B1 on PaperArena accuracy and citation precision at comparable cost; routing accuracy on \sysname{}-Route-100 is at least 90\%; the last three workflows are added without kernel changes; and the system degrades gracefully in every fault scenario.
+\textbf{Success criteria.} B2 beats B0 and B1 on PaperArena accuracy and citation precision at comparable cost; routing accuracy on Route-100 is at least 90\%; the last three workflows need no kernel changes; and every fault scenario degrades gracefully.
 
 % =====================================================================
 \bibliographystyle{plainnat}
@@ -251,7 +255,7 @@ Version-1 manifests remain valid; \texttt{kind}, \texttt{capability} and \texttt
     SciFact~\cite{wadden2020scifact} & scientific claim verification & verifier and decider accuracy and calibration & 100 \\
     PaperBench Code-Dev~\cite{starace2025paperbench} & rubric-graded code development for ICML papers, no GPU needed & delegation to coding agents & 3--5 \\
     TutorBench~\cite{srinivasa2025tutorbench} & 1{,}490 rubric-graded tutoring samples & explanation, feedback and hint quality & 60 \\
-    ArxivDIGESTables~\cite{newman2024arxivdigestables} & literature-review tables (AstaBench subset) & multi-paper aspect extraction & 30 \\
+    ArxivDIGESTables~\cite{newman2024arxivdigestables} & literature-review tables (AstaBench~\cite{bragg2025astabench} subset) & multi-paper aspect extraction & 30 \\
     \sysname{}-Route-100 (ours) & 100 heterogeneous requests with gold workflow/capabilities & routing and tool selection across plugins & 100 \\
     \bottomrule
   \end{tabularx}
