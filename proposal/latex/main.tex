@@ -20,6 +20,9 @@
 \usepackage{enumitem}
 \usepackage{listings}
 \usepackage{float}
+\usepackage{colortbl}
+% thin grey rule between table rows
+\newcommand{\rowrule}{\arrayrulecolor{glgray!45}\specialrule{0.25pt}{0.6pt}{0.9pt}\arrayrulecolor{black}}
 
 \input{figures/styles}
 
@@ -89,7 +92,7 @@
   \vspace{-8pt}
 \end{figure}
 
-Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78--90\% of its citations~\cite{asai2024openscholar}, and a recent survey names verification as the main gap of AI-scientist systems~\cite{ding2026verification}. The tasks are also hard: the best agentic workflow scores only 38.8\% on cross-paper PaperArena questions~\cite{wang2025paperarena}. Figure~\ref{fig:positioning} shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents~\cite{workbuddy2026} and assistants~\cite{muse2026,dots2026} act on apps and errands rather than scholarly corpora. Research tools (OpenScholar~\cite{asai2024openscholar}, PaperQA2~\cite{skarlinski2024paperqa2}, NotebookLM~\cite{notebooklm}) are closed, single-workflow systems. Open harnesses such as DSH~\cite{dsh2026} are domain-agnostic. \sysname{} targets the intersection: a research-and-learning harness that is open like DSH and \emph{delegates} code to existing coding agents instead of re-implementing them.
+Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78--90\% of its citations~\cite{asai2024openscholar}, and a recent survey names verification as the main gap of AI-scientist systems~\cite{ding2026verification}. The tasks are also hard: the best agentic workflow scores only 38.8\% on cross-paper PaperArena questions~\cite{wang2025paperarena}. Figure~\ref{fig:positioning} shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents~\cite{workbuddy2026} and assistants~\cite{muse2026,dots2026} act on apps and errands rather than scholarly corpora. Research tools (OpenScholar~\cite{asai2024openscholar}, PaperQA2~\cite{skarlinski2024paperqa2}, NotebookLM~\cite{notebooklm}) are closed, single-workflow systems. Open harnesses such as DSH~\cite{dsh2026} are domain-agnostic. \sysname{} targets the intersection: a research-and-learning harness that is open like DSH and \emph{delegates} code to existing coding agents instead of re-implementing them. It is also designed to support \emph{auto research}: loops such as Karpathy's autoresearch~\cite{karpathy2026autoresearch} (${\sim}$97k GitHub stars) propose, run and keep code changes but never read the literature, and \sysname{} can feed them verified, cited ideas and baselines and host such loops as plugins.
 
 \textbf{Challenges.}
 \textbf{C1 Unification:} Python functions, prompt plugins, SKILL.md skills, MCP servers, CLI coding agents and specialised models must look the same to a single planner.
@@ -111,7 +114,7 @@ Students and researchers switch between a PDF reader, a reference manager, a cha
 \end{figure}
 
 \begin{table}[!t]
-  \caption{\textbf{Plugin roadmap.} Top: existing \gloss{} modules and how v2 upgrades them. Bottom: new plugins. Tier: \textbf{C} = attempted first, S = stretch. This is a candidate list; the final set depends on prototyping and progress. Dataset details are in App.~\ref{app:bench}.}
+  \caption{\textbf{Plugin roadmap.} Top: existing \gloss{} modules and how v2 upgrades them. Bottom: new plugins. Tier: \textbf{C} = attempted first, S = stretch. A candidate list: the final set depends on prototyping and progress (datasets: App.~\ref{app:bench}).}
   \label{tab:plugins}
   \centering
   \scriptsize
@@ -123,20 +126,32 @@ Students and researchers switch between a PDF reader, a reference manager, a cha
     \midrule
     \multicolumn{4}{@{}l}{\textit{Existing modules $\to$ agent capabilities}} \\
     Summary, Deep Note, Mind Map (\textit{agent}) & emit span-anchored claims that must pass the verifier before saving & span support rate; QASPER~\cite{dasigi2021qasper} evidence recall vs.\ B0 & C \\
+    \rowrule
     Chat (\textit{workflow}) & BM25 RAG $\to$ agentic QA that picks retrieval, tables, figures, other papers or web; multi-hop & PaperArena~\cite{wang2025paperarena} acc.; QASPER F1 & C \\
-    Scholar, References (\textit{tool}) & single API calls $\to$ search tools with fallback chains (arXiv $\to$ S2 $\to$ Zotero MCP $\to$ library), driven by the review loop & LitSearch~\cite{ajith2024litsearch} Recall@$k$; AutoResearchBench~\cite{xiong2026autoresearchbench} & C \\
+    \rowrule
+    Scholar, References (\textit{tool}) & API calls $\to$ search tools with fallbacks (arXiv $\to$ S2 $\to$ Zotero MCP $\to$ library) & LitSearch~\cite{ajith2024litsearch} Recall@$k$; AutoResearchBench~\cite{xiong2026autoresearchbench} & C \\
+    \rowrule
     Evidence Table, Critical Review (\textit{agent}) & every row and critique is checked against spans; conflicts across papers are flagged & ArxivDIGESTables~\cite{newman2024arxivdigestables}; ScholarQABench citation P/R & C \\
+    \rowrule
     Repro.\ Checklist, Impl.\ Blueprint (\textit{workflow}) & checklist $\to$ plan $\to$ code and run via Claude Code/Codex in a sandbox $\to$ compare with reported numbers & PaperBench Code-Dev~\cite{starace2025paperbench} rubric (3--5 papers) & C \\
-    Reading Plan, Glossary, Equation/Figure Guide, Slides Outline (\textit{workflow}) & one study-and-tutor workflow over papers, slides and notes: concept map $\to$ quiz $\to$ adapt to a learner model & TutorBench~\cite{srinivasa2025tutorbench} subset; course slides, human rating & C \\
+    \rowrule
+    Reading Plan, Glossary, Guides, Outline (\textit{workflow}) & one study-and-tutor workflow over papers, slides and notes: concept map $\to$ quiz $\to$ adapt to a learner model & TutorBench~\cite{srinivasa2025tutorbench} subset; course slides, human rating & C \\
+    \rowrule
     Translate, Explain, Highlight, Skills (\textit{tool}) & become tools other agents call; highlights become evidence spans; SKILL.md skills load by progressive disclosure & anchoring precision; routing accuracy with/without skills & C \\
     \midrule
     \multicolumn{4}{@{}l}{\textit{New plugins}} \\
-    Agent cluster (\textit{agent+workflow}) & planner, $N$ parallel readers, critic and writer; map--reduce plus critic-vs-author debate over spans & single vs.\ $N{=}4/8$ swarm: accuracy, latency, cost on PaperArena/AutoResearchBench & C \\
-    Loop strategies (\textit{loop}) & ReAct, plan--execute--verify and Reflexion-style loops~\cite{shinn2023reflexion} with explicit stop reasons; scheduled \emph{Research Radar} & quality vs.\ budget over 1/2/3 rounds; non-termination rate; radar precision@10 & C \\
+    Agent cluster (\textit{agent+workflow}) & planner, $N$ parallel readers, critic and writer; map--reduce plus critic-vs-author debate over spans & single vs.\ $N{=}4/8$ swarm: accuracy, latency and cost & C \\
+    \rowrule
+    Loop strategies (\textit{loop}) & ReAct, plan--execute--verify and Reflexion-style loops~\cite{shinn2023reflexion} with explicit stop reasons; scheduled \emph{Research Radar}; autoresearch-style experiment loop & quality vs.\ budget over 1/2/3 rounds; non-termination rate; radar precision@10 & C \\
+    \rowrule
     Verification (\textit{agent+decider}) & atomic claims $\to$ span retrieval $\to$ entailment; citation existence via Crossref/arXiv; cross-source consistency & SciFact~\cite{wadden2020scifact} acc./F1, ECE; fabricated-citation rate & C \\
+    \rowrule
     MCP bridge, new sources (\textit{tool/source}) & Zotero/arXiv MCP tools in, library and spans out; Markdown, slides and web pages into the span store & interop with Claude Code/Codex; QA parity across formats & C \\
+    \rowrule
     Jev decider (\textit{decider}) & typed, calibrated decisions for routing, screening, verification and stopping~\cite{jev2026}; LLM+JSON fallback & accuracy, ECE, latency, cost vs.\ LLM decider on Route-100 and SciFact & S \\
+    \rowrule
     Self-evolution (\textit{memory}) & distil successful traces into tested SKILL.md files and retrieve them next time & held-out re-runs: success, tokens, steps; regression rate & S \\
+    \rowrule
     A2A gateway (\textit{provider}) & expose \sysname{} workflows as A2A agents~\cite{a2a2025}; delegate to external agents (e.g., office agents for slides) & hand-off success and latency in interop tests & S \\
     \bottomrule
   \end{tabularx}

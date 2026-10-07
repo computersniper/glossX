@@ -24,18 +24,20 @@ const ORDER = [
   "deeppapernote2026", "ajith2024litsearch", "mcp2024", "agentskills2025", "claudecode",
   "pymupdf", "asai2024openscholar", "bragg2025astabench", "dasigi2021qasper", "dsh2026",
   "ding2026verification", "understandanything2026", "gloss2026", "notebooklm", "a2a2025",
-  "muse2026", "moonlight", "pdfjs", "newman2024arxivdigestables", "codex", "dots2026",
-  "shinn2023reflexion", "skarlinski2024paperqa2", "srinivasa2025tutorbench",
-  "starace2025paperbench", "workbuddy2026", "jev2026", "wadden2020scifact",
-  "wang2025paperarena", "xiong2026autoresearchbench", "xyflow", "yao2023react",
+  "karpathy2026autoresearch", "muse2026", "moonlight", "pdfjs", "newman2024arxivdigestables",
+  "codex", "dots2026", "shinn2023reflexion", "skarlinski2024paperqa2",
+  "srinivasa2025tutorbench", "starace2025paperbench", "workbuddy2026", "jev2026",
+  "wadden2020scifact", "wang2025paperarena", "xiong2026autoresearchbench", "xyflow",
+  "yao2023react",
 ];
 const REFS = {
-  understandanything2026: "Egonex-AI. Understand-Anything: Turn any code into an interactive knowledge graph. https://github.com/Egonex-AI/Understand-Anything, 2026. About 85k GitHub stars as of October 2026, MIT license.",
+  understandanything2026: "Egonex-AI. Understand-Anything: Turn any code into an interactive knowledge graph. https://github.com/Egonex-AI/Understand-Anything, 2026.",
   deeppapernote2026: "917Dhj. DeepPaperNote: An agent skill for deep-reading a single paper. https://github.com/917Dhj/DeepPaperNote, 2026. MIT license.",
   moonlight: "Moonlight. Moonlight: Your AI colleague for reading papers. https://www.themoonlight.io, 2025.",
   pdfjs: "Mozilla. PDF.js: A PDF reader in JavaScript. https://github.com/mozilla/pdf.js, 2011.",
   xyflow: "xyflow. React Flow: Libraries for building node-based UIs. https://github.com/xyflow/xyflow, 2019.",
   pymupdf: "Artifex. PyMuPDF: Data extraction and analysis for PDF documents. https://github.com/pymupdf/PyMuPDF, 2012.",
+  karpathy2026autoresearch: "Andrej Karpathy. autoresearch: AI agents running research on single-GPU nanochat training automatically. https://github.com/karpathy/autoresearch, 2026.",
   a2a2025: "Google and the Linux Foundation. Agent2Agent (A2A) protocol. https://a2a-protocol.org, 2025.",
   ajith2024litsearch: "Anirudh Ajith, Mengzhou Xia, Alexis Chevalier, et al. LitSearch: A retrieval benchmark for scientific literature search. In Proceedings of EMNLP, 2024.",
   mcp2024: "Anthropic. Model Context Protocol. https://modelcontextprotocol.io, 2024.",
@@ -159,14 +161,15 @@ function twoPanels(left, right, caption) {
 // ---------- tables ----------
 const border = { style: BorderStyle.SINGLE, size: 4, color: "999999" };
 const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
-function table(widths, header, rows, { size = 15 } = {}) {
+const thin = { style: BorderStyle.SINGLE, size: 2, color: "C4C7CE" };
+function table(widths, header, rows, { size = 15, rowRules = false } = {}) {
   const total = widths.reduce((a, b) => a + b, 0);
   const cell = (t, w, isHead, isLast) => new TableCell({
     width: { size: w, type: WidthType.DXA },
     margins: { top: 30, bottom: 30, left: 70, right: 70 },
     borders: {
       top: isHead ? { style: BorderStyle.SINGLE, size: 8, color: "000000" } : none,
-      bottom: isHead ? border : (isLast ? { style: BorderStyle.SINGLE, size: 8, color: "000000" } : none),
+      bottom: isHead ? border : (isLast ? { style: BorderStyle.SINGLE, size: 8, color: "000000" } : (rowRules ? thin : none)),
       left: none, right: none,
     },
     shading: isHead ? { fill: "F3F0FF", type: ShadingType.CLEAR, color: "auto" } : undefined,
@@ -184,7 +187,7 @@ function table(widths, header, rows, { size = 15 } = {}) {
             margins: { top: 50, bottom: 20, left: 70, right: 70 },
             borders: { top: ri === 0 ? none : border, bottom: none, left: none, right: none },
             children: [new Paragraph({ spacing: { after: 0 }, children: runs(r, { size, italics: true }) })] })] })
-        : new TableRow({ children: r.map((t, i) => cell(t, widths[i], false, ri === rows.length - 1)) })),
+        : new TableRow({ cantSplit: true, children: r.map((t, i) => cell(t, widths[i], false, ri === rows.length - 1)) })),
     ],
   });
 }
@@ -215,14 +218,14 @@ const plugins = [
   "Existing modules → agent capabilities",
   ["Summary, Deep Note, Mind Map (*agent*)", "emit span-anchored claims that must pass the verifier before saving", "span support rate; QASPER [@dasigi2021qasper] evidence recall vs. B0", "C"],
   ["Chat (*workflow*)", "BM25 RAG → agentic QA that picks retrieval, tables, figures, other papers or web; multi-hop", "PaperArena [@wang2025paperarena] acc.; QASPER F1", "C"],
-  ["Scholar, References (*tool*)", "single API calls → search tools with fallback chains (arXiv → S2 → Zotero MCP → library), driven by the review loop", "LitSearch [@ajith2024litsearch] Recall@k; AutoResearchBench [@xiong2026autoresearchbench]", "C"],
+  ["Scholar, References (*tool*)", "API calls → search tools with fallbacks (arXiv → S2 → Zotero MCP → library)", "LitSearch [@ajith2024litsearch] Recall@k; AutoResearchBench [@xiong2026autoresearchbench]", "C"],
   ["Evidence Table, Critical Review (*agent*)", "every row and critique is checked against spans; conflicts across papers are flagged", "ArxivDIGESTables [@newman2024arxivdigestables]; ScholarQABench citation P/R", "C"],
   ["Repro. Checklist, Impl. Blueprint (*workflow*)", "checklist → plan → code and run via Claude Code/Codex in a sandbox → compare with reported numbers", "PaperBench Code-Dev [@starace2025paperbench] rubric (3–5 papers)", "C"],
-  ["Reading Plan, Glossary, Equation/Figure Guide, Slides Outline (*workflow*)", "one study-and-tutor workflow over papers, slides and notes: concept map → quiz → adapt to a learner model", "TutorBench [@srinivasa2025tutorbench] subset; course slides, human rating", "C"],
+  ["Reading Plan, Glossary, Guides, Outline (*workflow*)", "one study-and-tutor workflow over papers, slides and notes: concept map → quiz → adapt to a learner model", "TutorBench [@srinivasa2025tutorbench] subset; course slides, human rating", "C"],
   ["Translate, Explain, Highlight, Skills (*tool*)", "become tools other agents call; highlights become evidence spans; SKILL.md skills load by progressive disclosure", "anchoring precision; routing accuracy with/without skills", "C"],
   "New plugins",
-  ["Agent cluster (*agent+workflow*)", "planner, N parallel readers, critic and writer; map–reduce plus critic-vs-author debate over spans", "single vs. N=4/8 swarm: accuracy, latency, cost on PaperArena/AutoResearchBench", "C"],
-  ["Loop strategies (*loop*)", "ReAct, plan–execute–verify and Reflexion-style loops [@shinn2023reflexion] with explicit stop reasons; scheduled *Research Radar*", "quality vs. budget over 1/2/3 rounds; non-termination rate; radar precision@10", "C"],
+  ["Agent cluster (*agent+workflow*)", "planner, N parallel readers, critic and writer; map–reduce plus critic-vs-author debate over spans", "single vs. N=4/8 swarm: accuracy, latency and cost", "C"],
+  ["Loop strategies (*loop*)", "ReAct, plan–execute–verify and Reflexion-style loops [@shinn2023reflexion] with explicit stop reasons; scheduled *Research Radar*; autoresearch-style experiment loop", "quality vs. budget over 1/2/3 rounds; non-termination rate; radar precision@10", "C"],
   ["Verification (*agent+decider*)", "atomic claims → span retrieval → entailment; citation existence via Crossref/arXiv; cross-source consistency", "SciFact [@wadden2020scifact] acc./F1, ECE; fabricated-citation rate", "C"],
   ["MCP bridge, new sources (*tool/source*)", "Zotero/arXiv MCP tools in, library and spans out; Markdown, slides and web pages into the span store", "interop with Claude Code/Codex; QA parity across formats", "C"],
   ["Jev decider (*decider*)", "typed, calibrated decisions for routing, screening, verification and stopping [@jev2026]; LLM+JSON fallback", "accuracy, ECE, latency, cost vs. LLM decider on Route-100 and SciFact", "S"],
@@ -294,7 +297,7 @@ const body = [
   P(`**Objective.** Build ${S}, an open agent harness specialised for research and learning in which *everything is a plugin* and a core agent decides what to do next. Measurable goals: **(O1)** a small kernel and one plugin ABI, so that new workflows need *zero* kernel changes; **(O2)** agentic workflows (literature review, cross-paper QA, claim verification, reproduction, tutoring) that outperform Gloss's own single-prompt pipelines while every claim is traceable to a source span; **(O3)** a systematic evaluation of quality, reliability, latency, cost and extensibility.`),
 
   H1("2  Motivation and Challenges"),
-  P(`Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78–90% of its citations [@asai2024openscholar], and a recent survey names verification as the main gap of AI-scientist systems [@ding2026verification]. The tasks are also hard: the best agentic workflow scores only 38.8% on cross-paper PaperArena questions [@wang2025paperarena]. Figure 1 shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents [@workbuddy2026] and assistants [@muse2026,dots2026] act on apps and errands rather than scholarly corpora. Research tools (OpenScholar [@asai2024openscholar], PaperQA2 [@skarlinski2024paperqa2], NotebookLM [@notebooklm]) are closed, single-workflow systems. Open harnesses such as DSH [@dsh2026] are domain-agnostic. ${S} targets the intersection: a research-and-learning harness that is open like DSH and *delegates* code to existing coding agents instead of re-implementing them.`),
+  P(`Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78–90% of its citations [@asai2024openscholar], and a recent survey names verification as the main gap of AI-scientist systems [@ding2026verification]. The tasks are also hard: the best agentic workflow scores only 38.8% on cross-paper PaperArena questions [@wang2025paperarena]. Figure 1 shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents [@workbuddy2026] and assistants [@muse2026,dots2026] act on apps and errands rather than scholarly corpora. Research tools (OpenScholar [@asai2024openscholar], PaperQA2 [@skarlinski2024paperqa2], NotebookLM [@notebooklm]) are closed, single-workflow systems. Open harnesses such as DSH [@dsh2026] are domain-agnostic. ${S} targets the intersection: a research-and-learning harness that is open like DSH and *delegates* code to existing coding agents instead of re-implementing them. It is also designed to support *auto research*: loops such as Karpathy's autoresearch [@karpathy2026autoresearch] (~97k GitHub stars) propose, run and keep code changes but never read the literature, and ${S} can feed them verified, cited ideas and baselines and host such loops as plugins.`),
   P(`**Challenges.** **C1 Unification:** Python functions, prompt plugins, SKILL.md skills, MCP servers, CLI coding agents and specialised models must look the same to a single planner. **C2 Context:** one paper is 10–30k tokens; multi-paper workflows overflow the context window and multiply cost when text is re-sent. **C3 Grounding:** outputs must be verifiable at span level, not merely "cited". **C4 Openness vs. safety:** third-party plugins, code execution, and documents that contain prompt injections. **C5 Evaluation:** outputs are open-ended and the API budget is a student budget.`),
   ...twoPanels(
     { file: "positioning.png", widthIn: 2.3, label: "(a) Intersection view" },
@@ -314,8 +317,8 @@ const body = [
   P(`First-party plugins may contain code; third-party plugins stay declarative compositions of existing capabilities, keeping Gloss's rule of never executing downloaded code. Code runs only in sandboxed delegates under approval and budget, MCP servers get scoped permissions, and document text and tool outputs are untrusted data that can never issue tool calls.`),
   H2("3.5  Plugin roadmap: upgrading existing modules and adding new ones"),
   P(`Gloss already ships ten built-in features and nine marketplace plugins (six more are listed as planned), but each is a one-shot prompt. Table 1 shows how they become v2 capabilities that agents can call, and which new plugins we add; each row gives the change and how it will be validated. The list is a candidate set, not a commitment: which plugins we finally implement, and in what order, will be decided by early prototyping and our progress. Together they cover every agentic capability in the project brief.`),
-  tcap("Table 1", "**Plugin roadmap.** Top: existing Gloss modules and how v2 upgrades them. Bottom: new plugins. Tier: C = attempted first, S = stretch. This is a candidate list; the final set depends on prototyping and progress. Dataset details are in Appendix C."),
-  table([2200, 3700, 2960, 500], ["Plugin (kind)", "What it does in v2", "Validation", "Tier"], plugins),
+  tcap("Table 1", "**Plugin roadmap.** Top: existing Gloss modules and how v2 upgrades them. Bottom: new plugins. Tier: C = attempted first, S = stretch. A candidate list: the final set depends on prototyping and progress (datasets: Appendix C)."),
+  table([2200, 3700, 2960, 500], ["Plugin (kind)", "What it does in v2", "Validation", "Tier"], plugins, { rowRules: true }),
 
   H1("4  Experimental Dataset Description and Evaluation Plan"),
   P(`**Data sources.** (a) The public benchmarks in Table 1, subsampled to 50–100 items each to fit the API budget. (b) *${S}-Route-100*: 100 heterogeneous research and study requests (find, compare, verify, reproduce, learn) labelled with their gold workflow and capabilities and cross-checked by group members. (c) Slides and notes from this course. (d) A fault-injection suite: offline network, provider timeouts, malformed PDFs, failing plugins, and instructions injected into documents.`),
