@@ -242,11 +242,14 @@ const benches = [
   [`${S}-Route-100 (ours)`, "100 heterogeneous requests with gold workflow/capabilities", "routing and tool selection across plugins", "100"],
 ];
 const timeline = [
+  ["9 Oct", "proposal submitted", "all"],
   ["10 Oct – 19 Oct", "kernel, Capability ABI, v1→v2 adapter, trace log", "Cai Jiechao (lead), Cai Zhuorui"],
   ["20 Oct – 2 Nov", "core loop, router/planner/verifier, context manager; MCP/Skills/CLI adapters", "Cai Jiechao, Cai Zhuorui, Sun Zhiwei"],
-  ["3 Nov – 16 Nov", "literature review, cross-paper QA, reproduction and tutor workflows; new sources", "Cai Zhuorui, Sun Zhiwei, Zhang Guanyi"],
-  ["10 Nov – 23 Nov", `benchmark harness, ${S}-Route-100, fault injection, ablations`, "Zhang Guanyi (eval lead), all"],
-  ["24 Nov – end", "stretch plugins, report, presentation demo", "all"],
+  ["3 Nov – 16 Nov", "prototype candidate plugins (Table 1) and choose which to complete", "Cai Zhuorui, Sun Zhiwei, Zhang Guanyi"],
+  ["10 Nov – 24 Nov", `benchmark harness, ${S}-Route-100, fault injection, ablations`, "Zhang Guanyi (eval lead), all"],
+  ["25 Nov – 30 Nov", "feature freeze, end-to-end demo and rehearsal", "all"],
+  ["1 or 8 Dec", "Demo Day (provisional; session to be announced)", "all"],
+  ["Dec – report due (TBD)", "final experiments, report and code release", "all"],
 ];
 const manifest = `{
   "api_version": 2,
@@ -310,8 +313,8 @@ const body = [
   H2("3.4  Openness vs. safety (C4)"),
   P(`First-party plugins may contain code; third-party plugins stay declarative compositions of existing capabilities, keeping Gloss's rule of never executing downloaded code. Code runs only in sandboxed delegates under approval and budget, MCP servers get scoped permissions, and document text and tool outputs are untrusted data that can never issue tool calls.`),
   H2("3.5  Plugin roadmap: upgrading existing modules and adding new ones"),
-  P(`Gloss already ships ten built-in features and nine marketplace plugins (six more are listed as planned), but each is a one-shot prompt. Table 1 shows how they become v2 capabilities that agents can call, and which new plugins we add; each row gives the change and how it will be validated. Together they cover every agentic capability in the project brief, including multi-agent collaboration and error recovery.`),
-  tcap("Table 1", "**Plugin roadmap.** Top: existing Gloss modules and how v2 upgrades them. Bottom: new plugins. Tier: C = core, S = stretch. Dataset details are in Appendix C."),
+  P(`Gloss already ships ten built-in features and nine marketplace plugins (six more are listed as planned), but each is a one-shot prompt. Table 1 shows how they become v2 capabilities that agents can call, and which new plugins we add; each row gives the change and how it will be validated. The list is a candidate set, not a commitment: which plugins we finally implement, and in what order, will be decided by early prototyping and our progress. Together they cover every agentic capability in the project brief.`),
+  tcap("Table 1", "**Plugin roadmap.** Top: existing Gloss modules and how v2 upgrades them. Bottom: new plugins. Tier: C = attempted first, S = stretch. This is a candidate list; the final set depends on prototyping and progress. Dataset details are in Appendix C."),
   table([2200, 3700, 2960, 500], ["Plugin (kind)", "What it does in v2", "Validation", "Tier"], plugins),
 
   H1("4  Experimental Dataset Description and Evaluation Plan"),
@@ -346,7 +349,7 @@ const body = [
   bullet("**API access and budget.** Jev access is uncertain; the decider ABI falls back to a small LLM with a JSON schema. Benchmarks are subsampled, and costs are tracked per run."),
   bullet("**Judge bias and contamination.** LLM judges are spot-checked by humans, and older benchmarks may appear in model training data, so we also include 2026 benchmarks and our own tasks."),
   bullet("**Coding-agent cost and safety.** Reproduction runs are sandboxed, capped by budget and limited to a few papers."),
-  bullet("**Scope.** Core rows of Table 1 are prioritised; stretch plugins are explicitly optional."),
+  bullet("**Scope.** Table 1 is a candidate list. C rows are attempted first, and plugins are added, merged or dropped according to prototyping results and progress."),
 ];
 
 const doc = new Document({

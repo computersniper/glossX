@@ -111,7 +111,7 @@ Students and researchers switch between a PDF reader, a reference manager, a cha
 \end{figure}
 
 \begin{table}[!t]
-  \caption{\textbf{Plugin roadmap.} Top: existing \gloss{} modules and how v2 upgrades them. Bottom: new plugins. Tier: \textbf{C} = core, S = stretch. Dataset details are in App.~\ref{app:bench}.}
+  \caption{\textbf{Plugin roadmap.} Top: existing \gloss{} modules and how v2 upgrades them. Bottom: new plugins. Tier: \textbf{C} = attempted first, S = stretch. This is a candidate list; the final set depends on prototyping and progress. Dataset details are in App.~\ref{app:bench}.}
   \label{tab:plugins}
   \centering
   \scriptsize
@@ -169,7 +169,7 @@ Because the loop and the decider are plugins too, a ReAct loop~\cite{yao2023reac
 First-party plugins may contain code; third-party plugins stay declarative compositions of existing capabilities, keeping \gloss{}'s rule of never executing downloaded code. Code runs only in sandboxed delegates under approval and budget, MCP servers get scoped permissions, and document text and tool outputs are untrusted data that can never issue tool calls.
 
 \subsection{Plugin roadmap: upgrading existing modules and adding new ones}
-\gloss{} already ships ten built-in features and nine marketplace plugins (six more are listed as planned), but each is a one-shot prompt. Table~\ref{tab:plugins} shows how they become v2 capabilities that agents can call, and which new plugins we add; each row gives the change and how it will be validated. Together they cover every agentic capability in the project brief, including multi-agent collaboration and error recovery.
+\gloss{} already ships ten built-in features and nine marketplace plugins (six more are listed as planned), but each is a one-shot prompt. Table~\ref{tab:plugins} shows how they become v2 capabilities that agents can call, and which new plugins we add; each row gives the change and how it will be validated. The list is a candidate set, not a commitment: which plugins we finally implement, and in what order, will be decided by early prototyping and our progress. Together they cover every agentic capability in the project brief.
 
 
 % =====================================================================
@@ -265,15 +265,18 @@ Version-1 manifests remain valid; \texttt{kind}, \texttt{capability} and \texttt
 \begin{table}[H]
   \centering
   \scriptsize
-  \begin{tabularx}{\textwidth}{@{}p{2.3cm}Xp{3.2cm}@{}}
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.7cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{4.4cm}@{}}
     \toprule
     \textbf{Weeks (2026)} & \textbf{Milestone} & \textbf{Owner(s)} \\
     \midrule
+    9 Oct & proposal submitted & all \\
     10 Oct -- 19 Oct & kernel, Capability ABI, v1$\to$v2 adapter, trace log & Cai Jiechao (lead), Cai Zhuorui \\
     20 Oct -- 2 Nov & core loop, router/planner/verifier, context manager; MCP/Skills/CLI adapters & Cai Jiechao, Cai Zhuorui, Sun Zhiwei \\
-    3 Nov -- 16 Nov & literature review, cross-paper QA, reproduction and tutor workflows; new sources & Cai Zhuorui, Sun Zhiwei, Zhang Guanyi \\
-    10 Nov -- 23 Nov & benchmark harness, \sysname{}-Route-100, fault injection, ablations & Zhang Guanyi (eval lead), all \\
-    24 Nov -- end & stretch plugins, report, presentation demo & all \\
+    3 Nov -- 16 Nov & prototype candidate plugins (Table~\ref{tab:plugins}) and choose which to complete & Cai Zhuorui, Sun Zhiwei, Zhang Guanyi \\
+    10 Nov -- 24 Nov & benchmark harness, \sysname{}-Route-100, fault injection, ablations & Zhang Guanyi (eval lead), all \\
+    25 Nov -- 30 Nov & feature freeze, end-to-end demo and rehearsal & all \\
+    1 or 8 Dec & Demo Day (provisional; session to be announced) & all \\
+    Dec -- report due (TBD) & final experiments, report and code release & all \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -283,7 +286,7 @@ Version-1 manifests remain valid; \texttt{kind}, \texttt{capability} and \texttt
   \item \textbf{API access and budget.} Jev access is uncertain; the decider ABI falls back to a small LLM with a JSON schema. Benchmarks are subsampled, and costs are tracked per run.
   \item \textbf{Judge bias and contamination.} LLM judges are spot-checked by humans, and older benchmarks may appear in model training data, so we also include 2026 benchmarks and our own tasks.
   \item \textbf{Coding-agent cost and safety.} Reproduction runs are sandboxed, capped by budget and limited to a few papers.
-  \item \textbf{Scope.} Core rows of Table~\ref{tab:plugins} are prioritised; stretch plugins are explicitly optional.
+  \item \textbf{Scope.} Table~\ref{tab:plugins} is a candidate list. C rows are attempted first, and plugins are added, merged or dropped according to prototyping results and progress.
 \end{itemize}
 
 \end{document}
