@@ -166,14 +166,19 @@ const tcap = (label, text) => new Paragraph({
 
 // ---------- content ----------
 const S = SYS;
-const members = [1, 2, 3, 4].map((i) => [`Member Name ${i}${i === 1 ? "*" : ""}`, "UID: 3036xxxxxx", "email@connect.hku.hk"]);
+const members = [
+  ["Cai Jiechao*", "UID: u3679152"],
+  ["Cai Zhuorui", "UID: u3679195"],
+  ["Sun Zhiwei", "UID: u3679115"],
+  ["Zhang Guanyi", "UID: u3679381"],
+];
 const memberTable = new Table({
   width: { size: 9360, type: WidthType.DXA }, columnWidths: [2340, 2340, 2340, 2340], layout: TableLayoutType.FIXED,
   rows: [new TableRow({ children: members.map((m) => new TableCell({
     width: { size: 2340, type: WidthType.DXA },
     borders: { top: none, bottom: none, left: none, right: none },
     children: m.map((line, j) => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 0 },
-      children: [new TextRun({ text: line, font: j === 2 ? MONO : FONT, size: j === 2 ? 17 : BODY, bold: j === 0 })] })),
+      children: [new TextRun({ text: line, font: FONT, size: j === 2 ? 17 : BODY, bold: j === 0 })] })),
   })) })],
 });
 
@@ -203,10 +208,10 @@ const benches = [
   [`${S}-Route-100 (ours)`, "100 heterogeneous requests with gold workflow/capabilities", "routing and tool selection across plugins", "100"],
 ];
 const timeline = [
-  ["10 Oct – 19 Oct", "kernel, Capability ABI, v1→v2 adapter, trace log", "Member 1 (lead), Member 2"],
-  ["20 Oct – 2 Nov", "core loop, router/planner/verifier, context manager; MCP/Skills/CLI adapters", "Members 1–3"],
-  ["3 Nov – 16 Nov", "literature review, cross-paper QA, reproduction and tutor workflows; new sources", "Members 2–4"],
-  ["10 Nov – 23 Nov", `benchmark harness, ${S}-Route-100, fault injection, ablations`, "Member 4 (eval lead), all"],
+  ["10 Oct – 19 Oct", "kernel, Capability ABI, v1→v2 adapter, trace log", "Cai Jiechao (lead), Cai Zhuorui"],
+  ["20 Oct – 2 Nov", "core loop, router/planner/verifier, context manager; MCP/Skills/CLI adapters", "Cai Jiechao, Cai Zhuorui, Sun Zhiwei"],
+  ["3 Nov – 16 Nov", "literature review, cross-paper QA, reproduction and tutor workflows; new sources", "Cai Zhuorui, Sun Zhiwei, Zhang Guanyi"],
+  ["10 Nov – 23 Nov", `benchmark harness, ${S}-Route-100, fault injection, ablations`, "Zhang Guanyi (eval lead), all"],
   ["24 Nov – end", "stretch plugins, report, presentation demo", "all"],
 ];
 const manifest = `{
@@ -242,8 +247,10 @@ const body = [
     children: [new TextRun({ text: `${S}: An Open, Plugin-Native Agent Harness`, bold: true, font: FONT, size: 34 }),
                new TextRun({ text: "for Research and Learning", bold: true, font: FONT, size: 34, break: 1 })] }),
   memberTable,
-  new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 60, after: 200 },
-    children: [new TextRun({ text: "* Contact member. (TODO: fill in 3–5 members.)", font: FONT, size: SMALL, italics: true })] }),
+  new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 40 },
+    children: [new TextRun({ text: "The University of Hong Kong", font: FONT, size: BODY, bold: true })] }),
+  new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 40, after: 200 },
+    children: [new TextRun({ text: "* Contact member: ", font: FONT, size: SMALL, italics: true }), new TextRun({ text: "u3679152@connect.hku.hk", font: MONO, size: SMALL })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new TextRun({ text: "Abstract", bold: true, font: FONT, size: 24 })] }),
   P(`Research and study are long, tool-heavy activities—finding, reading, comparing, verifying, reproducing and learning—yet today's agents specialise elsewhere: coding agents (Claude Code, Codex), office agents (WorkBuddy) and personal assistants (Meta Muse, OpenAI Dots). We propose ${S}, which evolves Gloss, our released open-source paper reader, into an *open, plugin-native agent harness for research and learning*. A small kernel exposes one *Capability ABI* through which document sources, tools, sub-agents, loops, deciders, memories, Agent Skills, MCP servers and coding agents are all mounted as plugins. A core agent routes each request to a workflow, plans a typed step graph, executes sub-agents in parallel, verifies every claim against source spans and reflects until an explicit stop condition holds, while a tiered context manager passes pointers instead of text. We will evaluate on PaperArena, AutoResearchBench, LitSearch, ScholarQABench, QASPER, SciFact, PaperBench Code-Dev and TutorBench, plus harness-level tests of routing, robustness, cost and extensibility.`,
     { indent: { left: 720, right: 720 }, after: 200 }),
