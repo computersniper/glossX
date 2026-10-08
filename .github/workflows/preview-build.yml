@@ -1,0 +1,72 @@
+name: Preview build
+
+# Builds downloadable preview packages for private development forks such as
+# GlossX. Nothing is published: the Windows executable and the npm tarball are
+# kept as workflow artifacts that expire after 14 days.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [glossX-dev]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "packaging/**"
+      - "scripts/**"
+      - "package.json"
+      - ".github/workflows/preview-build.yml"
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-exe:
+    # The public repository uses release.yml instead.
+    if: github.repository != 'computersniper/gloss'
+    name: Windows x64 executable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            packaging/requirements-build.txt
+      - name: Build portable Windows executable
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - name: Smoke test Windows executable
+        shell: pwsh
+        run: ./dist/Gloss.exe --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GlossX-windows-x64
+          path: dist/Gloss.exe
+          retention-days: 14
+
+  npm-package:
+    if: github.repository != 'computersniper/gloss'
+    name: npm package (macOS / Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build npm tarball
+        run: npm pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GlossX-npm-package
+          path: gloss-local-*.tgz
+          retention-days: 14
