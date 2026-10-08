@@ -16,11 +16,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
+from .agent.runs import AgentRunManager
 from .library import store
 from .library.import_jobs import ImportJobManager
 from .providers import registry
 from .tasks import AITaskManager
 from .routers import (
+    agent,
     ai,
     annotations,
     citations,
@@ -44,9 +46,11 @@ async def lifespan(app: FastAPI):
         save_timeout=papers.IMPORT_SAVE_TIMEOUT,
     )
     app.state.ai_tasks = AITaskManager()
+    app.state.agent_runs = AgentRunManager(import_jobs=app.state.import_jobs)
     try:
         yield
     finally:
+        await app.state.agent_runs.shutdown()
         await app.state.ai_tasks.shutdown()
         try:
             await asyncio.wait_for(app.state.import_jobs.shutdown(), timeout=20)
@@ -88,6 +92,7 @@ app.include_router(skills.router)
 app.include_router(settings.router)
 app.include_router(usage.router)
 app.include_router(tasks.router)
+app.include_router(agent.router)
 
 
 # ---------------------------------------------------------------------------

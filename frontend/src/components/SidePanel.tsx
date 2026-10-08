@@ -4,6 +4,7 @@ import { SummaryPanel } from "./SummaryPanel";
 import { ExplainPanel } from "./ExplainPanel";
 import { TranslatePanel } from "./TranslatePanel";
 import { ChatPanel } from "./ChatPanel";
+import { AgentPanel } from "./AgentPanel";
 import { HighlightsPanel } from "./HighlightsPanel";
 import { ReferencesPanel } from "./ReferencesPanel";
 import { ScholarPanel } from "./ScholarPanel";
@@ -33,6 +34,7 @@ const TABS: TabDefinition[] = [
   { id: "notes", en: "Notes", zh: "我的笔记", C: PersonalNotesPanel },
   { id: "mindmap", en: "Mind Map", zh: "思维导图", C: MindMapPanel },
   { id: "chat", en: "Chat", zh: "对话", C: ChatPanel },
+  { id: "agent", en: "Agent", zh: "智能体", C: AgentPanel },
   { id: "explain", en: "Explain", zh: "解释", C: ExplainPanel },
   { id: "translate", en: "Translate", zh: "翻译", C: TranslatePanel },
   { id: "tex", en: "TeX", zh: "TeX 源码", C: TexPanel, arxivOnly: true },
