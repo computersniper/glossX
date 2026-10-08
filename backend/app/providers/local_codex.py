@@ -34,6 +34,44 @@ def _cfg() -> dict:
     return load_config()["providers"]["local_codex"]
 
 
+# Benign warnings the CLI prints on every run; they never explain a failure.
+_NOISE_MARKERS = ("failed to load models cache",)
+
+
+def _failure_detail(err: bytes, out: bytes, prompt: str, limit: int = 1500) -> str:
+    """Return the part of a failed ``codex exec`` run that explains the failure.
+
+    The CLI echoes its whole banner and the user prompt to stderr before the
+    actual error, so a plain head-truncation shows only the (long) prompt.
+    Drop the echoed prompt and banner, prefer explicit error lines, and keep
+    the tail of the remaining output.
+    """
+    text = err.decode(errors="replace")
+    if prompt:
+        text = text.replace(prompt, "")
+    lines = [line.rstrip() for line in text.splitlines()]
+    banner_ends = [i for i, line in enumerate(lines) if line.strip() == "--------"]
+    if len(banner_ends) >= 2:
+        lines = lines[banner_ends[1] + 1:]
+    lines = [
+        line for line in lines
+        if line.strip() and line.strip() != "user"
+        and not any(marker in line for marker in _NOISE_MARKERS)
+    ]
+    errors = [line for line in lines if "error" in line.lower()]
+    tail = "\n".join(lines[-12:])
+    out_tail = out.decode(errors="replace").strip()[-500:]
+    parts = []
+    if errors:
+        parts.append("\n".join(dict.fromkeys(errors[-6:])))
+    if tail and tail not in parts[0:1]:
+        parts.append(tail)
+    if out_tail:
+        parts.append(out_tail)
+    detail = "\n".join(parts).strip()
+    return detail[-limit:] if detail else "no error output"
+
+
 class CodexSessionUnavailableError(ProviderSessionUnavailableError):
     """Raised when a previously recorded Codex session can no longer be resumed."""
 
@@ -215,7 +253,7 @@ class LocalCodexProvider(Provider):
                 await terminate_process_tree(proc)
                 raise RuntimeError(f"codex CLI timed out after {timeout}s")
             if proc.returncode != 0:
-                detail = (err + b"\n" + out).decode(errors="replace")[:4000]
+                detail = _failure_detail(err, out, prompt)
                 if session_id and _session_is_unavailable(detail):
                     raise CodexSessionUnavailableError(detail)
                 raise RuntimeError(f"codex CLI exited {proc.returncode}: {detail}")
