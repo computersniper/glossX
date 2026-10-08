@@ -45,9 +45,9 @@
 \author{%
   Cai Jiechao\thanks{Contact member: \texttt{u3679152@connect.hku.hk}} \\ UID: 3036791526
   \And
-  Cai Zhuorui \\ UID: 3036xxxxxx
+  Cai Zhuorui \\ UID: 3036791954
   \And
-  Sun Zhiwei \\ UID: 3036xxxxxx
+  Sun Zhiwei \\ UID: 3036791150
   \And
   Zhang Guanyi \\ UID: 3036793811
   \AND
@@ -62,7 +62,7 @@
 \section{Project Objective}
 \label{sec:objective}
 
-\textbf{What \gloss{} is today.} \gloss{}~\cite{gloss2026} is our open-source, self-hosted AI reading companion, a local re-implementation of the Moonlight~\cite{moonlight} idea (v1.0.2, July 2026), available as a Windows desktop app and as an npm package for macOS and Linux. A FastAPI backend serves a React reader built on PDF.js~\cite{pdfjs} and PyMuPDF~\cite{pymupdf}, and drives four interchangeable providers: the local Claude Code~\cite{claudecode} and Codex~\cite{codex} CLIs, the Anthropic API, and any OpenAI-compatible endpoint (e.g., HKU's GenAI service or vLLM). Its features are grounded in the paper: structured summaries; deep reading notes in the style of the DeepPaperNote skill~\cite{deeppapernote2026}; an interactive React Flow~\cite{xyflow} mind map inspired by Understand-Anything~\cite{understandanything2026} (${\sim}$85k GitHub stars); cached sentence-level translation; BM25-grounded chat; PDF-anchored auto-highlights; Crossref/arXiv reference resolution; and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace with nine plugins, a structure similar to DSH's ``everything is a plugin'' design~\cite{dsh2026} but released earlier: \gloss{} v1.0.1 shipped it on 21 July 2026, three weeks before DSH appeared on 13 August.
+\textbf{What \gloss{} is today.} \gloss{}~\cite{gloss2026} is our open-source, self-hosted AI reading companion, a local re-implementation of the Moonlight~\cite{moonlight} idea (v1.0.2, July 2026), available as a Windows desktop app and as an npm package for macOS and Linux, including remote servers reached over SSH. A FastAPI backend serves a React reader built on PDF.js~\cite{pdfjs} and PyMuPDF~\cite{pymupdf}, and drives four interchangeable providers: the local Claude Code~\cite{claudecode} and Codex~\cite{codex} CLIs, the Anthropic API, and any OpenAI-compatible endpoint (e.g., HKU's GenAI service or vLLM). Its features are grounded in the paper: structured summaries; deep reading notes in the style of the DeepPaperNote skill~\cite{deeppapernote2026}; an interactive React Flow~\cite{xyflow} mind map inspired by Understand-Anything~\cite{understandanything2026} (${\sim}$85k GitHub stars); cached sentence-level translation; BM25-grounded chat; PDF-anchored auto-highlights; Crossref/arXiv reference resolution; and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace with nine plugins, a structure similar to DSH's ``everything is a plugin'' design~\cite{dsh2026} but released earlier: \gloss{} v1.0.1 shipped it on 21 July 2026, three weeks before DSH appeared on 13 August.
 
 \textbf{The gap.} \gloss{} is not yet an agent. Every feature is a single-prompt pipeline and the \emph{user} is the planner. Plugins are prompt templates that cannot call tools or each other. The local CLIs run with all tools disabled, so their coding ability is unused.
 
@@ -92,14 +92,14 @@
   \vspace{-8pt}
 \end{figure}
 
-Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78--90\% of its citations~\cite{asai2024openscholar}, and a recent survey names verification as the main gap of AI-scientist systems~\cite{ding2026verification}. The tasks are also hard: the best agentic workflow scores only 38.8\% on cross-paper PaperArena questions~\cite{wang2025paperarena}. Figure~\ref{fig:positioning} shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents~\cite{workbuddy2026} and assistants~\cite{muse2026,dots2026} act on apps and errands rather than scholarly corpora. Research tools (OpenScholar~\cite{asai2024openscholar}, PaperQA2~\cite{skarlinski2024paperqa2}, NotebookLM~\cite{notebooklm}) are closed, single-workflow systems. Open harnesses such as DSH~\cite{dsh2026} are domain-agnostic. \sysname{} targets the intersection: a research-and-learning harness that is open like DSH and \emph{delegates} code to existing coding agents instead of re-implementing them. It also advances \emph{automated research}, supplying the grounded, verifiable steps that AI-scientist systems lack~\cite{ding2026verification}.
+Students and researchers switch between a PDF reader, a reference manager, a chatbot, a coding agent and an office suite, and they glue the results together by hand. General agents produce fluent but unverifiable text: on ScholarQABench, GPT-4o fabricates 78--90\% of its citations~\cite{asai2024openscholar}, and a recent survey names verification as the main gap of AI-scientist systems~\cite{ding2026verification}. The tasks are also hard: the best agentic workflow scores only 38.8\% on cross-paper PaperArena questions~\cite{wang2025paperarena}. Figure~\ref{fig:positioning} shows the gap in the market. Coding agents master code but have no notion of sources or evidence. Office agents~\cite{workbuddy2026} and assistants~\cite{muse2026,dots2026} act on apps and errands rather than scholarly corpora. Research tools (OpenScholar~\cite{asai2024openscholar}, PaperQA2~\cite{skarlinski2024paperqa2}, NotebookLM~\cite{notebooklm}) are closed, single-workflow systems. Open harnesses such as DSH~\cite{dsh2026} are domain-agnostic. \sysname{} targets the intersection: a research-and-learning harness that is open like DSH and, because it is built on Claude Code and Codex, natively inherits their strong coding ability instead of re-implementing it. It also advances \emph{automated research}, supplying the grounded, verifiable steps that AI-scientist systems lack~\cite{ding2026verification}.
 
 \textbf{Challenges.}
 \textbf{C1 Unification:} Python functions, prompt plugins, SKILL.md skills, MCP servers, CLI coding agents and specialised models must look the same to a single planner.
 \textbf{C2 Context:} one paper is 10--30k tokens; multi-paper workflows overflow the context window and multiply cost when text is re-sent.
 \textbf{C3 Grounding:} outputs must be verifiable at span level, not merely ``cited''.
 \textbf{C4 Openness vs.\ safety:} third-party plugins, code execution, and documents that contain prompt injections.
-\textbf{C5 Evaluation:} outputs are open-ended and the API budget is a student budget.
+\textbf{C5 Cost:} multi-step, multi-agent runs multiply tokens, API calls and GPU time, on a student budget.
 
 % =====================================================================
 \section{Potential Solutions: the \sysname{} Approach and Methodology}
@@ -133,7 +133,7 @@ Students and researchers switch between a PDF reader, a reference manager, a cha
     \rowrule
     Evidence Table, Critical Review (\textit{agent}) & every row and critique is checked against spans; conflicts across papers are flagged & ArxivDIGESTables~\cite{newman2024arxivdigestables}; ScholarQABench citation P/R & C \\
     \rowrule
-    Repro.\ Checklist, Impl.\ Blueprint (\textit{workflow}) & checklist $\to$ plan $\to$ code and run via Claude Code/Codex in a sandbox $\to$ compare with reported numbers & PaperBench Code-Dev~\cite{starace2025paperbench} rubric (3--5 papers) & C \\
+    Repro.\ Checklist, Impl.\ Blueprint (\textit{workflow}) & checklist $\to$ plan $\to$ code and run via Claude Code/Codex run locally or on remote GPUs via SSH $\to$ compare with reported numbers & PaperBench Code-Dev~\cite{starace2025paperbench} rubric (3--5 papers) & C \\
     \rowrule
     Reading Plan, Glossary, Guides, Outline (\textit{workflow}) & one study-and-tutor workflow over papers, slides and notes: concept map $\to$ quiz $\to$ adapt to a learner model & TutorBench~\cite{srinivasa2025tutorbench} subset; course slides, human rating & C \\
     \rowrule
@@ -159,12 +159,12 @@ Students and researchers switch between a PDF reader, a reference manager, a cha
 \end{table}
 
 \subsection{Everything is a plugin: one Capability ABI (C1)}
-The kernel is deliberately small: a capability registry, a scheduler (\gloss{}'s existing task manager, which already supports unbounded concurrency, cancellation and progress), a permission and sandbox gate, a budget meter (the existing usage ledger), and a trace log (Fig.~\ref{fig:arch}). Everything else is a plugin with a manifest (\texttt{api\_version: 2}, \texttt{kind} $\in$ \{source, tool, agent, loop, decider, workflow, memory, provider, view\}; example in App.~\ref{app:manifest}). Adapters compile every plugin into a \emph{Capability} $\langle$card, I/O schema, requirements, permissions, cost and side-effect hints, handler$\rangle$. The \emph{card} is a description of at most 100 tokens that the planner sees; the full schema and instructions are loaded only when the capability is selected (progressive disclosure, as in Agent Skills~\cite{agentskills2025}). There are five adapters:
+The kernel is deliberately small: a capability registry, a scheduler (\gloss{}'s existing task manager, which already supports unbounded concurrency, cancellation and progress), a permission and sandbox gate, a budget meter (the existing usage ledger), and a trace log (Fig.~\ref{fig:arch}). Everything else is a plugin with a manifest (\texttt{api\_version: 2}, \texttt{kind} $\in$ \{source, tool, agent, loop, decider, workflow, memory, provider, view\}; example in App.~\ref{app:manifest}). Adapters compile every plugin into a \emph{Capability} $\langle$card, I/O schema, requirements, permissions, cost and side-effect hints, handler$\rangle$. The \emph{card} is a description of at most 100 tokens that the planner sees; the full schema and instructions are loaded only when the capability is selected (progressive disclosure, as in Agent Skills~\cite{agentskills2025}). There are six adapters:
 (i)~\emph{native Python} for trusted first-party plugins;
 (ii)~\emph{declarative manifests}, so all nine v1 plugins upgrade automatically into tools whose prompt becomes the handler;
 (iii)~\emph{SKILL.md} skills;
 (iv)~\emph{MCP}~\cite{mcp2024}, where \sysname{} is both a client (e.g., Zotero and arXiv servers become tools) and a server (exposing the library and spans);
-(v)~\emph{CLI agents}, where Claude Code and Codex become sandboxed \texttt{delegate} tools with their tools enabled in a per-project workspace.
+(v)~\emph{CLI agents}, where Claude Code and Codex become sandboxed \texttt{delegate} tools with their tools enabled in a per-project workspace; (vi)~\emph{remote environments}, which reach GPU servers and clusters over SSH so that experiments run where the compute is.
 Because the loop and the decider are plugins too, a ReAct loop~\cite{yao2023react}, a plan--execute--verify loop, or a Jev-backed decider~\cite{jev2026} can be swapped in without touching the kernel.
 
 \subsection{How the core agent invokes plugins}
@@ -181,7 +181,7 @@ Because the loop and the decider are plugins too, a ReAct loop~\cite{yao2023reac
 \textbf{Long-term memory} covers the library, project memory (findings, decisions, preferences), a learner model, and SKILL.md files distilled from successful traces for reuse in later tasks.
 
 \subsection{Openness vs.\ safety (C4)}
-First-party plugins may contain code; third-party plugins stay declarative compositions of existing capabilities, keeping \gloss{}'s rule of never executing downloaded code. Code runs only in sandboxed delegates under approval and budget, MCP servers get scoped permissions, and document text and tool outputs are untrusted data that can never issue tool calls.
+First-party plugins may contain code; third-party plugins stay declarative compositions of existing capabilities, keeping \gloss{}'s rule of never executing downloaded code. Code and remote GPU jobs run only in sandboxed delegates under approval and budget, MCP servers get scoped permissions, and document text and tool outputs are untrusted data that can never issue tool calls.
 
 \subsection{Plugin roadmap: upgrading existing modules and adding new ones}
 \gloss{} already ships ten built-in features and nine marketplace plugins (six more are listed as planned), but each is a one-shot prompt. Table~\ref{tab:plugins} shows how they become v2 capabilities that agents can call, and which new plugins we add; each row gives the change and how it will be validated. The list is a candidate set, not a commitment: which plugins we finally implement, and in what order, will be decided by early prototyping and our progress. Together they cover every agentic capability in the project brief.

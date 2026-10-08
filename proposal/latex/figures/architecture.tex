@@ -47,10 +47,12 @@
   % ---------------- adapters ----------------
   \foreach \i/\t in {0/{Native Python\\{\tiny first-party}}, 1/{Declarative\\manifest {\tiny v1$\to$v2}},
                      2/{Agent Skills\\{\tiny SKILL.md}}, 3/{MCP\\{\tiny client + server}},
-                     4/{CLI agents\\{\tiny Claude Code, Codex}}, 5/{LLM providers\\{\tiny Claude, GPT/HKU, vLLM}}}
-    \node[adp] (a\i) at ({1.0+\i*2.42},1.2) {\t};
+                     4/{CLI agents\\{\tiny Claude Code/Codex}}, 5/{LLM providers\\{\tiny Claude, GPT, vLLM}}}
+    \node[adp, minimum width=1.86cm] (a\i) at ({0.95+\i*2.04},1.2) {\t};
+  \node[adp, minimum width=1.86cm, fill=glred!7, draw=glred] (a6) at ({0.95+6*2.04},1.2)
+    {\textbf{Remote (SSH)}\\{\tiny GPU servers, clusters}};
   \begin{scope}[on background layer]
-    \node[frame=glgreen!80!black, fit=(a0)(a5), inner ysep=7pt, yshift=-2pt] (aframe) {};
+    \node[frame=glgreen!80!black, fit=(a0)(a6), inner ysep=7pt, yshift=-2pt] (aframe) {};
   \end{scope}
   \node[framelabel=glgreen!70!black, anchor=west] at ($(aframe.south west)+(0.15,0)$)
     {Adapters $\Rightarrow$ one Capability ABI: $\langle$card, I/O schema, permissions, cost, handler$\rangle$};
