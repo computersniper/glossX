@@ -1,14 +1,15 @@
 {
-  "name": "gloss-local",
+  "name": "glossx-local",
   "version": "1.0.2",
-  "description": "A local, self-hosted AI companion for reading and annotating research papers.",
+  "description": "GlossX, the agent-harness edition of Gloss: a local, self-hosted AI companion for reading and annotating research papers.",
   "type": "module",
   "bin": {
-    "gloss": "scripts/gloss.mjs",
-    "gloss-local": "scripts/gloss.mjs"
+    "glossx": "scripts/gloss.mjs",
+    "glossx-local": "scripts/gloss.mjs"
   },
   "files": [
     "backend/app/**/*.py",
+    "backend/app/**/*.json",
     "backend/requirements.txt",
     "frontend/dist/**",
     "scripts/gloss.mjs",

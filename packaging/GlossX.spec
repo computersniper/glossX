@@ -13,6 +13,8 @@ a = Analysis(
     datas=[
         (str(project_root / "frontend" / "dist"), "frontend/dist"),
         (str(project_root / "packaging" / "gloss.ico"), "packaging"),
+        # Built-in GlossX workflow manifests are read from disk at runtime.
+        (str(project_root / "backend" / "app" / "agent" / "workflows"), "app/agent/workflows"),
     ],
     hiddenimports=[
         "webview",
@@ -32,14 +34,14 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # Gloss does not use packaging/build APIs at runtime. Excluding these also
+    # GlossX does not use packaging/build APIs at runtime. Excluding these also
     # avoids PyInstaller's pkg_resources hook pulling setuptools' optional
     # ``backports`` namespace into the portable executable.
     excludes=[
         "pkg_resources",
         "setuptools",
         "_distutils_hack",
-        # Gloss deliberately uses Edge WebView2. Do not let Qt packages from
+        # GlossX deliberately uses Edge WebView2. Do not let Qt packages from
         # the Python installation influence the frozen desktop application.
         "PyQt5",
         "PyQt6",
@@ -58,7 +60,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="Gloss",
+    name="GlossX",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

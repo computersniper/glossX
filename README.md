@@ -1,3 +1,5 @@
+> **GlossX** is the agent-harness edition of Gloss, built for research and learning. See [docs/glossx-design.md](./docs/glossx-design.md) for the design. Preview builds (Windows `GlossX.exe` and the npm package) are available as artifacts of the "Preview build" workflow under the repository's Actions tab.
+
 <p align="center">
   <img src="./docs/logo.svg" width="84" alt="Gloss logo" />
 </p>

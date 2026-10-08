@@ -45,11 +45,11 @@ jobs:
         run: ./scripts/build-windows.ps1
       - name: Smoke test Windows executable
         shell: pwsh
-        run: ./dist/Gloss.exe --version
+        run: ./dist/GlossX.exe --version
       - uses: actions/upload-artifact@v4
         with:
           name: GlossX-windows-x64
-          path: dist/Gloss.exe
+          path: dist/GlossX.exe
           retention-days: 14
 
   npm-package:
@@ -68,5 +68,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: GlossX-npm-package
-          path: gloss-local-*.tgz
+          path: glossx-local-*.tgz
           retention-days: 14

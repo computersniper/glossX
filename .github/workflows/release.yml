@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_npm:
-        description: Publish gloss-local to npm (requires NPM_TOKEN)
+        description: Publish glossx-local to npm (requires NPM_TOKEN)
         required: false
         default: false
         type: boolean
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: npm-package
-          path: gloss-local-*.tgz
+          path: glossx-local-*.tgz
 
   source-archive:
     # Packaging and publishing only run on the public Gloss repository.
@@ -44,10 +44,10 @@ jobs:
         run: |
           mkdir release-assets
           git archive --format=tar.gz --prefix="Gloss-${GITHUB_REF_NAME#v}/" \
-            --output="release-assets/Gloss-source-${GITHUB_REF_NAME#v}.tar.gz" HEAD
+            --output="release-assets/GlossX-source-${GITHUB_REF_NAME#v}.tar.gz" HEAD
       - uses: actions/upload-artifact@v4
         with:
-          name: Gloss-source
+          name: GlossX-source
           path: release-assets/*
 
   desktop-package:
@@ -60,8 +60,8 @@ jobs:
         include:
           - arch: x64
             runner: windows-latest
-            artifact_name: Gloss-windows-x64
-            asset_name: Gloss-windows-x64.exe
+            artifact_name: GlossX-windows-x64
+            asset_name: GlossX-windows-x64.exe
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -82,15 +82,15 @@ jobs:
         run: ./scripts/build-windows.ps1
       - name: Smoke test Windows executable
         shell: pwsh
-        run: ./dist/Gloss.exe --version
+        run: ./dist/GlossX.exe --version
       - name: Create Windows release assets
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release-assets | Out-Null
-          Copy-Item dist/Gloss.exe "release-assets/${{ matrix.asset_name }}"
+          Copy-Item dist/GlossX.exe "release-assets/${{ matrix.asset_name }}"
           if ('${{ matrix.arch }}' -eq 'x64') {
             # Keep the original direct-download asset used by earlier README links.
-            Copy-Item dist/Gloss.exe release-assets/Gloss.exe
+            Copy-Item dist/GlossX.exe release-assets/GlossX.exe
           }
       - uses: actions/upload-artifact@v4
         with:
@@ -129,6 +129,6 @@ jobs:
           node-version: "24"
           registry-url: https://registry.npmjs.org
       - name: Publish npm package
-        run: npm publish gloss-local-*.tgz --access public
+        run: npm publish glossx-local-*.tgz --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

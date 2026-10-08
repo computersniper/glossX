@@ -31,7 +31,7 @@ const VENV_PYTHON = path.join(
 const SETUP_MARKER = path.join(VENV_DIR, ".gloss-ready");
 
 function fail(message) {
-  console.error(`Gloss: ${message}`);
+  console.error(`GlossX: ${message}`);
   process.exit(1);
 }
 
@@ -55,9 +55,9 @@ function cacheDir() {
   if (process.env.GLOSS_CACHE_DIR) return path.resolve(process.env.GLOSS_CACHE_DIR);
   if (IS_WINDOWS) {
     const local = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-    return path.join(local, "Gloss", "cache");
+    return path.join(local, "GlossX", "cache");
   }
-  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "gloss");
+  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "glossx");
 }
 
 function setupEnv() {
@@ -172,7 +172,7 @@ function setup() {
 
   if (IS_SOURCE_CHECKOUT || !fs.existsSync(path.join(FRONTEND, "dist", "index.html"))) {
     if (!fs.existsSync(path.join(FRONTEND, "package.json"))) {
-      fail("this package is missing its prebuilt frontend; reinstall Gloss or report a broken release.");
+      fail("this package is missing its prebuilt frontend; reinstall GlossX or report a broken release.");
     }
     const manager = packageManager();
     console.log(`==> installing and building frontend with ${manager}`);
@@ -192,7 +192,7 @@ function setup() {
   console.log(`==> ready. Cache: ${cacheDir()}`);
   console.log(IS_SOURCE_CHECKOUT
     ? "    Start with: npm start  (or bun run start)"
-    : "    Starting Gloss now...");
+    : "    Starting GlossX now...");
 }
 
 function selectedPort() {
@@ -212,7 +212,7 @@ function assertPrepared(requireFrontend = true) {
 
 function ensurePrepared() {
   if (!environmentPrepared() || !fs.existsSync(path.join(FRONTEND, "dist", "index.html"))) {
-    console.log("Gloss: first run setup (this only happens once per version)");
+    console.log("GlossX: first run setup (this only happens once per version)");
     setup();
   }
 }
@@ -233,7 +233,7 @@ async function start() {
   if (!(await portIsFree(host, port))) {
     fail(`port ${port} on ${host} is already in use. Set GLOSS_PORT or pass --port <number>.`);
   }
-  console.log(`Gloss: http://127.0.0.1:${port}`);
+  console.log(`GlossX: http://127.0.0.1:${port}`);
   const child = spawn(
     VENV_PYTHON,
     ["-m", "uvicorn", "app.main:app", "--host", host, "--port", String(port)],
@@ -257,7 +257,7 @@ function doctor() {
   };
   if (hasOption("--json")) console.log(JSON.stringify(report, null, 2));
   else {
-    console.log(`Gloss ${report.version}`);
+    console.log(`GlossX ${report.version}`);
     console.log(`Node: ${report.node}`);
     console.log(`Python: ${report.python ?? "missing (3.11+ required for npm installs)"}`);
     console.log(`Ready: ${report.prepared && report.frontend_built ? "yes" : "no"}`);
@@ -282,15 +282,15 @@ function selectPythonOrNull() {
 }
 
 function printHelp() {
-  console.log(`Gloss ${PACKAGE.version} - local AI paper reader
+  console.log(`GlossX ${PACKAGE.version} - local AI paper reader
 
 Usage:
-  gloss-local              install on first run, then start Gloss
-  gloss-local start        start the local web app
-  gloss-local setup        install or refresh local dependencies
-  gloss-local doctor       inspect this installation
-  gloss-local dev          run backend and frontend development servers
-  gloss-local test         run the project test suite
+  glossx-local              install on first run, then start GlossX
+  glossx-local start        start the local web app
+  glossx-local setup        install or refresh local dependencies
+  glossx-local doctor       inspect this installation
+  glossx-local dev          run backend and frontend development servers
+  glossx-local test         run the project test suite
 
 Options:
   --host <address>          bind address (default: 0.0.0.0)
@@ -328,7 +328,7 @@ function supervise(entries) {
   });
   for (const { child, name } of entries) {
     child.once("error", (error) => {
-      console.error(`Gloss: ${name} failed to start: ${error.message}`);
+      console.error(`GlossX: ${name} failed to start: ${error.message}`);
       stop(1);
     });
     child.once("exit", (code, signal) => {
@@ -376,4 +376,4 @@ else if (command === "start") await start();
 else if (command === "dev") dev();
 else if (command === "doctor") doctor();
 else if (command === "test") test();
-else fail("unknown command. Run gloss-local --help for usage.");
+else fail("unknown command. Run glossx-local --help for usage.");

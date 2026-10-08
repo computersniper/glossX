@@ -1,4 +1,4 @@
-"""Native Windows entry point for the self-contained Gloss desktop app."""
+"""Native Windows entry point for the self-contained GlossX desktop app."""
 
 from __future__ import annotations
 
@@ -16,11 +16,11 @@ from pathlib import Path
 from typing import Any
 
 
-APP_NAME = "Gloss"
+APP_NAME = "GlossX"
 APP_VERSION = "1.0.2"
 STARTUP_TIMEOUT_SECONDS = 30
 MIN_FALLBACK_PORT = 1024
-EXIT_REQUEST_EVENT = "gloss:close-request"
+EXIT_REQUEST_EVENT = "glossx:close-request"
 
 
 def _exit_confirmation_enabled() -> bool:
@@ -59,7 +59,7 @@ class DesktopBridge:
                 self._prompt_open = True
                 threading.Thread(
                     target=self._dispatch_close_request,
-                    name="gloss-close-prompt",
+                    name="glossx-close-prompt",
                     daemon=True,
                 ).start()
         # pywebview cancels a closing event when a handler returns False.
@@ -72,7 +72,7 @@ class DesktopBridge:
                 f"window.dispatchEvent(new CustomEvent('{EXIT_REQUEST_EVENT}'))"
             )
         except Exception:
-            logging.exception("Could not display the Gloss exit confirmation")
+            logging.exception("Could not display the GlossX exit confirmation")
             with self._lock:
                 self._prompt_open = False
 
@@ -158,7 +158,7 @@ def _select_available_port(host: str, preferred_port: int) -> int:
     for port in candidates:
         if _port_available(host, port):
             return port
-    raise RuntimeError("Gloss could not find an available local port.")
+    raise RuntimeError("GlossX could not find an available local port.")
 
 
 def _health_url(url: str) -> str:
@@ -189,7 +189,7 @@ def _start_server(app: Any, host: str, port: int) -> tuple[Any, threading.Thread
         log_config=None,
     )
     server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, name="gloss-backend", daemon=True)
+    thread = threading.Thread(target=server.run, name="glossx-backend", daemon=True)
     thread.start()
     return server, thread
 
@@ -218,7 +218,7 @@ def _run_desktop(url: str, storage_path: Path) -> None:
     bridge = DesktopBridge()
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
     window = webview.create_window(
-        "Gloss · 旁注",
+        "GlossX · 旁注",
         url=url,
         js_api=bridge,
         width=1500,
@@ -243,8 +243,8 @@ def _run_desktop(url: str, storage_path: Path) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Gloss.exe",
-        description="Start the Gloss desktop paper-reading companion.",
+        prog="GlossX.exe",
+        description="Start the GlossX desktop paper-reading companion.",
     )
     parser.add_argument("--host", default=os.environ.get("GLOSS_HOST", "127.0.0.1"))
     parser.add_argument(
@@ -281,7 +281,7 @@ def main() -> int:
         args.port = _select_available_port(args.host, requested_port)
         if args.port != requested_port:
             logging.info(
-                "Port %s was occupied; starting Gloss on port %s instead",
+                "Port %s was occupied; starting GlossX on port %s instead",
                 requested_port,
                 args.port,
             )
@@ -291,7 +291,7 @@ def main() -> int:
         server, server_thread = _start_server(app, args.host, args.port)
         if not _wait_until_ready(url, server_thread):
             _stop_server(server, server_thread)
-            raise RuntimeError("The local Gloss server did not become ready in time.")
+            raise RuntimeError("The local GlossX server did not become ready in time.")
 
         if args.headless:
             return _run_headless(server, server_thread)
@@ -302,9 +302,9 @@ def main() -> int:
             _stop_server(server, server_thread)
         return 0
     except Exception as exc:
-        logging.exception("Gloss desktop startup failed")
+        logging.exception("GlossX desktop startup failed")
         message = (
-            f"Gloss could not start.\n\n{exc}\n\n"
+            f"GlossX could not start.\n\n{exc}\n\n"
             "Microsoft Edge WebView2 Runtime is required. "
             f"Details were written to:\n{log_path}"
         )

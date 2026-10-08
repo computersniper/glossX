@@ -20,10 +20,10 @@ try {
     & $buildPython -m pip install -r backend/requirements.txt -r packaging/requirements-build.txt
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    & $buildPython -m PyInstaller --noconfirm --clean packaging/Gloss.spec
+    & $buildPython -m PyInstaller --noconfirm --clean packaging/GlossX.spec
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    Write-Host "Gloss executable: $projectRoot\dist\Gloss.exe"
+    Write-Host "GlossX executable: $projectRoot\dist\GlossX.exe"
 }
 finally {
     Pop-Location

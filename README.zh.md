@@ -1,3 +1,5 @@
+> **GlossX** 是 Gloss 面向科研与学习的 Agent Harness 版本，设计见 [docs/glossx-design.md](./docs/glossx-design.md)。预览版（Windows `GlossX.exe` 与 npm 包）可在仓库 Actions 页的 “Preview build” 工作流产物（artifacts）中下载。
+
 <p align="center">
   <img src="./docs/logo.svg" width="84" alt="Gloss logo" />
 </p>

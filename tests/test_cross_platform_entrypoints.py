@@ -21,11 +21,11 @@ def test_top_level_package_exposes_setup_start_and_dev() -> None:
 def test_top_level_package_is_publishable_and_exposes_cli_bins() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
 
-    assert package["name"] == "gloss-local"
+    assert package["name"] == "glossx-local"
     assert "private" not in package
     assert package["bin"] == {
-        "gloss": "scripts/gloss.mjs",
-        "gloss-local": "scripts/gloss.mjs",
+        "glossx": "scripts/gloss.mjs",
+        "glossx-local": "scripts/gloss.mjs",
     }
     assert "frontend/dist/**" in package["files"]
     assert "backend/app/**/*.py" in package["files"]
@@ -44,7 +44,7 @@ def test_npm_cli_supports_first_run_and_doctor() -> None:
 
 def test_windows_executable_packaging_is_wired_into_releases() -> None:
     launcher = ROOT / "packaging" / "windows_launcher.py"
-    spec = ROOT / "packaging" / "Gloss.spec"
+    spec = ROOT / "packaging" / "GlossX.spec"
     icon = ROOT / "packaging" / "gloss.ico"
     build_script = ROOT / "scripts" / "build-windows.ps1"
     workflow = ROOT / ".github" / "workflows" / "release.yml"
@@ -70,9 +70,9 @@ def test_windows_executable_packaging_is_wired_into_releases() -> None:
     assert 'icon=str(project_root / "packaging" / "gloss.ico")' in desktop_spec
     assert icon.is_file()
     assert "pywebview==6.2.1" in build_requirements
-    assert "./dist/Gloss.exe --version" in release
+    assert "./dist/GlossX.exe --version" in release
     assert "npm pack" in release
-    assert "npm publish gloss-local-*.tgz" in release
+    assert "npm publish glossx-local-*.tgz" in release
 
 
 def test_windows_build_uses_an_isolated_virtual_environment() -> None:
