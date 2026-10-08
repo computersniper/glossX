@@ -22,8 +22,8 @@ const BLUE = "2F7CF6";
 // Citation numbers follow the order bibtex produced for the LaTeX build (latex/main.bbl).
 const ORDER = [
   "deeppapernote2026", "ajith2024litsearch", "mcp2024", "agentskills2025", "claudecode",
-  "pymupdf", "asai2024openscholar", "bragg2025astabench", "dasigi2021qasper", "dsh2026",
-  "ding2026verification", "understandanything2026", "gloss2026", "notebooklm", "a2a2025",
+  "pymupdf", "asai2024openscholar", "bragg2025astabench", "gloss2026", "dasigi2021qasper",
+  "dsh2026", "ding2026verification", "understandanything2026", "notebooklm", "a2a2025",
   "muse2026", "moonlight", "pdfjs", "newman2024arxivdigestables", "codex", "dots2026",
   "shinn2023reflexion", "skarlinski2024paperqa2", "srinivasa2025tutorbench",
   "starace2025paperbench", "workbuddy2026", "jev2026", "wadden2020scifact",
@@ -46,7 +46,7 @@ const REFS = {
   dasigi2021qasper: "Pradeep Dasigi, Kyle Lo, Iz Beltagy, Arman Cohan, Noah A. Smith, and Matt Gardner. A dataset of information-seeking questions and answers anchored in research papers. In Proceedings of NAACL, 2021.",
   dsh2026: "DeepSeek-AI. DeepSeek Harness (dsh): An open-source agent harness where everything is a plugin. https://www.orcarouter.ai/blog/deepseek-harness-explained, 2026. Released 13 August 2026, MIT license.",
   ding2026verification: "Tianyu Ding, Aditya Nannapaneni, Bingfan Liu, et al. Autonomous research agents: A survey of AI scientists and the verification gap. arXiv:2608.05179, 2026.",
-  gloss2026: "Gloss contributors. Gloss: A local, self-hosted AI companion for reading research papers (v1.0.2). https://github.com/computersniper/gloss, 2026.",
+  gloss2026: "computersniper. Gloss: A local, self-hosted AI companion for reading research papers (v1.0.2). https://github.com/computersniper/gloss, 2026.",
   notebooklm: "Google. NotebookLM. https://notebooklm.google, 2024.",
   muse2026: "Meta. Meta launches Muse, a personal AI agent. https://www.techrepublic.com/article/news-meta-muse-ai-agent-us-launch/, 2026. Announced 8 September 2026.",
   newman2024arxivdigestables: "Benjamin Newman et al. ArxivDIGESTables: Synthesizing scientific literature into tables using language models. In Proceedings of EMNLP, 2024.",
