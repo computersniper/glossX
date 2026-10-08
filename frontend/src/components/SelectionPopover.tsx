@@ -14,14 +14,16 @@ export function SelectionPopover({
   const addHl = useStore((s) => s.addUserHighlight);
   const selection = useStore((s) => s.selection);
   const uiLang = useStore((s) => s.uiLang);
+  const askAgent = useStore((s) => s.askAgent);
+  const current = useStore((s) => s.current);
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
   const [color, setColor] = useState(COLORS[0]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const T = {
-    en: { explain: "💡 Explain", translate: "🌐 Translate", ask: "💬 Add to chat", highlight: "Highlight", copy: "⧉ Copy", note: "📝 Add note", save: "Save note", saving: "Saving…", saveError: "Could not save the highlight.", placeholder: "Optional note…" },
-    zh: { explain: "💡 解释", translate: "🌐 翻译", ask: "💬 加入会话", highlight: "高亮", copy: "⧉ 复制", note: "📝 添加笔记", save: "保存笔记", saving: "保存中…", saveError: "高亮保存失败，请重试。", placeholder: "补充你的笔记…" },
+    en: { explain: "💡 Explain", translate: "🌐 Translate", ask: "💬 Add to chat", agent: "🤖 Ask agent", highlight: "Highlight", copy: "⧉ Copy", note: "📝 Add note", save: "Save note", saving: "Saving…", saveError: "Could not save the highlight.", placeholder: "Optional note…" },
+    zh: { explain: "💡 解释", translate: "🌐 翻译", ask: "💬 加入会话", agent: "🤖 问智能体", highlight: "高亮", copy: "⧉ 复制", note: "📝 添加笔记", save: "保存笔记", saving: "保存中…", saveError: "高亮保存失败，请重试。", placeholder: "补充你的笔记…" },
   }[uiLang];
 
   async function saveHighlight(nextColor: string, nextNote = "") {
@@ -49,6 +51,20 @@ export function SelectionPopover({
         <button onClick={() => { run("explain"); onClose(); }}>{T.explain}</button>
         <button onClick={() => { run("translate"); onClose(); }}>{T.translate}</button>
         <button onClick={() => { run("ask"); onClose(); }}>{T.ask}</button>
+        <button
+          onClick={() => {
+            if (selection) {
+              const quote = selection.text.length > 600 ? selection.text.slice(0, 600) + "…" : selection.text;
+              askAgent({
+                goal: (uiLang === "zh" ? "关于这段内容：\n" : "About this passage:\n") + `"${quote}"\n`,
+                paperIds: current ? [current.id] : undefined,
+              });
+            }
+            onClose();
+          }}
+        >
+          {T.agent}
+        </button>
         <span className="hl-colors">
           {COLORS.map((c) => (
             <button

@@ -4,12 +4,59 @@ import { useStore } from "../store";
 import { ImportQueue } from "./ImportQueue";
 import { Logo } from "./Logo";
 
-export function Library() {
-  const papers = useStore((s) => s.papers);
-  const openPaper = useStore((s) => s.openPaper);
+/** Import (arXiv id / DOI / URL / PDF upload) and delete logic, shared by the
+ *  classic library and the GlossX library side bar. */
+export function useLibraryImport() {
   const loadPapers = useStore((s) => s.loadPapers);
   const enqueueImport = useStore((s) => s.enqueueImport);
   const notify = useStore((s) => s.notify);
+  const [importQ, setImportQ] = useState("");
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [creatingImport, setCreatingImport] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function onUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploadBusy(true);
+    try {
+      for (const f of Array.from(files)) {
+        const p = await api.uploadPaper(f);
+        notify("Added: " + (p.title || f.name).slice(0, 40));
+      }
+      await loadPapers();
+    } catch (e: any) {
+      notify("Upload failed: " + (e.message || e));
+    } finally {
+      setUploadBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function onImport(query = importQ) {
+    if (!query.trim()) return;
+    setCreatingImport(true);
+    try {
+      await enqueueImport(query.trim());
+      setImportQ("");
+    } catch (e: any) {
+      notify("Import failed: " + (e.message || e));
+    } finally {
+      setCreatingImport(false);
+    }
+  }
+
+  async function deletePaper(id: string) {
+    await api.deletePaper(id);
+    useStore.getState().closeTab(`paper:${id}`);
+    await loadPapers();
+  }
+
+  return { importQ, setImportQ, uploadBusy, creatingImport, fileRef, onUpload, onImport, deletePaper };
+}
+
+export function Library() {
+  const papers = useStore((s) => s.papers);
+  const openPaper = useStore((s) => s.openPaper);
   const openAgentWorkspace = useStore((s) => s.openAgentWorkspace);
   const uiLang = useStore((s) => s.uiLang);
   const T = {
@@ -36,51 +83,18 @@ export function Library() {
       pages: (n: number) => `${n} 页`,
     },
   }[uiLang];
-  const [importQ, setImportQ] = useState("");
-  const [uploadBusy, setUploadBusy] = useState(false);
-  const [creatingImport, setCreatingImport] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  async function onUpload(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    setUploadBusy(true);
-    try {
-      for (const f of Array.from(files)) {
-        const p = await api.uploadPaper(f);
-        notify("Added: " + (p.title || f.name).slice(0, 40));
-      }
-      await loadPapers();
-    } catch (e: any) {
-      notify("Upload failed: " + (e.message || e));
-    } finally {
-      setUploadBusy(false);
-    }
-  }
-
-  async function onImport() {
-    if (!importQ.trim()) return;
-    setCreatingImport(true);
-    try {
-      await enqueueImport(importQ.trim());
-      setImportQ("");
-    } catch (e: any) {
-      notify("Import failed: " + (e.message || e));
-    } finally {
-      setCreatingImport(false);
-    }
-  }
+  const { importQ, setImportQ, uploadBusy, creatingImport, fileRef, onUpload, onImport, deletePaper } = useLibraryImport();
 
   async function del(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     if (!confirm(T.confirmDelete)) return;
-    await api.deletePaper(id);
-    await loadPapers();
+    await deletePaper(id);
   }
 
   return (
     <div className="library">
       <div className="lib-hero">
-        <h1 className="hero-title"><Logo size={40} /> GlossX <span className="hero-zh">旁注</span></h1>
+        <h1 className="hero-title"><Logo size={40} /> Gloss <span className="hero-zh">旁注</span></h1>
         <p className="tagline">{T.tagline}</p>
         <div className="import-row">
           <input
@@ -88,9 +102,9 @@ export function Library() {
             placeholder={T.placeholder}
             value={importQ}
             onChange={(e) => setImportQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && onImport()}
+            onKeyDown={(e) => e.key === "Enter" && void onImport()}
           />
-          <button onClick={onImport} disabled={creatingImport || !importQ.trim()}>{T.import}</button>
+          <button onClick={() => void onImport()} disabled={creatingImport || !importQ.trim()}>{T.import}</button>
           <button onClick={() => fileRef.current?.click()} disabled={uploadBusy}>{T.upload}</button>
           <input
             ref={fileRef}

@@ -3,9 +3,14 @@ import { agentApi, type AgentCapability, type AgentProject } from "../api/agent"
 import { useStore } from "../store";
 import { AgentPanel } from "./AgentPanel";
 
-function ProjectSidebar() {
+/** Memory notes (add/delete) and runs of one project. Shared by the classic
+ *  agent workspace and the GlossX Projects side bar. */
+export function ProjectDetail({ projectId, onOpenRun, showTitle = true }: {
+  projectId: string | null;
+  onOpenRun?: (runId: string) => void;
+  showTitle?: boolean;
+}) {
   const uiLang = useStore((s) => s.uiLang);
-  const projectId = useStore((s) => s.agentProjectId);
   const tick = useStore((s) => s.agentTick);
   const agentRunId = useStore((s) => s.agentRunId);
   const setAgentRunId = useStore((s) => s.setAgentRunId);
@@ -44,12 +49,13 @@ function ProjectSidebar() {
   }
 
   return (
-    <aside className="agent-side">
-      <h4 className="agent-h">{T.title}{project ? `: ${project.name}` : ""}</h4>
-      {!projectId && <div className="muted">{T.none}</div>}
+    <>
+      {showTitle && <h4 className="agent-h">{T.title}{project ? `: ${project.name}` : ""}</h4>}
+      {!projectId && showTitle && <div className="muted">{T.none}</div>}
       {error && <div className="error">{error}</div>}
       {project && (
         <>
+          {project.description && <div className="muted">{project.description}</div>}
           <h4 className="agent-h">{T.memory}</h4>
           {(project.memory || []).length === 0 && <div className="muted">{T.empty}</div>}
           {(project.memory || []).map((m) => (
@@ -70,29 +76,48 @@ function ProjectSidebar() {
           <h4 className="agent-h">{T.runs}</h4>
           {(project.runs || []).length === 0 && <div className="muted">{T.empty}</div>}
           {(project.runs || []).map((r) => (
-            <div key={r.id} className={`agent-recent${agentRunId === r.id ? " active" : ""}`} onClick={() => setAgentRunId(r.id)}>
+            <div
+              key={r.id}
+              className={`agent-recent${agentRunId === r.id ? " active" : ""}`}
+              onClick={() => (onOpenRun ? onOpenRun(r.id) : setAgentRunId(r.id))}
+            >
               <span className={`agent-dot ${r.status}`} />
               <span className="agent-recent-goal">{r.goal}</span>
             </div>
           ))}
         </>
       )}
+    </>
+  );
+}
+
+function ProjectSidebar() {
+  const projectId = useStore((s) => s.agentProjectId);
+  return (
+    <aside className="agent-side">
+      <ProjectDetail projectId={projectId} />
     </aside>
   );
 }
 
-function Capabilities() {
-  const uiLang = useStore((s) => s.uiLang);
-  const zh = uiLang === "zh";
+function useCapabilities() {
   const [caps, setCaps] = useState<AgentCapability[]>([]);
   useEffect(() => {
     void agentApi.capabilities().then(setCaps).catch(() => {});
   }, []);
+  return caps;
+}
+
+/** Capabilities grouped by kind, with trust / needs-approval badges. */
+export function CapabilityGroups({ caps: given }: { caps?: AgentCapability[] } = {}) {
+  const uiLang = useStore((s) => s.uiLang);
+  const zh = uiLang === "zh";
+  const loaded = useCapabilities();
+  const caps = given || loaded;
   const groups = new Map<string, AgentCapability[]>();
   caps.forEach((c) => groups.set(c.kind, [...(groups.get(c.kind) || []), c]));
   return (
-    <details className="agent-section">
-      <summary>{zh ? `能力 (${caps.length})` : `Capabilities (${caps.length})`}</summary>
+    <>
       {[...groups.entries()].map(([kind, items]) => (
         <div key={kind} className="agent-phase">
           <div className="agent-phase-name">{kind}</div>
@@ -106,6 +131,17 @@ function Capabilities() {
           ))}
         </div>
       ))}
+    </>
+  );
+}
+
+function Capabilities() {
+  const zh = useStore((s) => s.uiLang) === "zh";
+  const caps = useCapabilities();
+  return (
+    <details className="agent-section">
+      <summary>{zh ? `能力 (${caps.length})` : `Capabilities (${caps.length})`}</summary>
+      <CapabilityGroups caps={caps} />
     </details>
   );
 }

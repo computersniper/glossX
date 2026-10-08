@@ -3,6 +3,10 @@ import { pdfjsLib, TextLayer } from "./pdfSetup";
 import { api, type ChatAttachment, type DrawingTool } from "../api/client";
 import { useStore } from "../store";
 import { SelectionPopover } from "../components/SelectionPopover";
+import { getPdfDoc } from "./docCache";
+
+// Per-paper scroll offsets so switching back to a tab lands where you left off.
+const scrollMemo = new Map<string, number>();
 
 const DRAW_COLORS = ["#ef6b6b", "#ffd54f", "#7aa2f7", "#4fb8a0", "#ce93d8"];
 const BRUSHES: Record<DrawingTool, { widths: number[]; defaultWidth: number }> = {
@@ -106,6 +110,7 @@ export function PdfViewer() {
   const [showInk, setShowInk] = useState(() => localStorage.getItem("gloss.layer.ink") !== "0");
   const [dispOpen, setDispOpen] = useState(false);
   const renderTasksRef = useRef<any[]>([]);
+  const restoreRef = useRef<string | null>(null);
   const [drawTool, setDrawTool] = useState<DrawTool>("select");
   const [brushType, setBrushType] = useState<DrawingTool>(savedBrush);
   const [drawColor, setDrawColor] = useState(DRAW_COLORS[0]);
@@ -121,17 +126,16 @@ export function PdfViewer() {
     if (!current) return;
     let cancelled = false;
     setRendered(false);
-    const task = pdfjsLib.getDocument(api.pdfUrl(current.id));
-    task.promise.then((doc: any) => {
+    restoreRef.current = current.id;
+    // documents are owned by the shared cache (evicted when the tab closes)
+    getPdfDoc(current.id).then((doc: any) => {
       if (cancelled) return;
       docRef.current = doc;
       setRendered(true);
-    });
+    }).catch(() => {});
     return () => {
       cancelled = true;
-      try {
-        docRef.current?.destroy();
-      } catch {}
+      docRef.current = null;
     };
   }, [current?.id]);
 
@@ -177,6 +181,11 @@ export function PdfViewer() {
         holder.style.height = `${vp.height}px`;
         items[i] = { page, vp };
       }
+      // all holders are sized now: restore this paper's previous scroll offset
+      if (restoreRef.current && restoreRef.current === current?.id && containerRef.current) {
+        containerRef.current.scrollTop = scrollMemo.get(restoreRef.current) || 0;
+      }
+      restoreRef.current = null;
       // pass 2 — render each page's bitmap + text layer (a failure on one page
       // must not abort the others)
       for (let i = 1; i <= doc.numPages; i++) {
@@ -211,6 +220,7 @@ export function PdfViewer() {
   // Scroll to a requested page/section.
   useEffect(() => {
     if (gotoPage == null) return;
+    restoreRef.current = null; // an explicit jump wins over scroll restore
     const el = pageRefs.current[gotoPage];
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
     setGoto(null);
@@ -601,7 +611,10 @@ export function PdfViewer() {
           </div>
         </div>
       )}
-      <div className={`pdf-scroll draw-${drawTool}`} ref={containerRef} onMouseUp={onMouseUp}>
+      <div className={`pdf-scroll draw-${drawTool}`} ref={containerRef} onMouseUp={onMouseUp}
+        onScroll={(e) => {
+          if (current && !restoreRef.current) scrollMemo.set(current.id, e.currentTarget.scrollTop);
+        }}>
         {Array.from({ length: n }).map((_, i) => {
           const pinfo = pages?.pages[i];
           const scaleFromPdf = pinfo ? scale : scale;
