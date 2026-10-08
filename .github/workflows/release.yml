@@ -16,6 +16,8 @@ permissions:
 
 jobs:
   npm-package:
+    # Packaging and publishing only run on the public Gloss repository.
+    if: github.repository == 'computersniper/gloss'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +34,8 @@ jobs:
           path: gloss-local-*.tgz
 
   source-archive:
+    # Packaging and publishing only run on the public Gloss repository.
+    if: github.repository == 'computersniper/gloss'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +51,8 @@ jobs:
           path: release-assets/*
 
   desktop-package:
+    # Packaging and publishing only run on the public Gloss repository.
+    if: github.repository == 'computersniper/gloss'
     name: Windows ${{ matrix.arch }} desktop package
     strategy:
       fail-fast: false
@@ -92,7 +98,7 @@ jobs:
           path: release-assets/*
 
   github-release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'computersniper/gloss' && (startsWith(github.ref, 'refs/tags/v'))
     needs: [npm-package, source-archive, desktop-package]
     runs-on: ubuntu-latest
     steps:
@@ -107,7 +113,7 @@ jobs:
           generate_release_notes: true
 
   publish-npm:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_npm
+    if: github.repository == 'computersniper/gloss' && (github.event_name == 'workflow_dispatch' && inputs.publish_npm)
     needs: npm-package
     runs-on: ubuntu-latest
     permissions:
