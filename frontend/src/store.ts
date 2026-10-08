@@ -27,7 +27,14 @@ export interface Selection {
 interface State {
   papers: Paper[];
   importJobs: ImportJob[];
-  view: "library" | "reader";
+  view: "library" | "reader" | "agent";
+  agentRunId: string | null;
+  agentProjectId: string | null;
+  agentTick: number;
+  setAgentRunId: (id: string | null) => void;
+  setAgentProjectId: (id: string | null) => void;
+  bumpAgentTick: () => void;
+  openAgentWorkspace: () => void;
   current: Paper | null;
   pages: PagesResponse | null;
   highlights: Highlight[];
@@ -83,6 +90,13 @@ export const useStore = create<State>((set, get) => ({
   papers: [],
   importJobs: [],
   view: "library",
+  agentRunId: null,
+  agentProjectId: null,
+  agentTick: 0,
+  setAgentRunId: (id) => set({ agentRunId: id }),
+  setAgentProjectId: (id) => set({ agentProjectId: id }),
+  bumpAgentTick: () => set((s) => ({ agentTick: s.agentTick + 1 })),
+  openAgentWorkspace: () => set({ view: "agent", current: null, pages: null, selection: null }),
   current: null,
   pages: null,
   highlights: [],

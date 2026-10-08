@@ -1,4 +1,4 @@
-"""Cross-platform paths and local CLI command resolution for Gloss."""
+"""Cross-platform paths and local CLI command resolution for GlossX."""
 
 from __future__ import annotations
 
@@ -15,6 +15,10 @@ import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+
+# GlossX keeps its own data/cache folders so it can run next to an installed
+# Gloss. ``GLOSS_DATA_DIR`` / ``GLOSS_CACHE_DIR`` still override these.
+APP_DIR_NAME = "GlossX"
 
 _WINDOWS_CREATE_NEW_PROCESS_GROUP = getattr(
     subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200
@@ -171,9 +175,9 @@ def default_data_dir(
     home = home or Path.home()
     if _is_windows(platform_name):
         base = Path(env.get("LOCALAPPDATA") or home / "AppData" / "Local")
-        return base / "Gloss" / "data"
+        return base / APP_DIR_NAME / "data"
     base = Path(env.get("XDG_DATA_HOME") or home / ".local" / "share")
-    return base / "gloss"
+    return base / APP_DIR_NAME
 
 
 def default_cache_dir(
@@ -184,9 +188,9 @@ def default_cache_dir(
     home = home or Path.home()
     if _is_windows(platform_name):
         base = Path(env.get("LOCALAPPDATA") or home / "AppData" / "Local")
-        return base / "Gloss" / "cache"
+        return base / APP_DIR_NAME / "cache"
     base = Path(env.get("XDG_CACHE_HOME") or home / ".cache")
-    return base / "gloss"
+    return base / APP_DIR_NAME
 
 
 def resolve_data_dir(

@@ -1,4 +1,4 @@
-"""Configuration and platform-appropriate on-disk paths for Gloss."""
+"""Configuration and platform-appropriate on-disk paths for GlossX."""
 from __future__ import annotations
 
 import json
@@ -30,6 +30,11 @@ UPLOADS_DIR = DATA_DIR / "uploads"
 PLUGINS_DIR = DATA_DIR / "plugins"
 DB_PATH = DATA_DIR / "moonlight.db"
 CONFIG_PATH = DATA_DIR / "config.json"
+# GlossX agent state: project memory and per-run sandbox workspaces for delegates.
+PROJECTS_DIR = DATA_DIR / "projects"
+WORKSPACES_DIR = DATA_DIR / "workspaces"
+
+APP_NAME = "GlossX"
 
 for _d in (DATA_DIR, CACHE_DIR, PAPERS_DIR, UPLOADS_DIR, PLUGINS_DIR):
     _d.mkdir(parents=True, exist_ok=True)

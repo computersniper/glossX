@@ -34,6 +34,34 @@ _FEATURE_CONTEXT: ContextVar[dict | None] = ContextVar(
     "gloss_feature_context", default=None
 )
 _PAPER_SESSION_LOCKS: dict[tuple[str, str, str], asyncio.Lock] = {}
+# Optional per-run meter (GlossX agent budget). It must expose
+# ``before_llm_call()`` (may raise to refuse the call) and
+# ``after_llm_call(tokens_est: int)``.
+_CALL_METER: ContextVar[object | None] = ContextVar("gloss_call_meter", default=None)
+
+
+@contextmanager
+def call_meter(meter: object | None):
+    """Count every provider call made in this context against ``meter``."""
+    token = _CALL_METER.set(meter)
+    try:
+        yield
+    finally:
+        _CALL_METER.reset(token)
+
+
+def _meter_before() -> None:
+    meter = _CALL_METER.get()
+    if meter is not None:
+        meter.before_llm_call()  # type: ignore[attr-defined]
+
+
+def _meter_after(system: str, messages: list[dict], text: str) -> None:
+    meter = _CALL_METER.get()
+    if meter is not None:
+        tokens = estimate_text_tokens(system + "\n" + message_text(messages))
+        tokens += estimate_text_tokens(text or "")
+        meter.after_llm_call(tokens)  # type: ignore[attr-defined]
 
 
 @contextmanager
@@ -304,6 +332,7 @@ async def complete(
     p = get_provider(provider_name)
     sys, msgs = split_system(messages, system)
     feature = settings
+    _meter_before()
     try:
         with provider_runtime_options(effort=feature.get("effort")):
             if (
@@ -325,6 +354,7 @@ async def complete(
         _record_status(provider_name, False, str(error) or type(error).__name__)
         raise
     _record_status(provider_name, True)
+    _meter_after(sent_sys, sent_msgs, result[0])
     _record_usage(
         provider=provider_name, model=model, system=sent_sys, messages=sent_msgs,
         text=result[0], usage=result[1],
@@ -347,6 +377,7 @@ async def stream(
     feature = settings
     connected = False
     chunks: list[str] = []
+    _meter_before()
     try:
         with provider_runtime_options(effort=feature.get("effort")):
             async for chunk in p.stream(sys, msgs, model):
@@ -360,6 +391,7 @@ async def stream(
         raise
     if not connected:
         _record_status(provider_name, True)
+    _meter_after(sys, msgs, "".join(chunks))
     # The provider streaming contract only yields text, not a terminal usage
     # object. Record a tokenizer estimate rather than inventing exact values.
     _record_usage(
@@ -390,6 +422,8 @@ async def complete_in_session(
     if complete_session is None:
         raise ValueError(f"provider {provider!r} does not support sessions")
     sys, msgs = split_system(messages, system)
+    if record_usage:  # nested calls from complete() are metered there
+        _meter_before()
     try:
         with provider_runtime_options(effort=settings.get("effort")):
             result = await complete_session(sys, msgs, model, session_id=session_id)
@@ -398,6 +432,7 @@ async def complete_in_session(
         raise
     _record_status(provider, True)
     if record_usage:
+        _meter_after(sys, msgs, result[0])
         _record_usage(
             provider=provider, model=model, system=sys, messages=msgs,
             text=result[0], usage=result[1],

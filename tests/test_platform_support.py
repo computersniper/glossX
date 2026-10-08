@@ -28,19 +28,19 @@ def test_linux_uses_xdg_directories(platform_support) -> None:
     }
 
     assert platform_support.default_data_dir("linux", env, Path("/home/alice")) == Path(
-        "/srv/user-data/gloss"
+        "/srv/user-data/GlossX"
     )
     assert platform_support.default_cache_dir("linux", env, Path("/home/alice")) == Path(
-        "/srv/user-cache/gloss"
+        "/srv/user-cache/GlossX"
     )
 
 
 def test_linux_falls_back_to_home_directories(platform_support) -> None:
     assert platform_support.default_data_dir("linux", {}, Path("/home/alice")) == Path(
-        "/home/alice/.local/share/gloss"
+        "/home/alice/.local/share/GlossX"
     )
     assert platform_support.default_cache_dir("linux", {}, Path("/home/alice")) == Path(
-        "/home/alice/.cache/gloss"
+        "/home/alice/.cache/GlossX"
     )
 
 
@@ -49,10 +49,10 @@ def test_windows_uses_local_app_data(platform_support) -> None:
 
     assert PureWindowsPath(
         platform_support.default_data_dir("win32", env, Path(r"C:\Users\Alice"))
-    ) == PureWindowsPath(r"C:\Users\Alice\AppData\Local\Gloss\data")
+    ) == PureWindowsPath(r"C:\Users\Alice\AppData\Local\GlossX\data")
     assert PureWindowsPath(
         platform_support.default_cache_dir("win32", env, Path(r"C:\Users\Alice"))
-    ) == PureWindowsPath(r"C:\Users\Alice\AppData\Local\Gloss\cache")
+    ) == PureWindowsPath(r"C:\Users\Alice\AppData\Local\GlossX\cache")
 
 
 def test_windows_provider_processes_never_open_a_console_window(platform_support) -> None:
@@ -68,10 +68,10 @@ def test_empty_platform_environment_values_use_home_fallbacks(platform_support) 
         platform_support.default_data_dir(
             "win32", {"LOCALAPPDATA": ""}, Path(r"C:\Users\Alice")
         )
-    ) == PureWindowsPath(r"C:\Users\Alice\AppData\Local\Gloss\data")
+    ) == PureWindowsPath(r"C:\Users\Alice\AppData\Local\GlossX\data")
     assert platform_support.default_data_dir(
         "linux", {"XDG_DATA_HOME": ""}, Path("/home/alice")
-    ) == Path("/home/alice/.local/share/gloss")
+    ) == Path("/home/alice/.local/share/GlossX")
 
 
 def test_explicit_data_directory_beats_legacy_data(tmp_path: Path, platform_support) -> None:
@@ -108,7 +108,7 @@ def test_empty_legacy_data_uses_platform_default(tmp_path: Path, platform_suppor
 
     resolved, used_legacy = platform_support.resolve_data_dir("linux", {}, tmp_path, legacy)
 
-    assert resolved == (tmp_path / ".local" / "share" / "gloss").resolve()
+    assert resolved == (tmp_path / ".local" / "share" / "GlossX").resolve()
     assert used_legacy is False
 
 

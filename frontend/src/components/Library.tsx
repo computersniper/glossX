@@ -10,11 +10,13 @@ export function Library() {
   const loadPapers = useStore((s) => s.loadPapers);
   const enqueueImport = useStore((s) => s.enqueueImport);
   const notify = useStore((s) => s.notify);
+  const openAgentWorkspace = useStore((s) => s.openAgentWorkspace);
   const uiLang = useStore((s) => s.uiLang);
   const T = {
     en: {
       tagline: "Annotate your papers with light · a local AI paper-reading companion, powered by Claude, Codex, or your preferred AI provider.",
       placeholder: "arXiv id / URL / DOI  (e.g. 1706.03762)",
+      agent: "Agent workspace",
       import: "Import",
       upload: "Upload PDF",
       working: "Downloading and parsing… this usually takes about a minute.",
@@ -25,6 +27,7 @@ export function Library() {
     zh: {
       tagline: "照亮论文的批注 · 本地 AI 论文阅读助手，由 Claude、Codex 或你选择的 AI 提供方驱动。",
       placeholder: "arXiv 编号 / 链接 / DOI  (例如 1706.03762)",
+      agent: "智能体工作区",
       import: "导入",
       upload: "上传 PDF",
       working: "正在下载并解析…通常需要约一分钟。",
@@ -77,7 +80,7 @@ export function Library() {
   return (
     <div className="library">
       <div className="lib-hero">
-        <h1 className="hero-title"><Logo size={40} /> Gloss <span className="hero-zh">旁注</span></h1>
+        <h1 className="hero-title"><Logo size={40} /> GlossX <span className="hero-zh">旁注</span></h1>
         <p className="tagline">{T.tagline}</p>
         <div className="import-row">
           <input
@@ -97,6 +100,9 @@ export function Library() {
             hidden
             onChange={(e) => onUpload(e.target.files)}
           />
+        </div>
+        <div className="import-row">
+          <button onClick={openAgentWorkspace}>{T.agent}</button>
         </div>
         <ImportQueue />
       </div>

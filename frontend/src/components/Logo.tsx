@@ -1,4 +1,4 @@
-// Gloss logo — light illuminating a page (annotation + illumination).
+// GlossX logo — light illuminating a page (annotation + illumination).
 // Uses theme CSS vars so it adapts to every theme.
 export function Logo({ size = 22 }: { size?: number }) {
   return (

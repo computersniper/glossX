@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { ThemePicker } from "./ThemePicker";
 import { PdfModeToggle } from "./PdfModeToggle";
 import { FeatureSettingsEditor } from "./FeatureSettingsEditor";
+import { ConnectionsSection } from "./ConnectionsSection";
 
 const LANGS = [
   "中文 (Simplified Chinese)",
@@ -239,6 +240,8 @@ export function SettingsPanel() {
           <p className="usage-note">{usageLoading ? "…" : (uiLang === "zh" ? "暂无已完成的 AI 任务。" : "No completed AI tasks yet.")}</p>
         )}
       </section>
+
+      <ConnectionsSection />
 
       <div className="adv-head">Advanced — local CLI models &amp; thinking depth</div>
 

@@ -15,8 +15,12 @@ from ..features.explain import explain_selection
 from ..features.summarize import summarize_paper
 from ..library import store
 from ..pdf import structure
+from ..features.common import json_complete
+from ..providers import registry as providers
 from ..search import scholar
-from .capabilities import Capability, CapabilityRegistry, RunContext
+from . import projects
+from .capabilities import Capability, CapabilityRegistry, RunContext, bm25_rank
+from .context import UNTRUSTED_RULE, wrap_untrusted
 
 IMPORT_WAIT_SECONDS = 170.0  # stays under the loop's per-step timeout
 
@@ -196,9 +200,11 @@ async def _library_import(args: dict[str, Any], ctx: RunContext) -> Any:
         job = await ctx.import_jobs.get(job["id"]) or {**job, "status": "failed",
                                                        "error": "import job disappeared"}
     paper_id = job.get("paper_id")
-    if job["status"] == "completed" and paper_id and paper_id not in ctx.paper_ids:
-        # newly imported papers join the run scope so later steps can cite them
-        ctx.paper_ids.append(paper_id)
+    if job["status"] == "completed" and paper_id:
+        ctx.imported[source] = paper_id
+        if paper_id not in ctx.paper_ids:
+            # newly imported papers join the run scope so later steps can cite them
+            ctx.paper_ids.append(paper_id)
     return {
         "status": job["status"],
         "job_id": job.get("id"),
@@ -206,6 +212,114 @@ async def _library_import(args: dict[str, Any], ctx: RunContext) -> Any:
         "title": job.get("title", ""),
         "error": job.get("error"),
     }
+
+
+async def _library_search(args: dict[str, Any], ctx: RunContext) -> Any:
+    query = _str_arg(args, "query")
+    k = _int_arg(args, "k", 8, 1, 20)
+    papers = store.list_papers()
+    ranked = bm25_rank(query, [f"{p.get('title') or ''} {p.get('abstract') or ''}" for p in papers])
+    hits = [papers[i] for i, score in ranked if score > 0][:k]
+    return {
+        "query": query,
+        "papers": [{**_brief(p), "abstract": (p.get("abstract") or "")[:400]} for p in hits],
+    }
+
+
+READER_SYSTEM = (
+    "You are a reader sub-agent of GlossX. You see only excerpts of ONE paper. "
+    "Extract the findings that bear on the question, each as a short factual "
+    "claim citing the excerpt ids ([S:<id>]) that support it, and rate how "
+    "relevant the paper is to the question (0 = unrelated, 1 = central)."
+)
+READER_SHAPE = (
+    '{"relevance": 0.0, "findings": [{"claim": "...", "span_ids": ["<paper_id>#<n>"]}]}'
+)
+
+
+def _resolve_reader_paper(args: dict[str, Any], ctx: RunContext) -> str:
+    paper_id = _str_arg(args, "paper_id", required=False)
+    source = _str_arg(args, "source", required=False)
+    if not paper_id and source:
+        paper_id = ctx.imported.get(source, "")
+    if not paper_id:
+        raise ValueError("paper is not in the library (import denied, failed or still pending)")
+    if not store.get_paper(paper_id):
+        raise ValueError(f"paper not found: {paper_id}")
+    return paper_id
+
+
+async def _agent_reader(args: dict[str, Any], ctx: RunContext) -> Any:
+    paper_id = _resolve_reader_paper(args, ctx)
+    question = _str_arg(args, "question", required=False) or ctx.goal
+    if not question:
+        raise ValueError("'question' is required")
+    k = _int_arg(args, "k", 8, 2, 12)
+    paper = store.get_paper(paper_id) or {}
+    spans = ctx.spans.search(question, [paper_id], k=k)
+    if not spans:
+        return {"paper_id": paper_id, "title": paper.get("title", ""), "relevance": 0.0,
+                "findings": [], "note": "no parsed text for this paper"}
+    excerpt = ctx.spans.materialize([s["id"] for s in spans], max_tokens=2500)
+    provided = {s["id"] for s in spans}
+    user = (
+        f"QUESTION:\n{question}\n\nPAPER: {paper.get('title') or paper_id}\n\n"
+        f"EXCERPTS:\n{wrap_untrusted(f'paper:{paper_id}', excerpt)}"
+    )
+    provider = providers.get_provider(ctx.provider)
+    shared = callable(getattr(provider, "complete_session", None))
+    with providers.feature_context(
+        paper_id=paper_id, context_mode="shared_session" if shared else "full"
+    ):
+        out = await json_complete(
+            f"{READER_SYSTEM}\n\n{UNTRUSTED_RULE}", user, READER_SHAPE, provider=ctx.provider
+        )
+    out = out if isinstance(out, dict) else {}
+    try:
+        relevance = max(0.0, min(1.0, float(out.get("relevance", 0.0))))
+    except (TypeError, ValueError):
+        relevance = 0.0
+    findings = []
+    for f in out.get("findings") if isinstance(out.get("findings"), list) else []:
+        if not isinstance(f, dict) or not str(f.get("claim") or "").strip():
+            continue
+        ids = f.get("span_ids") if isinstance(f.get("span_ids"), list) else []
+        findings.append({
+            "claim": str(f["claim"]).strip()[:600],
+            "span_ids": [str(i) for i in dict.fromkeys(ids) if str(i) in provided],
+        })
+    cited = {sid for f in findings for sid in f["span_ids"]}
+    evidence = [s for s in spans if s["id"] in cited] or spans[:3]
+    return {
+        "paper_id": paper_id,
+        "title": paper.get("title", ""),
+        "relevance": relevance,
+        "findings": findings[:12],
+        "evidence": evidence,
+    }
+
+
+def _project_of(ctx: RunContext) -> str:
+    if not ctx.project_id or not projects.exists(ctx.project_id):
+        raise ValueError("this run does not belong to a project")
+    return ctx.project_id
+
+
+async def _memory_recall(args: dict[str, Any], ctx: RunContext) -> Any:
+    project_id = _project_of(ctx)
+    query = _str_arg(args, "query")
+    k = _int_arg(args, "k", 5, 1, 20)
+    notes = projects.recall(project_id, query, k=k)
+    return {"query": query, "notes": [
+        {"id": n["id"], "text": n["text"], "span_ids": n.get("span_ids") or []} for n in notes
+    ]}
+
+
+async def _memory_note(args: dict[str, Any], ctx: RunContext) -> Any:
+    project_id = _project_of(ctx)
+    text = _str_arg(args, "text")[:2000]
+    note = projects.add_memory(project_id, text, source_run=ctx.run_id)
+    return {"status": "saved", "id": note["id"]}
 
 
 BUILTINS: list[Capability] = [
@@ -287,6 +401,43 @@ BUILTINS: list[Capability] = [
         handler=_library_import,
         permissions=["library:write", "network"],
         cost="network",
+    ),
+    Capability(
+        name="library.search",
+        kind="source",
+        card="Search the local library's papers by title and abstract keywords; returns paper ids.",
+        input_schema={"query": "str: keywords", "k": "int (optional, default 8)"},
+        handler=_library_search,
+        permissions=["library:read"],
+    ),
+    Capability(
+        name="agent.reader",
+        kind="agent",
+        card="Reader sub-agent: read one library paper in isolation and return relevance plus findings with cited span ids.",
+        input_schema={
+            "paper_id": "str: library paper id",
+            "question": "str: what to look for (defaults to the goal)",
+        },
+        output_schema={"relevance": "number 0..1", "findings": "[{claim, span_ids}]"},
+        handler=_agent_reader,
+        permissions=["library:read", "llm"],
+        cost="llm",
+    ),
+    Capability(
+        name="memory.recall",
+        kind="memory",
+        card="Recall earlier findings and notes saved in this run's research project.",
+        input_schema={"query": "str: what to recall", "k": "int (optional, default 5)"},
+        handler=_memory_recall,
+        permissions=["memory:read"],
+    ),
+    Capability(
+        name="memory.note",
+        kind="memory",
+        card="Save a short note or decision to this run's research project memory.",
+        input_schema={"text": "str: the note to remember"},
+        handler=_memory_note,
+        permissions=["memory:write"],
     ),
 ]
 

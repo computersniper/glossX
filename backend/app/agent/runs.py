@@ -20,18 +20,26 @@ from typing import Any, AsyncIterator
 from .. import config
 from ..library import store
 from ..providers import registry as providers
-from .capabilities import build_registry
+from . import connections, projects
+from .capabilities import abuild_registry
 from .context import SpanStore
+from .gate import BudgetMeter, Gate, normalize_budget
 from .loop import run_agent
+from .loops import normalize_loop_id
 
 logger = logging.getLogger(__name__)
 
 RUNS_DIR = config.DATA_DIR / "agent_runs"
 TERMINAL = {"completed", "failed", "cancelled"}
+ACTIVE = {"running", "awaiting_approval"}
 MAX_LOADED_RUNS = 500
 
 
 class RunNotFoundError(KeyError):
+    pass
+
+
+class ApprovalNotFoundError(LookupError):
     pass
 
 
@@ -50,9 +58,24 @@ class AgentRun:
     plan: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    project_id: str | None = None
+    workflow: str = "auto"
+    loop: str = "auto"
+    max_rounds_explicit: bool = True
+    route: dict[str, Any] | None = None
+    pending_approval: dict[str, Any] | None = None
+    budget_limits: dict[str, int] | None = None
+    budget_final: dict[str, int] | None = None
     import_jobs: Any | None = field(default=None, repr=False)
     task: asyncio.Task | None = field(default=None, repr=False)
     subscribers: list[asyncio.Queue] = field(default_factory=list, repr=False)
+    meter: BudgetMeter | None = field(default=None, repr=False)
+    gate: Gate | None = field(default=None, repr=False)
+
+    def budget(self) -> dict[str, int] | None:
+        if self.meter is not None:
+            return self.meter.snapshot()
+        return self.budget_final
 
     def snapshot(self, *, trace: bool = True) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -66,6 +89,12 @@ class AgentRun:
             "plan": self.plan,
             "result": self.result,
             "error": self.error,
+            "route": self.route,
+            "project_id": self.project_id,
+            "workflow": self.workflow,
+            "loop": self.loop,
+            "pending_approval": self.pending_approval,
+            "budget": self.budget(),
         }
         if trace:
             out["trace"] = list(self.trace)
@@ -86,6 +115,11 @@ class AgentRun:
             plan=data.get("plan"),
             result=data.get("result"),
             error=data.get("error"),
+            project_id=data.get("project_id"),
+            workflow=str(data.get("workflow") or "auto"),
+            loop=str(data.get("loop") or "auto"),
+            route=data.get("route"),
+            budget_final=data.get("budget") if isinstance(data.get("budget"), dict) else None,
         )
 
 
@@ -136,6 +170,12 @@ class AgentRunManager:
         paper_ids: list[str],
         max_rounds: int = 2,
         provider: str | None = None,
+        *,
+        project_id: str | None = None,
+        workflow: str | None = None,
+        loop: str | None = None,
+        budget: dict[str, Any] | None = None,
+        max_rounds_explicit: bool = True,
     ) -> dict[str, Any]:
         if not self._accepting:
             raise RuntimeError("agent is shutting down")
@@ -146,10 +186,23 @@ class AgentRunManager:
             raise ValueError("max_rounds must be between 1 and 3")
         if provider and provider not in providers.available():
             raise ValueError(f"unknown provider: {provider}")
+        workflow = str(workflow or "auto").strip()
+        if workflow not in {"auto", "generic"} and not workflow.startswith("workflow."):
+            raise ValueError("workflow must be 'auto', 'generic' or 'workflow.<id>'")
+        loop_id = normalize_loop_id(loop)  # raises ValueError for unknown loops
+        limits = normalize_budget(budget)
+        if project_id and not projects.exists(project_id):
+            raise LookupError(f"project not found: {project_id}")
         scope = list(dict.fromkeys(str(p) for p in paper_ids))
         for pid in scope:
             if not store.get_paper(pid):
                 raise LookupError(f"paper not found: {pid}")
+        if workflow.startswith("workflow."):
+            from .workflow import workflow_manifests
+
+            known = {f"workflow.{m['id']}" for m in workflow_manifests()}
+            if workflow not in known:
+                raise ValueError(f"unknown workflow: {workflow}")
 
         run = AgentRun(
             id=uuid.uuid4().hex,
@@ -158,9 +211,35 @@ class AgentRunManager:
             max_rounds=int(max_rounds),
             provider=provider or None,
             import_jobs=self.import_jobs,
+            project_id=project_id or None,
+            workflow=workflow,
+            loop=loop_id or "auto",
+            max_rounds_explicit=max_rounds_explicit,
+            budget_limits=limits,
         )
+        emit = lambda ev, _run=run: self._emit(_run, ev)  # noqa: E731
+        run.meter = BudgetMeter(limits, emit=emit)
+        run.gate = Gate(
+            emit,
+            auto_approve=connections.auto_approve,
+            on_wait=lambda approval, _run=run: self._awaiting(_run, approval),
+            on_resume=lambda _run=run: self._resumed(_run),
+        )
+        if run.project_id:
+            projects.add_run(run.project_id, run.id)
         self._runs[run.id] = run
         run.task = asyncio.create_task(self._drive(run), name=f"glossx-run-{run.id[:8]}")
+        return run.snapshot()
+
+    def resolve_approval(self, run_id: str, approval_id: str, approve: bool) -> dict[str, Any]:
+        run = self._get(run_id)
+        pending = run.pending_approval
+        if run.gate is None or not pending or pending.get("id") != approval_id:
+            raise ApprovalNotFoundError(approval_id)
+        if not run.gate.resolve(approval_id, approve):
+            raise ApprovalNotFoundError(approval_id)
+        # reflect the decision immediately; the gate resumes the loop shortly
+        self._resumed(run)
         return run.snapshot()
 
     def get(self, run_id: str) -> dict[str, Any]:
@@ -170,10 +249,20 @@ class AgentRunManager:
         runs = sorted(self._runs.values(), key=lambda r: r.created_at, reverse=True)
         return [r.snapshot(trace=False) for r in runs]
 
+    def summaries(self, run_ids: list[str]) -> list[dict[str, Any]]:
+        out = []
+        for rid in run_ids:
+            run = self._runs.get(rid)
+            if run is not None:
+                out.append({"id": run.id, "goal": run.goal, "status": run.status,
+                            "created_at": run.created_at, "finished_at": run.finished_at,
+                            "stop_reason": (run.result or {}).get("stop_reason")})
+        return out
+
     async def cancel(self, run_id: str) -> dict[str, Any]:
         run = self._get(run_id)
         task = run.task
-        if run.status == "running" and task and not task.done():
+        if run.status in ACTIVE and task and not task.done():
             task.cancel()
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=10)
@@ -225,9 +314,21 @@ class AgentRunManager:
             raise RunNotFoundError(run_id)
         return run
 
+    def _awaiting(self, run: AgentRun, approval: dict[str, Any]) -> None:
+        run.pending_approval = approval
+        if run.status == "running":
+            run.status = "awaiting_approval"
+
+    def _resumed(self, run: AgentRun) -> None:
+        run.pending_approval = None
+        if run.status == "awaiting_approval":
+            run.status = "running"
+
     def _emit(self, run: AgentRun, event: dict[str, Any]) -> None:
         run.trace.append(event)
-        if event.get("phase") in {"plan", "execute", "synthesize", "verify", "reflect", "final", "error"}:
+        if event.get("phase") in {
+            "route", "plan", "execute", "synthesize", "verify", "reflect", "final", "error",
+        }:
             run.phase = event["phase"]
         for q in list(run.subscribers):
             q.put_nowait(event)
@@ -235,7 +336,7 @@ class AgentRunManager:
     async def _drive(self, run: AgentRun) -> None:
         try:
             spans = SpanStore()
-            registry = build_registry()
+            registry = await abuild_registry()
             run.result = await run_agent(run, registry, spans, lambda ev: self._emit(run, ev))
             run.status = "completed"
             run.phase = "final"
@@ -255,6 +356,11 @@ class AgentRunManager:
 
     def _finish(self, run: AgentRun) -> None:
         run.finished_at = time.time()
+        run.pending_approval = None
+        if run.meter is not None:
+            run.budget_final = run.meter.snapshot()
+            run.meter = None
+        run.gate = None
         self._persist(run)
         for q in list(run.subscribers):
             q.put_nowait(None)
@@ -262,7 +368,7 @@ class AgentRunManager:
 
     def _mark_cancelled_if_stuck(self, run: AgentRun) -> None:
         # A task cancelled before its first step never reaches _drive's handlers.
-        if run.status == "running" and run.task is not None and run.task.done():
+        if run.status in ACTIVE and run.task is not None and run.task.done():
             run.status = "cancelled"
             run.error = "cancelled"
             self._emit(run, {"ts": time.time(), "phase": "final", "status": "info",

@@ -31,7 +31,7 @@ export function ExtensionsPanel() {
     : {
         title: "Extension Marketplace", installed: "Installed", builtIn: "Built-in modules", comingSoon: "Coming soon",
         market: "Featured extensions", install: "Install", uninstall: "Uninstall", open: "Open", settings: "Settings", developer: "Plugin API",
-        feedback: "Request an extension", feedbackTitle: "What should Gloss add?", feedbackDetail: "Describe the use case, expected output, or a reference link", feedbackSend: "Send request by email", feedbackHint: "Opens your default mail app addressed to 2651159710@qq.com.", feedbackNeedText: "Please add a title and description.",
+        feedback: "Request an extension", feedbackTitle: "What should GlossX add?", feedbackDetail: "Describe the use case, expected output, or a reference link", feedbackSend: "Send request by email", feedbackHint: "Opens your default mail app addressed to 2651159710@qq.com.", feedbackNeedText: "Please add a title and description.",
         apiVersion: "Plugin API version", copyTemplate: "Copy sample manifest", copied: "Copied", schema: "Open JSON Schema",
         import: "Import custom plugin", safe: "Plugins use declarative manifests. They can read the current paper and call AI only with declared permissions; arbitrary scripts are not executed.",
         imported: "Plugin installed", uninstalled: "Plugin uninstalled", uninstallConfirm: "Uninstalling removes the plugin entry and its generated cache. Continue?", failed: "Plugin operation failed",
@@ -115,8 +115,8 @@ export function ExtensionsPanel() {
       setError(T.feedbackNeedText);
       return;
     }
-    const subject = `[Gloss request] ${title}`;
-    const body = `${detail}\n\n---\nSent from Gloss Extension Marketplace`;
+    const subject = `[GlossX request] ${title}`;
+    const body = `${detail}\n\n---\nSent from GlossX Extension Marketplace`;
     window.location.href = `mailto:2651159710@qq.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     setFeedbackOpen(false);
     setFeedbackTitle("");

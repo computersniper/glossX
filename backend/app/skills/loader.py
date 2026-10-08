@@ -33,6 +33,22 @@ def _frontmatter(text: str) -> tuple[dict, str]:
     return {}, text
 
 
+def _exists(path: Path) -> bool:
+    """``Path.exists`` that treats unreadable locations as missing."""
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _safe_glob(iterator):
+    """Iterate a (r)glob, stopping quietly at unreadable directories."""
+    try:
+        yield from iterator
+    except OSError:
+        return
+
+
 def _skill_search_roots() -> list[tuple[str, Path]]:
     roots: list[tuple[str, Path]] = []
     # Claude personal + project
@@ -49,7 +65,7 @@ def _skill_search_roots() -> list[tuple[str, Path]]:
     seen = set()
     uniq = []
     for src, p in roots:
-        key = str(p.resolve()) if p.exists() else str(p)
+        key = str(p.resolve()) if _exists(p) else str(p)
         if key in seen:
             continue
         seen.add(key)
@@ -69,9 +85,9 @@ def discover_skills() -> list[dict]:
     """Return skill descriptors (metadata only; body loaded on demand)."""
     found: dict[str, dict] = {}
     for source, root in _skill_search_roots():
-        if not root.exists():
+        if not _exists(root):
             continue
-        for skill_md in root.rglob("SKILL.md"):
+        for skill_md in _safe_glob(root.rglob("SKILL.md")):
             try:
                 text = skill_md.read_text(encoding="utf-8", errors="ignore")
             except OSError:
@@ -100,11 +116,10 @@ def discover_skills() -> list[dict]:
         ("claude", Path("/home/czb/.claude/commands")),
         ("claude-plugin", HOME / ".claude" / "plugins"),
     ]:
-        if not root.exists():
+        if not _exists(root):
             continue
-        pattern = "commands/*.md" if root.name == "plugins" else "*.md"
         globber = root.rglob("commands/*.md") if root.name == "plugins" else root.glob("*.md")
-        for cmd_md in globber:
+        for cmd_md in _safe_glob(globber):
             try:
                 text = cmd_md.read_text(encoding="utf-8", errors="ignore")
             except OSError:

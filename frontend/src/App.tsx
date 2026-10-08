@@ -3,6 +3,7 @@ import { useStore } from "./store";
 import { Library } from "./components/Library";
 import { Outline } from "./components/Outline";
 import { SidePanel } from "./components/SidePanel";
+import { AgentWorkspace } from "./components/AgentWorkspace";
 import { Logo } from "./components/Logo";
 import { ProviderSwitcher } from "./components/ProviderSwitcher";
 import { ExitConfirmDialog } from "./components/ExitConfirmDialog";
@@ -106,9 +107,14 @@ export default function App() {
       <header className="topbar">
         <div className="brand" onClick={closePaper} style={{ cursor: "pointer" }}>
           <Logo size={20} />
-          <span className="brand-name">Gloss</span>
+          <span className="brand-name">GlossX</span>
           <span className="brand-zh">旁注</span>
         </div>
+        {view === "agent" && (
+          <div className="crumbs">
+            <button className="link" onClick={closePaper}>{uiLang === "zh" ? "← 论文库" : "← Library"}</button>
+          </div>
+        )}
         {current && (
           <div className="crumbs">
             <button className="link" onClick={closePaper}>{uiLang === "zh" ? "← 论文库" : "← Library"}</button>
@@ -120,6 +126,8 @@ export default function App() {
 
       {view === "library" ? (
         <Library />
+      ) : view === "agent" ? (
+        <AgentWorkspace />
       ) : (
         <div className="reader">
           {outlineCollapsed ? (

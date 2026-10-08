@@ -1,4 +1,4 @@
-"""Gloss-Local FastAPI application.
+"""GlossX FastAPI application.
 
 Mounts all API routers and serves the built React frontend (SPA) from
 ``frontend/dist``. One process, one port.
@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
+from .agent.adapters.mcp_client import MANAGER as mcp_clients
 from .agent.runs import AgentRunManager
 from .library import store
 from .library.import_jobs import ImportJobManager
@@ -26,6 +27,7 @@ from .routers import (
     ai,
     annotations,
     citations,
+    mcp,
     papers,
     plugins,
     scholar,
@@ -51,6 +53,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await app.state.agent_runs.shutdown()
+        await mcp_clients.close_all()
         await app.state.ai_tasks.shutdown()
         try:
             await asyncio.wait_for(app.state.import_jobs.shutdown(), timeout=20)
@@ -61,7 +64,7 @@ async def lifespan(app: FastAPI):
             logger.error("Timed out while shutting down the paper import queue")
 
 
-app = FastAPI(title="Gloss-Local", version="1.0.2", lifespan=lifespan)
+app = FastAPI(title=config.APP_NAME, version="1.0.2", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,6 +79,7 @@ async def health():
     cfg = config.load_config()
     return {
         "status": "ok",
+        "app": config.APP_NAME,
         "provider": cfg.get("provider"),
         "providers": registry.available(),
         "target_language": cfg.get("target_language"),
@@ -93,6 +97,7 @@ app.include_router(settings.router)
 app.include_router(usage.router)
 app.include_router(tasks.router)
 app.include_router(agent.router)
+app.include_router(mcp.router)
 
 
 # ---------------------------------------------------------------------------

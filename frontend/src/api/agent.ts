@@ -5,11 +5,62 @@ export type AgentCapability = {
   kind: string;
   card: string;
   input_schema: Record<string, string>;
-  source: "builtin" | "plugin";
+  source: "builtin" | "plugin" | "skill" | "mcp" | "cli" | "ssh" | (string & {});
+  permissions?: string[];
+  requires_approval?: boolean;
+  trust?: "first-party" | "third-party" | "external" | string;
 };
+export type AgentRoute = { workflow: string | null; loop: string; reason: string; confidence?: number };
+export type AgentApproval = {
+  id: string;
+  step_id: string;
+  capability: string;
+  args: Record<string, unknown>;
+  permissions: string[];
+  reason: string;
+  requested_at: number;
+};
+export type AgentBudget = {
+  steps: number;
+  max_steps: number;
+  llm_calls: number;
+  max_llm_calls: number;
+  tokens_est: number;
+  max_tokens_est: number;
+};
+export type AgentWorkflow = { id: string; name: string; card: string; source: string };
+export type AgentLoop = { id: string; card: string };
+export type AgentMemoryNote = { id: string; text: string; source_run?: string | null; ts: number; span_ids?: string[] };
+export type AgentProject = {
+  id: string;
+  name: string;
+  description?: string;
+  created_at?: number;
+  memory?: AgentMemoryNote[];
+  run_ids?: string[];
+  runs?: Pick<AgentRun, "id" | "goal" | "status" | "created_at">[];
+};
+export type McpServerCfg = { name: string; command: string; args: string[]; env: Record<string, string>; enabled: boolean };
+export type SshHostCfg = { name: string; host: string; user: string; port: number; workdir: string; enabled?: boolean };
+export type AgentConnections = {
+  mcp_servers: McpServerCfg[];
+  ssh_hosts: SshHostCfg[];
+  cli_agents: { claude: { enabled: boolean }; codex: { enabled: boolean } };
+  auto_approve: string[];
+};
+export type ConnectionsStatus = {
+  mcp: { name: string; ok: boolean; tools: number | string[]; error?: string }[];
+  ssh: { name: string; ok: boolean; error?: string }[];
+  cli: { claude: { available: boolean }; codex: { available: boolean } };
+};
+export const APPROVAL_PERMISSIONS = ["code:execute", "remote:ssh", "mcp:call", "library:write"] as const;
 export type AgentEvent = {
   ts: number;
-  phase: "plan" | "execute" | "synthesize" | "verify" | "reflect" | "final" | "error" | "end";
+  phase:
+    | "route" | "plan" | "gate" | "approval" | "execute" | "adapter"
+    | "synthesize" | "verify" | "reflect" | "budget" | "final" | "error" | "end"
+    | (string & {});
+  approval_id?: string;
   status: string;
   step_id?: string;
   capability?: string;
@@ -34,7 +85,11 @@ export type AgentRun = {
   id: string;
   goal: string;
   paper_ids: string[];
-  status: "running" | "completed" | "failed" | "cancelled";
+  status: "running" | "awaiting_approval" | "completed" | "failed" | "cancelled";
+  route?: AgentRoute | null;
+  project_id?: string | null;
+  pending_approval?: AgentApproval | null;
+  budget?: AgentBudget | null;
   phase: string;
   created_at: number;
   finished_at: number | null;
@@ -61,7 +116,16 @@ async function j<T>(r: Response): Promise<T> {
 
 export const agentApi = {
   capabilities: () => fetch("/api/agent/capabilities").then((r) => j<AgentCapability[]>(r)),
-  startRun: (body: { goal: string; paper_ids: string[]; max_rounds?: number; provider?: string | null }) =>
+  startRun: (body: {
+    goal: string;
+    paper_ids: string[];
+    max_rounds?: number;
+    provider?: string | null;
+    project_id?: string | null;
+    workflow?: string;
+    loop?: string;
+    budget?: { max_steps?: number; max_llm_calls?: number; max_tokens_est?: number };
+  }) =>
     fetch("/api/agent/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -69,6 +133,40 @@ export const agentApi = {
     }).then((r) => j<AgentRun>(r)),
   listRuns: () => fetch("/api/agent/runs").then((r) => j<AgentRun[]>(r)),
   getRun: (id: string) => fetch(`/api/agent/runs/${encodeURIComponent(id)}`).then((r) => j<AgentRun>(r)),
+  approve: (runId: string, approvalId: string, approve: boolean) =>
+    fetch(`/api/agent/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approve }),
+    }).then((r) => j<AgentRun>(r)),
+  workflows: () => fetch("/api/agent/workflows").then((r) => j<AgentWorkflow[]>(r)),
+  loops: () => fetch("/api/agent/loops").then((r) => j<AgentLoop[]>(r)),
+  projects: () => fetch("/api/agent/projects").then((r) => j<AgentProject[]>(r)),
+  createProject: (name: string, description?: string) =>
+    fetch("/api/agent/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description }),
+    }).then((r) => j<AgentProject>(r)),
+  getProject: (id: string) => fetch(`/api/agent/projects/${encodeURIComponent(id)}`).then((r) => j<AgentProject>(r)),
+  addMemory: (id: string, text: string) =>
+    fetch(`/api/agent/projects/${encodeURIComponent(id)}/memory`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).then((r) => j<unknown>(r)),
+  deleteMemory: (id: string, memoryId: string) =>
+    fetch(`/api/agent/projects/${encodeURIComponent(id)}/memory/${encodeURIComponent(memoryId)}`, {
+      method: "DELETE",
+    }).then((r) => j<unknown>(r)),
+  getConnections: () => fetch("/api/agent/connections").then((r) => j<AgentConnections>(r)),
+  putConnections: (body: AgentConnections) =>
+    fetch("/api/agent/connections", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => j<AgentConnections>(r)),
+  connectionsStatus: () => fetch("/api/agent/connections/status").then((r) => j<ConnectionsStatus>(r)),
   cancelRun: (id: string) =>
     fetch(`/api/agent/runs/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => j<AgentRun>(r)),
 };
