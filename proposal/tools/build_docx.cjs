@@ -283,8 +283,8 @@ const manifest = `{
 const body = [
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 240 },
     border: { top: { style: BorderStyle.SINGLE, size: 24, color: "000000", space: 8 }, bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000", space: 8 } },
-    children: [new TextRun({ text: `${S}: An Open, Plugin-Native Agent Harness`, bold: true, font: FONT, size: 34 }),
-               new TextRun({ text: "for Research and Learning", bold: true, font: FONT, size: 34, break: 1 })] }),
+    children: [new TextRun({ text: `[Group 35] ${S}: An Open, Plugin-Native`, bold: true, font: FONT, size: 34 }),
+               new TextRun({ text: "Agent Harness for Research and Learning", bold: true, font: FONT, size: 34, break: 1 })] }),
   memberTable,
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 40 },
     children: [new TextRun({ text: "The University of Hong Kong", font: FONT, size: BODY, bold: true })] }),
@@ -356,7 +356,7 @@ const body = [
 
 const doc = new Document({
   creator: "GlossX group",
-  title: `${S}: An Open, Plugin-Native Agent Harness for Research and Learning`,
+  title: `[Group 35] ${S}: An Open, Plugin-Native Agent Harness for Research and Learning`,
   styles: {
     default: { document: { run: { font: FONT, size: BODY } } },
     paragraphStyles: [
