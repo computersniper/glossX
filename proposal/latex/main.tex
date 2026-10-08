@@ -43,15 +43,14 @@
 
 % Group members (contact member marked with a footnote).
 \author{%
-  Cai Jiechao\thanks{Contact member: \texttt{u3679152@connect.hku.hk}} \\ UID: 3036791526
-  \And
-  Cai Zhuorui \\ UID: 3036791954
-  \And
-  Sun Zhiwei \\ UID: 3036791150
-  \And
-  Zhang Guanyi \\ UID: 3036793811
-  \AND
-  The University of Hong Kong
+  {\setlength{\tabcolsep}{3pt}%
+  \begin{tabular}{cccc}
+    \textbf{Cai Jiechao}\thanks{Contact member.} & \textbf{Cai Zhuorui} & \textbf{Sun Zhiwei} & \textbf{Zhang Guanyi} \\
+    \mdseries UID: 3036791526 & \mdseries UID: 3036791954 & \mdseries UID: 3036791150 & \mdseries UID: 3036793811 \\
+    {\mdseries\scriptsize\texttt{u3679152@connect.hku.hk}} & {\mdseries\scriptsize\texttt{u3679195@connect.hku.hk}} &
+    {\mdseries\scriptsize\texttt{u3679115@connect.hku.hk}} & {\mdseries\scriptsize\texttt{zhangguanyi@connect.hku.hk}} \\[4pt]
+    \multicolumn{4}{c}{\mdseries The University of Hong Kong}
+  \end{tabular}}
 }
 
 \begin{document}
@@ -62,7 +61,7 @@
 \section{Project Objective}
 \label{sec:objective}
 
-\textbf{What \gloss{} is today.} \gloss{}~\cite{gloss2026} is our open-source, self-hosted AI reading companion, a local re-implementation of the Moonlight~\cite{moonlight} idea (v1.0.2, July 2026), available as a Windows desktop app and as an npm package for macOS and Linux, including remote servers reached over SSH. A FastAPI backend serves a React reader built on PDF.js~\cite{pdfjs} and PyMuPDF~\cite{pymupdf}, and drives four interchangeable providers: the local Claude Code~\cite{claudecode} and Codex~\cite{codex} CLIs, the Anthropic API, and any OpenAI-compatible endpoint (e.g., HKU's GenAI service or vLLM). Its features are grounded in the paper: structured summaries; deep reading notes in the style of the DeepPaperNote skill~\cite{deeppapernote2026}; an interactive React Flow~\cite{xyflow} mind map inspired by Understand-Anything~\cite{understandanything2026} (${\sim}$85k GitHub stars); cached sentence-level translation; BM25-grounded chat; PDF-anchored auto-highlights; Crossref/arXiv reference resolution; and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace with nine plugins, a structure similar to DSH's ``everything is a plugin'' design~\cite{dsh2026} but released earlier: \gloss{} v1.0.1 shipped it on 21 July 2026, three weeks before DSH appeared on 13 August.
+\textbf{What \gloss{} is today.} \gloss{}~\cite{gloss2026} is our open-source, self-hosted AI reading companion, a local re-implementation of the Moonlight~\cite{moonlight} idea (v1.0.2, July 2026), available as a Windows desktop app and as an npm package for macOS and Linux, including remote servers reached over SSH. A FastAPI backend serves a React reader built on PDF.js~\cite{pdfjs} and PyMuPDF~\cite{pymupdf}, and drives four interchangeable providers: the local Claude Code~\cite{claudecode} and Codex~\cite{codex} CLIs, the Anthropic API, and any OpenAI-compatible endpoint. Its features are grounded in the paper: structured summaries; deep reading notes in the style of the DeepPaperNote skill~\cite{deeppapernote2026}; an interactive React Flow~\cite{xyflow} mind map inspired by Understand-Anything~\cite{understandanything2026} (${\sim}$85k GitHub stars); cached sentence-level translation; BM25-grounded chat; PDF-anchored auto-highlights; Crossref/arXiv reference resolution; and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace with nine plugins, a structure similar to DSH's ``everything is a plugin'' design~\cite{dsh2026} but released earlier: \gloss{} v1.0.1 shipped it on 21 July 2026, three weeks before DSH appeared on 13 August.
 
 \textbf{The gap.} \gloss{} is not yet an agent. Every feature is a single-prompt pipeline and the \emph{user} is the planner. Plugins are prompt templates that cannot call tools or each other. The local CLIs run with all tools disabled, so their coding ability is unused.
 
@@ -186,7 +185,7 @@ Because the loop and the decider are plugins too, a ReAct loop~\cite{yao2023reac
 First-party plugins may contain code; third-party plugins stay declarative compositions of existing capabilities, keeping \gloss{}'s rule of never executing downloaded code. Code and remote GPU jobs run only in sandboxed delegates under approval and budget, MCP servers get scoped permissions, and document text and tool outputs are untrusted data that can never issue tool calls.
 
 \subsection{Plugin roadmap: upgrading existing modules and adding new ones}
-\gloss{} already ships ten built-in features and nine marketplace plugins, each a one-shot prompt. Table~\ref{tab:plugins} shows what each existing module does now and should become, what each new plugin aims to do, and how each will be validated. It is a candidate list: what we implement, and in what order, depends on prototyping and progress.
+Table~\ref{tab:plugins} shows what each existing module does now and should become, what each new plugin aims to do, and how each will be validated. It is a candidate list: what we implement, and in what order, depends on prototyping and progress.
 
 
 % =====================================================================
@@ -195,7 +194,7 @@ First-party plugins may contain code; third-party plugins stay declarative compo
 
 \textbf{Data sources.}
 (a)~Public benchmarks in Table~\ref{tab:plugins}, subsampled to 50--100 items each.
-(b)~\emph{\sysname{}-Route-100}: 100 heterogeneous research and study requests with gold workflows and capabilities, cross-checked by members.
+(b)~\emph{\sysname{}-Route-100}: 100 heterogeneous research and study requests with gold workflows and capabilities.
 (c)~Slides and notes from this course.
 (d)~Fault injection: offline network, provider timeouts, malformed PDFs, failing plugins, injected instructions.
 
@@ -206,7 +205,7 @@ First-party plugins may contain code; third-party plugins stay declarative compo
 \emph{Extensibility:} lines to add a workflow; kernel diff (target: none).
 
 \textbf{Baselines and protocol.}
-B0 is \gloss{} v1.0.2's single-prompt features, B1 is standard RAG, and B2 is \sysname{}. Besides the per-plugin comparisons in Table~\ref{tab:plugins}, ablations remove the verifier or reflection, compare full context with pointers plus a shared session, and swap model backends (HKU GPT, Claude, Codex, an open model on vLLM). An LLM judge scores rubric tasks and humans spot-check 20\% (Cohen's $\kappa$). Failures are categorised as retrieval miss, wrong tool, unsupported claim, non-termination or budget overrun.
+B0 is \gloss{} v1.0.2's single-prompt features, B1 is standard RAG, and B2 is \sysname{}. Ablations remove the verifier or reflection, compare full context with pointers plus a shared session, and swap model backends (HKU GPT, Claude, Codex, an open model on vLLM). An LLM judge scores rubric tasks and humans spot-check 20\% (Cohen's $\kappa$). Failures are categorised as retrieval miss, wrong tool, unsupported claim, non-termination or budget overrun.
 
 \textbf{Success criteria.} B2 beats B0 and B1 on PaperArena accuracy and citation precision at comparable cost; Route-100 routing accuracy is at least 90\%; the last three workflows need no kernel changes; faults degrade gracefully.
 

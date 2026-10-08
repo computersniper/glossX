@@ -198,10 +198,10 @@ const tcap = (label, text) => new Paragraph({
 // ---------- content ----------
 const S = SYS;
 const members = [
-  ["Cai Jiechao*", "UID: 3036791526"],
-  ["Cai Zhuorui", "UID: 3036791954"],
-  ["Sun Zhiwei", "UID: 3036791150"],
-  ["Zhang Guanyi", "UID: 3036793811"],
+  ["Cai Jiechao*", "UID: 3036791526", "u3679152@connect.hku.hk"],
+  ["Cai Zhuorui", "UID: 3036791954", "u3679195@connect.hku.hk"],
+  ["Sun Zhiwei", "UID: 3036791150", "u3679115@connect.hku.hk"],
+  ["Zhang Guanyi", "UID: 3036793811", "zhangguanyi@connect.hku.hk"],
 ];
 const memberTable = new Table({
   width: { size: 9360, type: WidthType.DXA }, columnWidths: [2340, 2340, 2340, 2340], layout: TableLayoutType.FIXED,
@@ -209,7 +209,7 @@ const memberTable = new Table({
     width: { size: 2340, type: WidthType.DXA },
     borders: { top: none, bottom: none, left: none, right: none },
     children: m.map((line, j) => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 0 },
-      children: [new TextRun({ text: line, font: FONT, size: j === 2 ? 17 : BODY, bold: j === 0 })] })),
+      children: [new TextRun({ text: line, font: j === 2 ? MONO : FONT, size: j === 2 ? 13 : BODY, bold: j === 0 })] })),
   })) })],
 });
 
@@ -289,9 +289,9 @@ const body = [
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 40 },
     children: [new TextRun({ text: "The University of Hong Kong", font: FONT, size: BODY, bold: true })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 40, after: 200 },
-    children: [new TextRun({ text: "* Contact member: ", font: FONT, size: SMALL, italics: true }), new TextRun({ text: "u3679152@connect.hku.hk", font: MONO, size: SMALL })] }),
+    children: [new TextRun({ text: "* Contact member.", font: FONT, size: SMALL, italics: true })] }),
   H1("1  Project Objective"),
-  P(`**What Gloss is today.** Gloss [@gloss2026] is our open-source, self-hosted AI reading companion, a local re-implementation of the Moonlight [@moonlight] idea (v1.0.2, July 2026), available as a Windows desktop app and as an npm package for macOS and Linux, including remote servers reached over SSH. A FastAPI backend serves a React reader built on PDF.js [@pdfjs] and PyMuPDF [@pymupdf], and drives four interchangeable providers: the local Claude Code [@claudecode] and Codex [@codex] CLIs, the Anthropic API, and any OpenAI-compatible endpoint (e.g., HKU's GenAI service or vLLM). Its features are grounded in the paper: structured summaries; deep reading notes in the style of the DeepPaperNote skill [@deeppapernote2026]; an interactive React Flow [@xyflow] mind map inspired by Understand-Anything [@understandanything2026] (~85k GitHub stars); cached sentence-level translation; BM25-grounded chat; PDF-anchored auto-highlights; Crossref/arXiv reference resolution; and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace with nine plugins, a structure similar to DSH's "everything is a plugin" design [@dsh2026] but released earlier: Gloss v1.0.1 shipped it on 21 July 2026, three weeks before DSH appeared on 13 August.`),
+  P(`**What Gloss is today.** Gloss [@gloss2026] is our open-source, self-hosted AI reading companion, a local re-implementation of the Moonlight [@moonlight] idea (v1.0.2, July 2026), available as a Windows desktop app and as an npm package for macOS and Linux, including remote servers reached over SSH. A FastAPI backend serves a React reader built on PDF.js [@pdfjs] and PyMuPDF [@pymupdf], and drives four interchangeable providers: the local Claude Code [@claudecode] and Codex [@codex] CLIs, the Anthropic API, and any OpenAI-compatible endpoint. Its features are grounded in the paper: structured summaries; deep reading notes in the style of the DeepPaperNote skill [@deeppapernote2026]; an interactive React Flow [@xyflow] mind map inspired by Understand-Anything [@understandanything2026] (~85k GitHub stars); cached sentence-level translation; BM25-grounded chat; PDF-anchored auto-highlights; Crossref/arXiv reference resolution; and Semantic Scholar/arXiv search. It also ships a declarative plugin marketplace with nine plugins, a structure similar to DSH's "everything is a plugin" design [@dsh2026] but released earlier: Gloss v1.0.1 shipped it on 21 July 2026, three weeks before DSH appeared on 13 August.`),
   P(`**The gap.** Gloss is not yet an agent. Every feature is a single-prompt pipeline and the *user* is the planner. Plugins are prompt templates that cannot call tools or each other. The local CLIs run with all tools disabled, so their coding ability is unused.`),
   P(`**Objective.** Build ${S}, an open agent harness specialised for research and learning, and a step toward automated research, in which *everything is a plugin* and a core agent decides what to do next. Measurable goals: **(O1)** a small kernel and one plugin ABI, so that new workflows need *zero* kernel changes; **(O2)** agentic workflows (literature review, cross-paper QA, claim verification, reproduction, tutoring) that outperform Gloss's own single-prompt pipelines while every claim is traceable to a source span; **(O3)** a systematic evaluation of quality, reliability, latency, cost and extensibility.`),
 
@@ -315,14 +315,14 @@ const body = [
   H2("3.4  Openness vs. safety (C4)"),
   P(`First-party plugins may contain code; third-party plugins stay declarative compositions of existing capabilities, keeping Gloss's rule of never executing downloaded code. Code and remote GPU jobs run only in sandboxed delegates under approval and budget, MCP servers get scoped permissions, and document text and tool outputs are untrusted data that can never issue tool calls.`),
   H2("3.5  Plugin roadmap: upgrading existing modules and adding new ones"),
-  P(`Gloss already ships ten built-in features and nine marketplace plugins, each a one-shot prompt. Table 1 shows what each existing module does now and should become, what each new plugin aims to do, and how each will be validated. It is a candidate list: what we implement, and in what order, depends on prototyping and progress.`),
+  P(`Table 1 shows what each existing module does now and should become, what each new plugin aims to do, and how each will be validated. It is a candidate list: what we implement, and in what order, depends on prototyping and progress.`),
   tcap("Table 1", "**Plugin roadmap (candidate list).** Existing Gloss modules: what they do now and what v2 should become. New plugins: what they aim to do. Tier: C = attempted first, S = stretch; datasets in Appendix C."),
   table([1900, 1500, 3180, 2240, 540], ["Plugin (kind)", "Now", "v2 target / goal", "Validation", "Tier"], plugins, { rowRules: true }),
 
   H1("4  Experimental Dataset Description and Evaluation Plan"),
-  P(`**Data sources.** (a) Public benchmarks in Table 1, subsampled to 50–100 items each. (b) *${S}-Route-100*: 100 heterogeneous research and study requests with gold workflows and capabilities, cross-checked by members. (c) Slides and notes from this course. (d) Fault injection: offline network, provider timeouts, malformed PDFs, failing plugins, injected instructions.`),
+  P(`**Data sources.** (a) Public benchmarks in Table 1, subsampled to 50–100 items each. (b) *${S}-Route-100*: 100 heterogeneous research and study requests with gold workflows and capabilities. (c) Slides and notes from this course. (d) Fault injection: offline network, provider timeouts, malformed PDFs, failing plugins, injected instructions.`),
   P(`**Metrics.** *Quality:* native benchmark metrics, citation precision/recall and span support rate. *Reliability:* success, recovery under faults, variance over 3 runs. *Efficiency:* latency, tokens, cost and tool calls. *Extensibility:* lines to add a workflow; kernel diff (target: none).`),
-  P(`**Baselines and protocol.** B0 is Gloss v1.0.2's single-prompt features, B1 is standard RAG, and B2 is ${S}. Besides the per-plugin comparisons in Table 1, ablations remove the verifier or reflection, compare full context with pointers plus a shared session, and swap model backends (HKU GPT, Claude, Codex, an open model on vLLM). An LLM judge scores rubric tasks and humans spot-check 20% (Cohen's κ). Failures are categorised as retrieval miss, wrong tool, unsupported claim, non-termination or budget overrun.`),
+  P(`**Baselines and protocol.** B0 is Gloss v1.0.2's single-prompt features, B1 is standard RAG, and B2 is ${S}. Ablations remove the verifier or reflection, compare full context with pointers plus a shared session, and swap model backends (HKU GPT, Claude, Codex, an open model on vLLM). An LLM judge scores rubric tasks and humans spot-check 20% (Cohen's κ). Failures are categorised as retrieval miss, wrong tool, unsupported claim, non-termination or budget overrun.`),
   P(`**Success criteria.** B2 beats B0 and B1 on PaperArena accuracy and citation precision at comparable cost; Route-100 routing accuracy is at least 90%; the last three workflows need no kernel changes; faults degrade gracefully.`),
 
   H1("References"),
