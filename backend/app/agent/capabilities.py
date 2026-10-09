@@ -297,12 +297,13 @@ async def abuild_registry(*, connections: dict[str, Any] | None = None) -> Capab
 
 
 def manager_v2_agent_capabilities() -> list[Capability]:
-    """v2 manifests of kind agent/tool with a prompt become prompt capabilities."""
+    """v2 manifests of kind agent/tool/skill with a prompt become prompt capabilities
+    (``plugin.<id>``; skills become ``skill.<id>`` and need no paper)."""
     from ..plugins import manager
 
     caps: list[Capability] = []
     for manifest in manager.list_installed_v2():
-        if manifest.get("kind") not in {"agent", "tool"} or not manifest.get("prompt"):
+        if manifest.get("kind") not in {"agent", "tool", "skill"} or not manifest.get("prompt"):
             continue
         caps.append(_v2_prompt_capability(manifest))
     return caps
@@ -312,6 +313,7 @@ def _v2_prompt_capability(manifest: dict[str, Any]) -> Capability:
     plugin_id = manifest["id"]
     prompt = manifest["prompt"]
     cap_meta = manifest.get("capability") or {}
+    is_skill = manifest.get("kind") == "skill"
 
     async def handler(args: dict[str, Any], ctx: RunContext) -> Any:
         from ..config import output_language
@@ -321,9 +323,11 @@ def _v2_prompt_capability(manifest: dict[str, Any]) -> Capability:
         from .context import UNTRUSTED_RULE, wrap_untrusted
 
         paper_id = str(args.get("paper_id") or (ctx.paper_ids[0] if ctx.paper_ids else ""))
-        if not paper_id or not store.get_paper(paper_id):
+        if is_skill and paper_id and not store.get_paper(paper_id):
+            raise ValueError(f"paper not found: {paper_id}")
+        if not is_skill and (not paper_id or not store.get_paper(paper_id)):
             raise ValueError("paper_id is required and must be a library paper")
-        parsed = store.load_parsed(paper_id) or {}
+        parsed = (store.load_parsed(paper_id) or {}) if paper_id else {}
         paper_text = truncate_to_tokens(parsed.get("full_text", ""), 30000)
         extra = {k: v for k, v in args.items() if k != "paper_id"}
         system = (
@@ -333,19 +337,24 @@ def _v2_prompt_capability(manifest: dict[str, Any]) -> Capability:
         )
         user = (
             f"=== PLUGIN INSTRUCTIONS ===\n{prompt}\n\n"
-            f"=== INPUTS ===\n{wrap_untrusted('agent-args', str(extra)[:2000])}\n\n"
-            f"=== PAPER ===\n{wrap_untrusted(f'paper:{paper_id}', paper_text)}"
+            f"=== INPUTS ===\n{wrap_untrusted('agent-args', str(extra)[:2000])}"
         )
+        if paper_id:
+            user += f"\n\n=== PAPER ===\n{wrap_untrusted(f'paper:{paper_id}', paper_text)}"
         with providers.usage_context("agent", paper_id=paper_id, plugin_id=plugin_id):
             text = await text_complete(system, user, provider=ctx.provider)
         return {"status": "ready", "markdown": text[:6000]}
 
-    schema = {"paper_id": "str: library paper id"}
+    schema = (
+        {"arguments": "str (optional): the request for the skill",
+         "paper_id": "str (optional): library paper id"}
+        if is_skill else {"paper_id": "str: library paper id"}
+    )
     for key, desc in (cap_meta.get("input") or {}).items():
         schema.setdefault(str(key), str(desc))
     return Capability(
-        name=f"plugin.{plugin_id}",
-        kind=manifest["kind"],
+        name=f"skill.{plugin_id}" if is_skill else f"plugin.{plugin_id}",
+        kind="agent" if is_skill else manifest["kind"],
         card=clip_card(cap_meta.get("card") or manifest.get("description") or plugin_id),
         input_schema=schema,
         output_schema={str(k): str(v) for k, v in (cap_meta.get("output") or {}).items()},

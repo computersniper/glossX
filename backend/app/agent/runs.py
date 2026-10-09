@@ -176,7 +176,10 @@ class AgentRunManager:
         loop: str | None = None,
         budget: dict[str, Any] | None = None,
         max_rounds_explicit: bool = True,
+        authorizer: Any | None = None,
     ) -> dict[str, Any]:
+        """Start a run. ``authorizer`` (optional async ``(approval) -> (bool, msg)``)
+        answers the run's approvals instead of the HTTP approval endpoint."""
         if not self._accepting:
             raise RuntimeError("agent is shutting down")
         goal = (goal or "").strip()
@@ -224,6 +227,7 @@ class AgentRunManager:
             auto_approve=connections.auto_approve,
             on_wait=lambda approval, _run=run: self._awaiting(_run, approval),
             on_resume=lambda _run=run: self._resumed(_run),
+            delegate=authorizer,
         )
         if run.project_id:
             projects.add_run(run.project_id, run.id)
@@ -293,6 +297,14 @@ class AgentRunManager:
         finally:
             if queue in run.subscribers:
                 run.subscribers.remove(queue)
+
+    async def wait(self, run_id: str) -> dict[str, Any]:
+        """Wait until the run finishes and return its snapshot."""
+        run = self._get(run_id)
+        task = run.task
+        if task is not None and not task.done():
+            await asyncio.shield(task)
+        return run.snapshot()
 
     def status_of(self, run_id: str) -> str:
         return self._get(run_id).status

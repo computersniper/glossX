@@ -33,6 +33,12 @@ CONFIG_PATH = DATA_DIR / "config.json"
 # GlossX agent state: project memory and per-run sandbox workspaces for delegates.
 PROJECTS_DIR = DATA_DIR / "projects"
 WORKSPACES_DIR = DATA_DIR / "workspaces"
+# GlossX harness: agent sessions, workspace checkpoints, custom commands/agents.
+SESSIONS_DIR = DATA_DIR / "sessions"
+CHECKPOINTS_DIR = DATA_DIR / "checkpoints"
+COMMANDS_DIR = DATA_DIR / "commands"
+AGENTS_DIR = DATA_DIR / "agents"
+GLOBAL_INSTRUCTIONS = DATA_DIR / "GLOSSX.md"
 
 APP_NAME = "GlossX"
 

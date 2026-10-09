@@ -888,7 +888,11 @@ def validate_manifest(payload: dict[str, Any]) -> dict[str, Any]:
 PLUGIN_API_VERSION_V2 = 2
 V2_KINDS = {
     "tool", "agent", "workflow", "loop", "decider", "source", "memory", "provider", "view",
+    # GlossX harness kinds: slash commands, prompt skills, lifecycle hooks and
+    # MCP server declarations (hooks/MCP only run once the user trusts the plugin)
+    "command", "skill", "hook", "mcp",
 }
+V2_HOOK_EVENTS = {"pre_tool_use", "post_tool_use", "session_start", "stop"}
 V2_PERMISSIONS = {
     "paper:read", "ai:complete", "library:read", "library:write", "search:web",
     "network", "llm", "memory:read", "memory:write", "code:execute", "remote:ssh",
@@ -1071,7 +1075,48 @@ def validate_manifest_v2(payload: dict[str, Any]) -> dict[str, Any]:
     if kind != "workflow" and payload.get("steps"):
         raise ValueError("only workflow manifests may declare steps")
     prompt = _clean_text(payload.get("prompt"), "prompt", maximum=12000, required=False)
+    if kind in {"command", "skill"} and not prompt:
+        raise ValueError(f"{kind} manifests need a prompt")
+    extra: dict[str, Any] = {}
+    if kind == "agent":
+        tools = payload.get("tools")
+        if tools is not None:
+            if not isinstance(tools, list) or len(tools) > 64:
+                raise ValueError("plugin tools must be a list of at most 64 tool patterns")
+            extra["tools"] = [_clean_text(t, "tools[]", maximum=120) for t in tools]
+        if payload.get("model") is not None:
+            extra["model"] = _clean_text(payload.get("model"), "model", maximum=120)
+    elif kind == "command":
+        hint = payload.get("argument_hint")
+        if hint is not None:
+            extra["argument_hint"] = _clean_text(hint, "argument_hint", maximum=200)
+    elif kind == "hook":
+        hook = payload.get("hook")
+        if not isinstance(hook, dict):
+            raise ValueError("hook manifests need a hook object {event, matcher, command}")
+        event = str(hook.get("event") or "").strip()
+        if event not in V2_HOOK_EVENTS:
+            raise ValueError(f"hook.event must be one of: {', '.join(sorted(V2_HOOK_EVENTS))}")
+        extra["hook"] = {
+            "event": event,
+            "matcher": _clean_text(hook.get("matcher") or "*", "hook.matcher", maximum=200),
+            "command": _clean_text(hook.get("command"), "hook.command", maximum=2000),
+        }
+    elif kind == "mcp":
+        server = payload.get("server")
+        if not isinstance(server, dict):
+            raise ValueError("mcp manifests need a server object {command, args?, env?}")
+        args = server.get("args") or []
+        env = server.get("env") or {}
+        if not isinstance(args, list) or not isinstance(env, dict):
+            raise ValueError("mcp server args must be a list and env an object")
+        extra["server"] = {
+            "command": _clean_text(server.get("command"), "server.command", maximum=1000),
+            "args": [_clean_text(a, "server.args[]", maximum=2000) for a in args[:64]],
+            "env": {str(k)[:128]: str(v)[:2000] for k, v in list(env.items())[:64]},
+        }
     return {
+        **extra,
         "api_version": PLUGIN_API_VERSION_V2,
         "id": plugin_id,
         "kind": kind,

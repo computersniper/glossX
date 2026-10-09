@@ -1,0 +1,127 @@
+"""Run shell commands / scripts / hooks with timeouts and process-group kill."""
+from __future__ import annotations
+
+import asyncio
+import os
+import shutil
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+from ..platform_support import subprocess_group_options, terminate_process_tree
+
+OUTPUT_TAIL = 30_000
+MAX_CAPTURE = 4_000_000
+
+
+def shell_argv(command: str) -> list[str]:
+    if os.name == "nt":
+        comspec = os.environ.get("COMSPEC") or "cmd.exe"
+        return [comspec, "/d", "/s", "/c", command]
+    shell = shutil.which("bash") or "/bin/sh"
+    return [shell, "-c", command]
+
+
+def python_interpreter() -> str:
+    """The backend's Python; frozen desktop builds fall back to python on PATH."""
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+    found = shutil.which("python3") or shutil.which("python")
+    if not found:
+        raise RuntimeError("no Python interpreter is available (install Python and put it on PATH)")
+    return found
+
+
+async def _pump(stream: asyncio.StreamReader | None, sink: bytearray, state: dict[str, Any]) -> None:
+    if stream is None:
+        return
+    while True:
+        chunk = await stream.read(65536)
+        if not chunk:
+            return
+        sink.extend(chunk)
+        state["total"] += len(chunk)
+        if len(sink) > MAX_CAPTURE:
+            del sink[: len(sink) - MAX_CAPTURE]
+            state["truncated"] = True
+
+
+async def run_process(
+    argv: list[str],
+    *,
+    cwd: Path,
+    timeout: float,
+    stdin: bytes | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Run ``argv``; kill the whole process group on timeout or cancellation."""
+    started = time.monotonic()
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(cwd),
+        env=env,
+        **subprocess_group_options(),
+    )
+    out, err = bytearray(), bytearray()
+    state = {"total": 0, "truncated": False}
+    pumps = [asyncio.create_task(_pump(proc.stdout, out, state)),
+             asyncio.create_task(_pump(proc.stderr, err, state))]
+    timed_out = False
+    try:
+        if stdin is not None and proc.stdin is not None:
+            try:
+                proc.stdin.write(stdin)
+                await proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                try:
+                    proc.stdin.close()
+                except Exception:
+                    pass
+        try:
+            await asyncio.wait_for(proc.wait(), timeout)
+        except (asyncio.TimeoutError, TimeoutError):
+            timed_out = True
+        if not timed_out:
+            await asyncio.wait(pumps, timeout=5)
+    finally:
+        if proc.returncode is None:
+            for p in pumps:
+                p.cancel()
+            await asyncio.gather(*pumps, return_exceptions=True)
+            await terminate_process_tree(proc)
+        for p in pumps:
+            if not p.done():
+                p.cancel()
+    stdout = out.decode("utf-8", errors="replace")
+    stderr = err.decode("utf-8", errors="replace")
+    return {
+        "exit_code": proc.returncode if not timed_out else None,
+        "timed_out": timed_out,
+        "duration_s": round(time.monotonic() - started, 3),
+        "stdout": stdout[-OUTPUT_TAIL:],
+        "stderr": stderr[-OUTPUT_TAIL:],
+        "output_truncated": state["truncated"] or len(stdout) > OUTPUT_TAIL or len(stderr) > OUTPUT_TAIL,
+    }
+
+
+def format_run(result: dict[str, Any], header: str) -> str:
+    parts = [header]
+    if result.get("timed_out"):
+        parts.append(f"TIMED OUT after {result['duration_s']}s (process group killed)")
+    else:
+        parts.append(f"exit code {result.get('exit_code')} in {result['duration_s']}s")
+    if result.get("output_truncated"):
+        parts.append("(output truncated to the last part)")
+    if result.get("stdout"):
+        parts.append("--- stdout ---\n" + result["stdout"].rstrip())
+    if result.get("stderr"):
+        parts.append("--- stderr ---\n" + result["stderr"].rstrip())
+    if not result.get("stdout") and not result.get("stderr"):
+        parts.append("(no output)")
+    return "\n".join(parts)

@@ -161,8 +161,12 @@ class Gate:
         on_wait: Callable[[dict[str, Any]], None] | None = None,
         on_resume: Callable[[], None] | None = None,
         timeout: float | None = None,
+        delegate: Callable[..., Any] | None = None,
     ) -> None:
         self._emit = emit
+        # optional async ``delegate(approval) -> (allowed, message)``: lets a
+        # host (e.g. a harness session) answer approvals itself.
+        self._delegate = delegate
         self._auto_approve = auto_approve or (lambda: set())
         self._on_wait = on_wait
         self._on_resume = on_resume
@@ -210,6 +214,23 @@ class Gate:
                 "reason": (reason or cap.card)[:500],
                 "requested_at": time.time(),
             }
+            if self._delegate is not None:
+                self._emit(_event("gate", "awaiting_approval",
+                                  f"approval required for {', '.join(need)} (delegated)",
+                                  step_id=step_id, capability=cap.name,
+                                  approval_id=approval["id"]))
+                approved, message = await self._delegate(approval)
+                if approved:
+                    self._approved.add(key)
+                    self._emit(_event("approval", "approved", f"approved {cap.name}",
+                                      step_id=step_id, capability=cap.name,
+                                      approval_id=approval["id"]))
+                    return True, ""
+                self.denied += 1
+                message = message or "approval denied"
+                self._emit(_event("approval", "denied", message, step_id=step_id,
+                                  capability=cap.name, approval_id=approval["id"]))
+                return False, message
             loop = asyncio.get_running_loop()
             future: asyncio.Future = loop.create_future()
             self.pending = approval
