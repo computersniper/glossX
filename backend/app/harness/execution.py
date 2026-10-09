@@ -15,10 +15,15 @@ OUTPUT_TAIL = 30_000
 MAX_CAPTURE = 4_000_000
 
 
-def shell_argv(command: str) -> list[str]:
+def shell_argv(command: str) -> list[str] | str:
+    """How to run a shell command line with :func:`run_process`.
+
+    On Windows the line is returned as a string and handed to ``cmd.exe``
+    verbatim (an argv list would be re-quoted with ``\"`` escapes that cmd does
+    not understand, breaking any command that contains double quotes).
+    """
     if os.name == "nt":
-        comspec = os.environ.get("COMSPEC") or "cmd.exe"
-        return [comspec, "/d", "/s", "/c", command]
+        return command
     shell = shutil.which("bash") or "/bin/sh"
     return [shell, "-c", command]
 
@@ -47,8 +52,20 @@ async def _pump(stream: asyncio.StreamReader | None, sink: bytearray, state: dic
             state["truncated"] = True
 
 
+def _decode(data: bytes | bytearray) -> str:
+    try:
+        return bytes(data).decode("utf-8")
+    except UnicodeDecodeError:
+        if os.name == "nt":  # console programs often write in the OEM code page
+            try:
+                return bytes(data).decode("oem")
+            except (UnicodeDecodeError, LookupError):
+                pass
+        return bytes(data).decode("utf-8", errors="replace")
+
+
 async def run_process(
-    argv: list[str],
+    argv: list[str] | str,
     *,
     cwd: Path,
     timeout: float,
@@ -57,8 +74,7 @@ async def run_process(
 ) -> dict[str, Any]:
     """Run ``argv``; kill the whole process group on timeout or cancellation."""
     started = time.monotonic()
-    proc = await asyncio.create_subprocess_exec(
-        *argv,
+    options: dict[str, Any] = dict(
         stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -66,6 +82,10 @@ async def run_process(
         env=env,
         **subprocess_group_options(),
     )
+    if isinstance(argv, str):  # a shell command line (see shell_argv)
+        proc = await asyncio.create_subprocess_shell(argv, **options)
+    else:
+        proc = await asyncio.create_subprocess_exec(*argv, **options)
     out, err = bytearray(), bytearray()
     state = {"total": 0, "truncated": False}
     pumps = [asyncio.create_task(_pump(proc.stdout, out, state)),
@@ -98,8 +118,8 @@ async def run_process(
         for p in pumps:
             if not p.done():
                 p.cancel()
-    stdout = out.decode("utf-8", errors="replace")
-    stderr = err.decode("utf-8", errors="replace")
+    stdout = _decode(out)
+    stderr = _decode(err)
     return {
         "exit_code": proc.returncode if not timed_out else None,
         "timed_out": timed_out,

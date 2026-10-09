@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from . import config
 from .agent.adapters.mcp_client import MANAGER as mcp_clients
 from .agent.runs import AgentRunManager
+from .harness.manager import SessionManager
 from .library import store
 from .library.import_jobs import ImportJobManager
 from .providers import registry
@@ -27,10 +30,12 @@ from .routers import (
     ai,
     annotations,
     citations,
+    harness,
     mcp,
     papers,
     plugins,
     scholar,
+    sessions,
     settings,
     skills,
     tasks,
@@ -38,6 +43,34 @@ from .routers import (
 )
 
 logger = logging.getLogger(__name__)
+
+def _close_streams_on_exit_signal(app: FastAPI) -> None:
+    """Session event streams never end by themselves, and the server waits for
+    open connections before it runs the lifespan shutdown. Chain the server's
+    exit-signal handlers so the streams are closed as soon as a stop is requested."""
+    if threading.current_thread() is not threading.main_thread():
+        return
+    loop = asyncio.get_running_loop()
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+        signum = getattr(signal, name, None)
+        if signum is None:
+            continue
+        try:
+            previous = signal.getsignal(signum)
+            if not callable(previous):
+                continue  # default/ignored: no server handler to chain to
+
+            def handler(sig, frame, _previous=previous):
+                try:
+                    loop.call_soon_threadsafe(app.state.sessions.close_streams)
+                except Exception:  # loop already closed
+                    pass
+                _previous(sig, frame)
+
+            signal.signal(signum, handler)
+        except (ValueError, OSError, RuntimeError):
+            continue
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,9 +82,15 @@ async def lifespan(app: FastAPI):
     )
     app.state.ai_tasks = AITaskManager()
     app.state.agent_runs = AgentRunManager(import_jobs=app.state.import_jobs)
+    app.state.sessions = SessionManager(
+        agent_runs=app.state.agent_runs, import_jobs=app.state.import_jobs
+    )
+    _close_streams_on_exit_signal(app)
     try:
         yield
     finally:
+        # sessions first: their turns may be waiting on workflow runs
+        await app.state.sessions.shutdown()
         await app.state.agent_runs.shutdown()
         await mcp_clients.close_all()
         await app.state.ai_tasks.shutdown()
@@ -98,6 +137,9 @@ app.include_router(usage.router)
 app.include_router(tasks.router)
 app.include_router(agent.router)
 app.include_router(mcp.router)
+app.include_router(sessions.router)
+app.include_router(harness.router)
+app.include_router(harness.workspace_router)
 
 
 # ---------------------------------------------------------------------------

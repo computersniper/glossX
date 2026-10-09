@@ -207,6 +207,7 @@ def summary(session: dict[str, Any]) -> dict[str, Any]:
         "usage": dict(session["usage"]),
         "context": dict(session["context"]),
         "last_message": (last or {}).get("text", "")[:200],
+        "forked_from": session.get("forked_from"),
     }
 
 
@@ -340,12 +341,27 @@ class Runtime:
         except Exception:
             out["workspace"] = None
         if with_messages:
-            out["messages"] = [public_message(m) for m in self.session["messages"]]
+            out["messages"] = self.public_messages()
+        return out
+
+    def public_messages(self) -> list[dict[str, Any]]:
+        """Messages for clients. The tool calls of a subagent follow their ``task``
+        call (as they do live, where they are forwarded as ``tool.updated``)."""
+        lookup = getattr(self.manager, "session_data", None)
+        out = []
+        for msg in self.session["messages"]:
+            out.append(public_message(msg))
+            sub = msg.get("subagent") if msg.get("type") == "tool_call" else None
+            child = lookup(sub.get("session_id")) if isinstance(sub, dict) and lookup else None
+            if child:
+                out.extend(public_message(m) for m in child.get("messages") or []
+                           if m.get("type") == "tool_call")
         return out
 
 
 def approval_payload(ap: dict[str, Any]) -> dict[str, Any]:
     return {
+        **({"preview": ap["preview"]} if ap.get("preview") else {}),
         "tool_call_id": ap["tool_call_id"],
         "tool": ap["tool"],
         "args": ap["args"],

@@ -306,7 +306,7 @@ def validate_args(spec: ToolSpec, args: dict[str, Any]) -> tuple[dict[str, Any],
     schema = spec.parameters or {}
     props = schema.get("properties") or {}
     clean = dict(args)
-    missing = [k for k in schema.get("required") or [] if clean.get(k) in (None, "")]
+    missing = [k for k in schema.get("required") or [] if clean.get(k) is None]
     if missing:
         return clean, f"missing required argument(s): {', '.join(missing)}"
     for key, prop in props.items():

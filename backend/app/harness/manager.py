@@ -1,0 +1,483 @@
+"""API-facing session manager: owns every session's runtime in this process.
+
+Concurrency model: everything runs on the server's event loop. Each session has
+at most one running task (a turn or a manual compaction); many sessions run
+side by side. Subagent sessions are driven inline by their parent's task.
+"""
+from __future__ import annotations
+
+import asyncio
+import copy
+import logging
+from typing import Any, AsyncIterator
+
+from ..agent import projects
+from ..providers import registry as providers
+from . import context as ctx_mod
+from . import engine, extensions, workspace
+from . import settings as settings_mod
+from .session import (
+    TERMINAL_TOOL,
+    Runtime,
+    copy_result,
+    delete_files,
+    load_all,
+    new_id,
+    new_session,
+    now,
+    public_message,
+    read_result,
+    recover,
+    valid_id,
+)
+
+logger = logging.getLogger(__name__)
+
+DECISIONS = ("once", "always", "deny")
+KEEPALIVE_SECONDS = 15.0
+
+
+class SessionNotFoundError(LookupError):
+    pass
+
+
+class SessionBusyError(RuntimeError):
+    """A turn is already running in this session (HTTP 409)."""
+
+
+class NotPendingError(RuntimeError):
+    """No such approval / input request is pending (HTTP 409)."""
+
+
+class SessionManager:
+    def __init__(self, *, agent_runs: Any | None = None, import_jobs: Any | None = None) -> None:
+        self.agent_runs = agent_runs
+        self.import_jobs = import_jobs
+        self._sessions: dict[str, Runtime] = {}
+        self._accepting = True
+        self._streams_open = True
+        for data in load_all():
+            self._sessions[data["id"]] = Runtime(data, self)
+
+    # -- lookup ---------------------------------------------------------------------------
+    def _rt(self, session_id: str) -> Runtime:
+        rt = self._sessions.get(session_id) if valid_id(session_id) else None
+        if rt is None:
+            raise SessionNotFoundError(session_id)
+        return rt
+
+    def register_child(self, rt: Runtime) -> None:
+        self._sessions[rt.id] = rt
+
+    def session_data(self, session_id: Any) -> dict[str, Any] | None:
+        rt = self._sessions.get(session_id) if isinstance(session_id, str) else None
+        return rt.session if rt is not None else None
+
+    # -- validation -----------------------------------------------------------------------
+    @staticmethod
+    def _check_mode(mode: Any) -> str:
+        if mode not in settings_mod.MODES:
+            raise ValueError(f"mode must be one of: {', '.join(settings_mod.MODES)}")
+        return mode
+
+    @staticmethod
+    def _check_model(provider: Any, model: Any) -> tuple[str | None, str | None]:
+        provider = (str(provider).strip() or None) if provider is not None else None
+        model = (str(model).strip() or None) if model is not None else None
+        if provider and provider not in providers.available():
+            raise ValueError(f"unknown provider: {provider}")
+        if model and len(model) > 120:
+            raise ValueError("model is too long")
+        return provider, model
+
+    @staticmethod
+    def _check_project(project_id: Any) -> str | None:
+        if project_id in (None, "", "default"):
+            return None
+        if not isinstance(project_id, str) or not projects.exists(project_id):
+            raise LookupError(f"project not found: {project_id}")
+        return project_id
+
+    # -- CRUD -----------------------------------------------------------------------------
+    def list(self, *, project_id: str | None = None, include_subagents: bool = False
+             ) -> list[dict[str, Any]]:
+        out = []
+        for rt in self._sessions.values():
+            if rt.session.get("parent_id") and not include_subagents:
+                continue
+            if project_id is not None:
+                want = None if project_id in ("", "default") else project_id
+                if rt.session.get("project_id") != want:
+                    continue
+            out.append(rt.public())
+        return sorted(out, key=lambda s: s["updated_at"], reverse=True)
+
+    def create(self, *, title: str | None = None, project_id: str | None = None,
+               mode: str | None = None, provider: str | None = None,
+               model: str | None = None) -> dict[str, Any]:
+        if not self._accepting:
+            raise SessionBusyError("the server is shutting down")
+        settings = settings_mod.load()
+        mode = self._check_mode(mode or settings["default_mode"])
+        provider, model = self._check_model(provider, model)
+        session = new_session(title=title, project_id=self._check_project(project_id), mode=mode,
+                              provider=provider, model=model,
+                              context_limit=int(settings["context_limit"]))
+        rt = Runtime(session, self)
+        self._sessions[rt.id] = rt
+        workspace.root_for(session["project_id"])
+        rt.persist()
+        return rt.public(with_messages=True)
+
+    def get(self, session_id: str) -> dict[str, Any]:
+        return self._rt(session_id).public(with_messages=True)
+
+    def patch(self, session_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+        rt = self._rt(session_id)
+        session = rt.session
+        if "title" in fields and fields["title"] is not None:
+            title = str(fields["title"]).strip()
+            if not title:
+                raise ValueError("title must not be empty")
+            session["title"] = title[:200]
+            session["title_set"] = True
+        if "model" in fields or "provider" in fields:
+            if rt.parent is not None:
+                raise ValueError("subagent sessions cannot be reconfigured")
+            current = dict(session["model"])
+            value = fields.get("model")
+            if isinstance(value, dict):
+                for key in ("provider", "model"):
+                    if key in value:
+                        current[key] = value[key]
+            elif "model" in fields:
+                current["model"] = value
+            if "provider" in fields:
+                current["provider"] = fields["provider"]
+            provider, model = self._check_model(current.get("provider"), current.get("model"))
+            session["model"] = {"provider": provider, "model": model}
+        if fields.get("mode") is not None:
+            if rt.parent is not None:
+                raise ValueError("subagent sessions cannot be reconfigured")
+            engine.set_mode(rt, self._check_mode(fields["mode"]))
+        rt.emit("session.updated", rt.public())
+        rt.persist()
+        return rt.public(with_messages=True)
+
+    async def delete(self, session_id: str) -> None:
+        rt = self._rt(session_id)
+        await self._stop(rt)
+        doomed = [rt] + [c for c in self._sessions.values() if c.session.get("parent_id") == rt.id]
+        for item in doomed:
+            item.close_subscribers()
+            self._sessions.pop(item.id, None)
+            delete_files(item.id)
+
+    def fork(self, session_id: str, message_id: str | None) -> dict[str, Any]:
+        src = self._rt(session_id)
+        messages = src.session["messages"]
+        if message_id:
+            index = next((i for i, m in enumerate(messages) if m.get("id") == message_id), None)
+            if index is None:
+                raise LookupError("message not found in this session")
+            messages = messages[: index + 1]
+        data = copy.deepcopy({k: v for k, v in src.session.items() if k != "messages"})
+        fresh = new_session(title=None, project_id=data.get("project_id"), mode=data["mode"],
+                            provider=data["model"].get("provider"), model=data["model"].get("model"),
+                            context_limit=int(data["context"].get("limit") or 120_000))
+        fresh["title"] = (src.session["title"][:190] + " (fork)")
+        fresh["title_set"] = True
+        fresh["todos"] = data.get("todos") or []
+        fresh["scope_papers"] = data.get("scope_papers") or []
+        fresh["forked_from"] = {"session_id": src.id, "message_id": message_id}
+        fresh["context"]["compactions"] = int(data["context"].get("compactions") or 0)
+        fresh["messages"] = copy.deepcopy(messages)
+        recover(fresh)
+        for msg in fresh["messages"]:
+            if msg.get("type") == "tool_call":
+                msg["session_id"] = fresh["id"]
+                if msg.get("result_ref"):
+                    try:
+                        copy_result(src.id, fresh["id"], msg["result_ref"])
+                    except OSError:
+                        msg["result_ref"] = None
+        through = None
+        for msg in fresh["messages"]:
+            if msg.get("compacted") and msg.get("type") != "system_note":
+                through = msg["id"]
+        if through:
+            fresh["context"]["compacted_through"] = through
+        ctx_mod.recount(fresh)
+        rt = Runtime(fresh, self)
+        self._sessions[rt.id] = rt
+        rt.persist()
+        return rt.public(with_messages=True)
+
+    def result(self, session_id: str, ref: str) -> str:
+        self._rt(session_id)
+        text = read_result(session_id, ref)
+        if text is None:
+            raise LookupError("result not found")
+        return text
+
+    # -- turns ----------------------------------------------------------------------------
+    def _reserve(self, rt: Runtime) -> None:
+        if not self._accepting:
+            raise SessionBusyError("the server is shutting down")
+        if rt.parent is not None or rt.session.get("parent_id"):
+            raise ValueError("subagent sessions are read-only")
+        if rt.busy():
+            raise SessionBusyError("a turn is already running in this session")
+        rt.running = True
+
+    async def send_message(self, session_id: str, text: str,
+                           attachments: Any = None) -> dict[str, Any]:
+        rt = self._rt(session_id)
+        text = (text or "").strip()
+        if not text and not attachments:
+            raise ValueError("text must not be empty")
+        if len(text) > 100_000:
+            raise ValueError("text is too long (max 100000 characters)")
+        self._reserve(rt)
+        started = False
+        try:
+            settings = settings_mod.load()
+            root = workspace.root_for(rt.session.get("project_id"))
+            parsed = extensions.parse_command(text)
+            command = extensions.find_command(parsed[0], root) if parsed else None
+            if command is not None and command["name"] in extensions.LOCAL_COMMANDS:
+                if command["name"] != "clear":
+                    self._add_user(rt, text, [], command=command["name"], settings=settings, root=root)
+                out = await self._local_command(rt, command["name"], parsed[1], root)
+                return {"started": False, "command": command["name"], **out,
+                        "session": rt.public()}
+            expanded = None
+            if command is not None:
+                expanded = self._expand(command, parsed[1])
+                if command.get("mode"):
+                    engine.set_mode(rt, command["mode"])
+            items = ctx_mod.normalize_attachments(attachments, text, root)
+            msg = self._add_user(rt, text, items, command=command["name"] if command else None,
+                                 expanded=expanded, settings=settings, root=root)
+            rt.task = asyncio.create_task(engine.drive_turn(rt), name=f"glossx-turn-{rt.id[:8]}")
+            started = True
+            rt.refresh_status()
+            return {"started": True, "command": command["name"] if command else None,
+                    "message": public_message(msg), "session": rt.public()}
+        finally:
+            if not started and (rt.task is None or rt.task.done()):
+                rt.running = False
+                rt.refresh_status()
+
+    @staticmethod
+    def _expand(command: dict[str, Any], arguments: str) -> str:
+        name = command["name"]
+        if command.get("kind") == "builtin":
+            if name == "review":
+                if not arguments:
+                    raise ValueError("usage: /review <question>")
+                return ("Run the literature-review workflow with the run_workflow tool on this "
+                        f"question, then present its cited report and the claim verdicts:\n\n{arguments}")
+            if name == "summarize":
+                focus = f" Focus on: {arguments}." if arguments else ""
+                return ("Summarize the paper(s) attached to this session (use paper_summary and "
+                        "paper_read as needed and cite spans). If no paper is attached, summarize "
+                        f"this conversation so far instead.{focus}")
+        prompt = extensions.expand(command, arguments).strip()
+        if not prompt:
+            raise ValueError(f"command /{name} has an empty prompt")
+        return prompt
+
+    def _add_user(self, rt: Runtime, text: str, attachments: list[dict[str, Any]], *,
+                  command: str | None = None, expanded: str | None = None,
+                  settings: dict[str, Any], root: Any) -> dict[str, Any]:
+        session = rt.session
+        msg: dict[str, Any] = {"id": new_id("m_"), "type": "user", "text": text,
+                               "attachments": attachments, "created_at": now()}
+        if command:
+            msg["command"] = command
+        if expanded:
+            msg["expanded"] = expanded
+        if attachments:
+            msg["context"] = ctx_mod.materialize(
+                rt, attachments, budget_tokens=int(settings.get("mention_budget") or 12_000),
+                workspace_root=root)
+        if command in extensions.LOCAL_COMMANDS:
+            msg["local"] = True  # local commands never reach the model
+        ctx_mod.stamp(msg)
+        engine.add_message(rt, msg)
+        if not session.get("title_set") and not command:
+            line = " ".join(text.split())
+            if line:
+                session["title"] = line[:60] + ("..." if len(line) > 60 else "")
+                session["title_set"] = True
+                rt.emit("session.updated", rt.public())
+        rt.persist()
+        return msg
+
+    async def _local_command(self, rt: Runtime, name: str, arguments: str, root: Any
+                             ) -> dict[str, Any]:
+        session = rt.session
+
+        def note(text: str) -> dict[str, Any]:
+            n = engine.add_note(rt, "command", text, command=name)
+            rt.persist()
+            return {"note": public_message(n)}
+
+        if name == "help":
+            lines = ["Available commands:"]
+            for cmd in extensions.list_commands(root):
+                hint = f" {cmd['argument_hint']}" if cmd.get("argument_hint") else ""
+                lines.append(f"- `/{cmd['name']}{hint}` - {cmd.get('description') or ''} ({cmd['source']})")
+            return note("\n".join(lines))
+        if name == "todos":
+            marks = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}
+            todos = session.get("todos") or []
+            return note("Todos:\n" + ("\n".join(f"- {marks.get(t['status'], '[ ]')} {t['content']}"
+                                                for t in todos) or "(none)"))
+        if name == "mode":
+            if not arguments:
+                return note(f"Mode: {session['mode']} (available: {', '.join(settings_mod.MODES)})")
+            engine.set_mode(rt, self._check_mode(arguments.split()[0].lower()))
+            return {"mode": session["mode"]}
+        if name == "model":
+            if not arguments:
+                current = session["model"]
+                return note(f"Model: {current.get('provider') or '(default provider)'}"
+                            f"{':' + current['model'] if current.get('model') else ''}. "
+                            f"Providers: {', '.join(providers.available())}")
+            head, _, tail = arguments.strip().partition(":")
+            if head in providers.available():
+                provider, model = self._check_model(head, tail or None)
+            else:
+                provider, model = self._check_model(session["model"].get("provider"), arguments.strip())
+            session["model"] = {"provider": provider, "model": model}
+            rt.emit("session.updated", rt.public())
+            return note(f"Model set to {provider or '(default provider)'}{':' + model if model else ''}.")
+        if name == "clear":
+            session["messages"] = []
+            session["todos"] = []
+            session["scope_papers"] = []
+            session["context"].update(tokens_est=0, percent=0.0, system_tokens_est=0)
+            session["context"].pop("compacted_through", None)
+            rt.emit("todos.updated", {"todos": []})
+            rt.emit("context.updated", dict(session["context"]))
+            rt.emit("session.updated", rt.public(with_messages=True))
+            rt.persist()
+            return {"cleared": True}
+        if name == "compact":
+            rt.task = asyncio.create_task(engine.drive_compaction(rt, arguments),
+                                          name=f"glossx-compact-{rt.id[:8]}")
+            rt.refresh_status()
+            return await asyncio.shield(rt.task)
+        raise ValueError(f"unknown command: /{name}")
+
+    async def compact(self, session_id: str, focus: str = "") -> dict[str, Any]:
+        rt = self._rt(session_id)
+        self._reserve(rt)
+        try:
+            rt.task = asyncio.create_task(engine.drive_compaction(rt, focus),
+                                          name=f"glossx-compact-{rt.id[:8]}")
+        except BaseException:
+            rt.running = False
+            raise
+        rt.refresh_status()
+        result = await asyncio.shield(rt.task)
+        return {**result, "session": rt.public()}
+
+    async def _stop(self, rt: Runtime) -> None:
+        task = rt.task
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=15)
+            except (asyncio.CancelledError, asyncio.TimeoutError, TimeoutError):
+                pass
+            except Exception:
+                logger.exception("turn task failed while stopping")
+        if rt.task is not None and rt.task.done():
+            rt.task = None
+        if rt.task is None and rt.running and rt.parent is None:
+            # cancelled before the task body ran: clean up here
+            engine._abort_pending(rt)
+            engine.finish_turn(rt, {"stop_reason": "interrupted", "rounds": 0})
+
+    async def interrupt(self, session_id: str) -> dict[str, Any]:
+        rt = self._rt(session_id)
+        if rt.parent is not None:
+            rt = rt.root
+        was_running = rt.busy()
+        await self._stop(rt)
+        return {"interrupted": was_running, "session": rt.public()}
+
+    # -- approvals / input ------------------------------------------------------------------
+    def resolve_approval(self, session_id: str, tool_call_id: str, decision: str,
+                         feedback: str | None = None) -> dict[str, Any]:
+        rt = self._rt(session_id)
+        if decision not in DECISIONS:
+            raise ValueError(f"decision must be one of: {', '.join(DECISIONS)}")
+        entry = next((a for a in rt.all_approvals() if a["tool_call_id"] == tool_call_id), None)
+        future = entry.get("future") if entry else None
+        if entry is None or future is None or future.done():
+            raise NotPendingError("no approval is pending for this tool call")
+        future.set_result((decision, (feedback or "").strip()[:4000]))
+        return {"tool_call_id": tool_call_id, "decision": decision,
+                "rule_added": entry.get("suggested_rule") if decision == "always" else None,
+                "session": rt.public()}
+
+    def answer_input(self, session_id: str, answer: str,
+                     tool_call_id: str | None = None) -> dict[str, Any]:
+        rt = self._rt(session_id)
+        answer = (answer or "").strip()
+        if not answer:
+            raise ValueError("answer must not be empty")
+        pending = rt.all_inputs()
+        if tool_call_id:
+            pending = [p for p in pending if p["tool_call_id"] == tool_call_id]
+        entry = pending[0] if pending else None
+        future = entry.get("future") if entry else None
+        if entry is None or future is None or future.done():
+            raise NotPendingError("the session is not waiting for input")
+        future.set_result(answer[:20_000])
+        return {"tool_call_id": entry["tool_call_id"], "session": rt.public()}
+
+    # -- events ---------------------------------------------------------------------------
+    async def subscribe(self, session_id: str) -> AsyncIterator[tuple[str | None, Any, int]]:
+        """Yield ``(event, payload, seq)``; the current state is replayed first.
+        ``(None, None, 0)`` is a keep-alive tick."""
+        rt = self._rt(session_id)
+        queue = rt.subscribe()
+        replay = rt.replay()  # no await since subscribing: no gap, no duplicate
+        seq = rt.seq
+        try:
+            for name, payload in replay:
+                yield name, payload, seq
+            while self._streams_open:
+                try:
+                    item = await asyncio.wait_for(queue.get(), KEEPALIVE_SECONDS)
+                except (asyncio.TimeoutError, TimeoutError):
+                    yield None, None, 0
+                    continue
+                if item is None:
+                    return
+                yield item
+        finally:
+            rt.unsubscribe(queue)
+
+    def close_streams(self) -> None:
+        """End every SSE stream (the server is about to stop: open event streams
+        would otherwise keep it waiting for connections to close)."""
+        self._streams_open = False
+        for rt in list(self._sessions.values()):
+            rt.close_subscribers()
+
+    async def shutdown(self) -> None:
+        self._accepting = False
+        self.close_streams()
+        roots = [rt for rt in self._sessions.values() if rt.parent is None]
+        await asyncio.gather(*(self._stop(rt) for rt in roots), return_exceptions=True)
+        for rt in self._sessions.values():
+            for msg in rt.session["messages"]:
+                if msg.get("type") == "tool_call" and msg.get("status") not in TERMINAL_TOOL:
+                    msg["status"] = "error"
+            rt.close_subscribers()
