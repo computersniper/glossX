@@ -666,9 +666,11 @@ button.small { font-size: 12px; padding: 3px 8px; margin-top: 6px; }
 
 /* Extension marketplace + dynamic plugin panels */
 .extensions-panel h5 { margin: 18px 0 8px; }
-.extensions-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.extensions-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
 .extensions-heading > div { display: flex; align-items: center; gap: 7px; font-size: 15px; }
-.extensions-heading > button, .extension-actions button { border: 1px solid var(--border); border-radius: 7px; background: var(--bg3); color: var(--fg); padding: 5px 9px; font-size: 12px; }
+.extensions-heading-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.extensions-heading-actions button, .extension-actions button { white-space: nowrap; flex-shrink: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--bg3); color: var(--fg); padding: 5px 9px; font-size: 12px; }
+.extensions-heading > div:first-child { flex: 0 0 auto; white-space: nowrap; }
 .extensions-heading > div:first-child { margin-right: auto; }
 .extensions-mark { color: var(--accent); font-size: 18px; }
 .extension-safety { color: var(--fg-dim); font-size: 11.5px; line-height: 1.45; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); }
@@ -702,7 +704,7 @@ button.small { font-size: 12px; padding: 3px 8px; margin-top: 6px; }
 .extension-permissions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .extension-permissions code { padding: 1px 4px; border-radius: 4px; background: var(--bg3); color: var(--accent2); font-size: 9px; }
 .extension-actions { display: flex; flex-direction: column; gap: 5px; }
-.extension-actions button:hover, .extensions-heading > button:hover { border-color: var(--accent); }
+.extension-actions button:hover, .extensions-heading-actions button:hover { border-color: var(--accent); }
 .extension-actions .danger-ghost:hover { color: var(--danger); border-color: var(--danger); }
 .plugin-panel-head { display: flex; gap: 9px; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
 .plugin-panel-head .plugin-icon { width: 34px; height: 34px; display: grid; place-items: center; background: var(--bg3); border-radius: 8px; color: var(--accent2); font-size: 19px; }

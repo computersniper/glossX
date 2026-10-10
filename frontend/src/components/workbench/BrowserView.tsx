@@ -22,6 +22,7 @@ export function BrowserActivity() {
 export function BrowserView({ sessionId, visible }: { sessionId: string; visible: boolean }) {
   const zh = useStore((s) => s.uiLang) === "zh";
   const state = useBrowser((s) => s.states[sessionId]);
+  const sharedError = useBrowser((s) => s.errors[sessionId]);
   const [status, setStatus] = useState<BrowserStatus | null>(null);
   const [frame, setFrame] = useState<BrowserFrame | null>(null);
   const [address, setAddress] = useState("");
@@ -32,6 +33,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
   const [text, setText] = useState("");
   const [actions, setActions] = useState<{ time: number; text: string }[]>([]);
   const image = useRef<HTMLImageElement>(null);
+  const addressField = useRef<HTMLInputElement>(null);
   const inputQueue = useRef<Promise<unknown>>(Promise.resolve());
   const pending = useRef(0);
   const scroll = useRef<{ x: number; y: number; timer: ReturnType<typeof setTimeout> | null }>({ x: 0, y: 0, timer: null });
@@ -66,6 +68,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
     setError("");
     try {
       const result = await browserApi.input(sessionId, body);
+      useBrowser.getState().error(sessionId, "");
       if (result?.tabs) put(sessionId, result);
       else if (result?.state?.tabs) put(sessionId, result.state);
       if (label) note(label);
@@ -118,7 +121,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
       <button type="button" className="gx-icon-btn" title={zh ? "后退" : "Back"} disabled={!current || busy} onClick={() => void act({ type: "back" })}><ArrowLeft size={14} /></button>
       <button type="button" className="gx-icon-btn" title={zh ? "前进" : "Forward"} disabled={!current || busy} onClick={() => void act({ type: "forward" })}><ArrowRight size={14} /></button>
       <button type="button" className="gx-icon-btn" title={zh ? "刷新" : "Reload"} disabled={!current || busy} onClick={() => void act({ type: "reload" })}>{busy || state?.loading ? <Spinner size={14} /> : <RefreshCw size={14} />}</button>
-      <label><Globe size={13} /><input value={address} onChange={(e) => { addressEdited.current = true; setAddress(e.target.value); }} aria-label={zh ? "网址" : "Address"} placeholder="https://arxiv.org/abs/1706.03762" spellCheck={false} /><button type="submit" className="gx-icon-btn" title={zh ? "打开网址" : "Go"} disabled={!address.trim() || busy}><Send size={12} /></button></label>
+      <label><Globe size={13} /><input ref={addressField} value={address} onChange={(e) => { addressEdited.current = true; setAddress(e.target.value); }} aria-label={zh ? "网址" : "Address"} placeholder="https://arxiv.org/abs/1706.03762" spellCheck={false} /><button type="submit" className="gx-icon-btn" title={zh ? "打开网址" : "Go"} disabled={!address.trim() || busy}><Send size={12} /></button></label>
     </form>
     <div className="gx-browser-controls">
       <button type="button" className={`gx-browser-takeover${controlling ? " on" : ""}`} aria-pressed={controlling} disabled={!current || busy} onClick={() => void act({ type: "takeover", controlling: controlling ? "agent" : "user" })}>{controlling ? <Hand size={13} /> : <Sparkles size={13} />}{controlling ? (zh ? "你正在控制 · 交回智能体" : "You are controlling · give back") : (zh ? "智能体控制 · 接管" : "Agent controls · take over")}</button>
@@ -127,10 +130,10 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
       <button type="button" className="gx-btn ghost sm" disabled={!current || busy} onClick={() => void share()}><MessageSquarePlus size={13} />{zh ? "发到对话" : "Send page to chat"}</button>
     </div>
     {status?.restart_pending && <div className="gx-browser-notice" role="status">{zh ? "浏览器设置已更改，将在浏览器重启后生效。可重启 GlossX，或等浏览器空闲关闭。" : "Browser settings changed and will apply after it restarts. Restart GlossX or wait for the idle browser to close."}</div>}
-    {error && <div className="gx-browser-error" role="alert"><span>{error}</span><button type="button" className="gx-link" onClick={() => void load()}>{zh ? "重试" : "Retry"}</button></div>}
+    {(error || sharedError) && <div className="gx-browser-error" role="alert"><span>{error || sharedError}</span><button type="button" className="gx-link" onClick={() => void openBrowser(undefined, sessionId)}>{zh ? "重试" : "Retry"}</button></div>}
     <div className="gx-browser-page">
       {status?.available === false ? <EmptyState icon={<Globe size={24} />} title={zh ? "没有找到浏览器" : "No browser found"} hint={zh ? "安装 Edge、Chrome 或 Chromium，或在智能体设置中指定浏览器路径。" : "Install Edge, Chrome or Chromium, or set its executable path in agent settings."} action={<button type="button" className="gx-btn" onClick={() => useStore.getState().setLayout({ activity: "settings", sideOpen: true })}>{zh ? "打开设置" : "Open settings"}</button>} />
-      : !current ? <EmptyState icon={<Globe size={30} />} title={zh ? "从一个页面开始" : "Start with a page"} hint={zh ? "输入网址，或让智能体打开一篇论文。这个浏览器使用 GlossX 独立配置，不读取你的个人浏览器资料。" : "Enter a URL or ask the agent to open a paper. This browser uses a separate GlossX profile."} action={<button type="button" className="gx-btn" onClick={() => void act({ type: "new_tab", url: "about:blank" })}><Plus size={13} />{zh ? "新标签" : "New tab"}</button>} />
+      : !current || url === "about:blank" ? <EmptyState icon={<Globe size={30} />} title={zh ? "从一个网址开始" : "Start with a URL"} hint={zh ? "输入网址，或让智能体打开一篇论文。这个浏览器使用 GlossX 独立配置，不读取你的个人浏览器资料。" : "Enter a URL or ask the agent to open a paper. This browser uses a separate GlossX profile."} action={<button type="button" className="gx-btn" onClick={() => { setAddress(""); addressEdited.current = true; addressField.current?.focus(); }}>{zh ? "输入网址" : "Enter a URL"}</button>} />
       : frame ? <img ref={image} className={`gx-browser-frame${controlling ? " controlling" : ""}`} src={frame.data.startsWith("data:") ? frame.data : `data:image/jpeg;base64,${frame.data}`} alt={state?.title || current.title || (zh ? "实时浏览页面" : "Live browser page")} tabIndex={controlling ? 0 : -1} draggable={false}
         onClick={(e) => { if (!controlling) return; e.currentTarget.focus(); const b = e.currentTarget.getBoundingClientRect(); void act({ type: "click", x: Math.round((e.clientX - b.x) * frame.width / b.width), y: Math.round((e.clientY - b.y) * frame.height / b.height) }); }}
         onWheel={(e) => { if (!controlling) return; e.stopPropagation(); scroll.current.x += e.deltaX; scroll.current.y += e.deltaY; if (!scroll.current.timer) scroll.current.timer = setTimeout(() => { const { x, y } = scroll.current; scroll.current = { x: 0, y: 0, timer: null }; void act({ type: "scroll", delta_x: x, delta_y: y }); }, 80); }}

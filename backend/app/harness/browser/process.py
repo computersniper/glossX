@@ -6,6 +6,8 @@ import re
 import time
 import os
 import signal
+import uuid
+import shutil
 from collections import deque
 from pathlib import Path
 
@@ -17,7 +19,10 @@ from .discovery import BrowserExecutable, discover
 class BrowserProcess:
     def __init__(self, data_dir: Path, *, path: str | None = None, headed: bool = False,
                  idle_timeout: float = 300):
-        self.profile = data_dir.resolve() / "browser" / "profile"
+        self._profile_parent = data_dir.resolve() / "browser"
+        # A fixed profile may hand off to a different running desktop instance
+        # or retain bad startup state. Never share it or touch a personal profile.
+        self.profile = self._profile_parent / f"profile-{os.getpid()}-{uuid.uuid4().hex[:12]}"
         self.path = path
         self.headed = headed
         self.idle_timeout = idle_timeout
@@ -166,3 +171,9 @@ class BrowserProcess:
             except asyncio.CancelledError:
                 await cleanup
                 raise
+            finally:
+                # Only remove this instance's random, explicitly owned folder.
+                # Preserve legacy DATA/browser/profile and other live instances.
+                resolved = self.profile.resolve()
+                if resolved.parent == self._profile_parent and resolved.name.startswith(f'profile-{os.getpid()}-'):
+                    await asyncio.to_thread(shutil.rmtree, resolved, True)

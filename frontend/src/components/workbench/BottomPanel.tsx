@@ -1,38 +1,13 @@
-import { useEffect } from "react";
 import { useStore, type BottomTab } from "../../store";
-import { RunTrace, agentText } from "../AgentRunViews";
+import { agentText } from "../AgentRunViews";
 import { ImportQueue } from "../ImportQueue";
 import { cancelAiTaskByKey, useAllAiTasks } from "../../api/aiTasks";
 import { visibleImportJobs } from "../../importQueue.mjs";
 import { Icon } from "./icons";
+import { TerminalTab } from "./TerminalTab";
+import { SessionTrace } from "./SessionTrace";
 
 const live = (status?: string) => status === "running" || status === "awaiting_approval";
-
-function TraceTab() {
-  const runId = useStore((s) => s.agentRunId || s.recentRuns[0]?.id || null);
-  const run = useStore((s) => (runId ? s.runs[runId] || s.recentRuns.find((r) => r.id === runId) : undefined));
-  const events = useStore((s) => (runId ? s.runEvents[runId] : undefined));
-  const loadRun = useStore((s) => s.loadRun);
-  const openRunTab = useStore((s) => s.openRunTab);
-  const zh = useStore((s) => s.uiLang) === "zh";
-  const T = agentText(zh);
-  const missing = !!runId && !events;
-  useEffect(() => {
-    if (runId && missing) void loadRun(runId).catch(() => {});
-  }, [runId, missing]);
-  if (!runId || !run) return <div className="muted">{zh ? "还没有智能体运行。" : "No agent run yet."}</div>;
-  return (
-    <div className="agent-panel">
-      <div className="agent-run-head">
-        <span className={`agent-dot ${run.status}`} />
-        <strong className="agent-run-goal" title={run.goal}>{run.goal}</strong>
-        <span className="muted">{T.status_[run.status] || run.status}</span>
-        <button className="small" onClick={() => openRunTab(runId)}>{zh ? "打开报告" : "Open report"}</button>
-      </div>
-      <RunTrace events={events || []} />
-    </div>
-  );
-}
 
 function RunsTab() {
   const runs = useStore((s) => s.recentRuns);
@@ -117,7 +92,7 @@ function TasksTab() {
 }
 
 const TABS: { id: BottomTab; en: string; zh: string; C: () => JSX.Element }[] = [
-  { id: "trace", en: "Run trace", zh: "运行轨迹", C: TraceTab },
+  { id: "trace", en: "Activity", zh: "操作记录", C: SessionTrace },
   { id: "runs", en: "Runs", zh: "运行记录", C: RunsTab },
   { id: "tasks", en: "Tasks", zh: "任务", C: TasksTab },
 ];
@@ -131,8 +106,9 @@ export function BottomPanel() {
   return (
     <div className="wb-bottom">
       <div className="wb-bottom-head">
+        <button className={`wb-bottom-tab${tab === "terminal" ? " on" : ""}`} onClick={() => setLayout({ bottomTab: "terminal" })}>{zh ? "终端" : "Terminal"}</button>
         {TABS.map((t) => (
-          <button key={t.id} className={`wb-bottom-tab${t.id === active.id ? " on" : ""}`} onClick={() => setLayout({ bottomTab: t.id })}>
+          <button key={t.id} className={`wb-bottom-tab${t.id === tab ? " on" : ""}`} onClick={() => setLayout({ bottomTab: t.id })}>
             {zh ? t.zh : t.en}
           </button>
         ))}
@@ -141,7 +117,7 @@ export function BottomPanel() {
           <Icon name="close" size={14} />
         </button>
       </div>
-      <div className="wb-bottom-body"><C /></div>
+      <div className="wb-bottom-body"><TerminalTab visible={tab === "terminal"} />{tab !== "terminal" && <C />}</div>
     </div>
   );
 }

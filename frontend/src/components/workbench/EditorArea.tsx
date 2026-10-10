@@ -12,7 +12,6 @@ import { CheckpointView, FileEditor, isDirty, useFiles } from "./FileEditor";
 import { Icon } from "./icons";
 import { CommitView, VcsDiffView } from "./VcsViews";
 import { SHORTCUTS } from "./shortcuts";
-import { BrowserView } from "./BrowserView";
 import { openBrowser } from "../../browserStore";
 
 const baseName = (path: string) => path.split("/").pop() || path;
@@ -321,7 +320,6 @@ export function EditorArea() {
         </div>
       )}
       <div className="wb-editor-body">
-        {openTabs.filter((t) => t.kind === "browser").map((t) => <BrowserView key={t.id} sessionId={t.id} visible={activeTabKey === tabKey(t)} />)}
         {current && <PaperEditor visible={!!paperActive && !loading} />}
         {loading && <div className="wb-doc wb-loading"><Spinner size={16} /> {zh ? "正在打开论文…" : "Opening paper…"}</div>}
         {openTabs.filter((t) => t.kind === "run").map((t) => (

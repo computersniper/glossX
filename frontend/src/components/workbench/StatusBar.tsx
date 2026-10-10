@@ -2,7 +2,7 @@ import { useStore } from "../../store";
 import { ProviderSwitcher } from "../ProviderSwitcher";
 import { THEMES } from "../ThemePicker";
 import { useAllAiTasks } from "../../api/aiTasks";
-import { Activity, BellRing, Languages, Palette } from "lucide-react";
+import { Activity, BellRing, Languages, Palette, Terminal } from "lucide-react";
 import { useActiveSession, useSessions } from "../../sessionStore";
 import { formatTokens } from "../session/toolMeta";
 import { MenuButton, MenuItem, MenuLabel, Spinner } from "../ui";
@@ -57,6 +57,7 @@ export function StatusBar() {
       {model && <span className="wb-status-item muted" title={`${provider} · ${model}`}>{model}</span>}
       <ProjectSwitcher className="wb-status-item" placement="top-start" />
       <BranchSwitcher />
+      <button className="wb-status-item" title={zh ? "打开当前工作区终端" : "Open workspace terminal"} onClick={() => setLayout({ bottomOpen: true, bottomTab: "terminal" })}><Terminal size={13} /><span>{zh ? "终端" : "Terminal"}</span></button>
       <CacheIndicator zh={zh} status />
       {waiting > 0 && (
         <button

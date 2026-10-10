@@ -56,6 +56,21 @@
 .gx-ws-location p { line-height: 1.6; font-size: 10px; }
 .gx-turn-usage { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--gx-text-2); padding: 6px 2px; }
 
+.wb-ext .extensions-heading { align-items: flex-start; }
+.wb-ext .extensions-heading > div:first-child { flex-basis: 100%; }
+.wb-ext .extensions-heading-actions { width: 100%; min-width: 0; }
+.wb-ext .extension-card { grid-template-columns: 28px minmax(0, 1fr); }
+.wb-ext .extension-actions { grid-column: 2; flex-direction: row; flex-wrap: wrap; }
+.wb-ext .extension-title { flex-wrap: wrap; gap: 4px 8px; }
+.wb-ext .extension-title strong { min-width: 0; flex: 1 1 100px; word-break: normal; }
+.wb-ext .extension-title span { white-space: nowrap; }
+.wb-ext .extension-main { min-width: 0; overflow-wrap: anywhere; }
+.wb-ai-slot > .gx-browser { position: relative; inset: auto; flex: 1; width: 100%; height: 100%; }
+.wb-ai-slot .gx-browser-controls .spacer { display: none; }
+.wb-ai-slot .gx-browser-controls { gap: 5px; }
+.wb-ai-slot .gx-browser-controls .gx-browser-takeover { flex-basis: 100%; justify-content: flex-start; }
+.wb-ai-head > .wb-icon-btn { flex-shrink: 0; }
+
 :root {
   /* type */
   --gx-font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "SF Pro Text",
@@ -584,7 +599,7 @@ html:has(.app.mode-glossx), body:has(.app.mode-glossx) { overflow: hidden; }
 /* AI pane */
 .wb-ai { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--gx-s1); outline: none; }
 .wb-ai-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 6px 0 8px; border-bottom: 1px solid var(--gx-line-soft); background: var(--gx-chrome); }
-.wb-ai-tabs { display: inline-flex; align-self: stretch; gap: 2px; flex: 0 0 auto; }
+.wb-ai-tabs { display: inline-flex; align-self: stretch; gap: 2px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .wb-ai-tabs button { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 0; background: none; color: var(--gx-text-3); font-size: var(--gx-fs-sm); font-weight: 500; white-space: nowrap; cursor: pointer; transition: color var(--gx-fast); }
 .wb-ai-tabs button:hover { color: var(--gx-text-2); }
 .wb-ai-tabs button.on { color: var(--gx-text); }

@@ -6,11 +6,15 @@ import { SidePanel } from "../SidePanel";
 import { FileText } from "lucide-react";
 import { EmptyState } from "../ui";
 import { Icon } from "./icons";
+import { BrowserView } from "./BrowserView";
+import { openBrowser } from "../../browserStore";
+import { useSessions } from "../../sessionStore";
 
 const MODES: { id: AiMode; icon: string; en: string; zh: string }[] = [
   { id: "agent", icon: "agent", en: "Agent", zh: "智能体" },
   { id: "chat", icon: "chat", en: "Paper chat", zh: "论文对话" },
   { id: "tools", icon: "tools", en: "Tools", zh: "论文工具" },
+  { id: "browser", icon: "browser", en: "Browser", zh: "浏览器" },
 ];
 
 function NeedsPaper() {
@@ -34,12 +38,22 @@ function ToolsSlot() {
   return current ? <SidePanel variant="tools" /> : <NeedsPaper />;
 }
 
+function BrowserSlot() {
+  const browserId = useStore((s) => s.browserSessionId);
+  const activeId = useSessions((s) => s.activeId);
+  const id = browserId || activeId;
+  const visible = useStore((s) => s.layout.aiOpen && s.layout.aiMode === "browser");
+  const zh = useStore((s) => s.uiLang) === "zh";
+  return id ? <BrowserView key={id} sessionId={id} visible={visible} /> : <EmptyState title={zh ? "打开共享浏览器" : "Open the shared browser"} hint={zh ? "输入网址，与智能体一起浏览。" : "Browse a page together with your agent."} action={<button className="gx-btn" onClick={() => void openBrowser()}>{zh ? "打开浏览器" : "Open browser"}</button>} />;
+}
+
 /** Default slot contents. The pane itself is only a container, so any slot can
  *  be swapped (e.g. a session-based agent chat) without touching the layout. */
 export const DEFAULT_AI_SLOTS: Record<AiMode, () => ReactNode> = {
   agent: () => <SessionChat />,
   chat: () => <ChatSlot />,
   tools: () => <ToolsSlot />,
+  browser: () => <BrowserSlot />,
 };
 
 export function AiPane({ slots = DEFAULT_AI_SLOTS, onClose }: { slots?: Record<AiMode, () => ReactNode>; onClose?: () => void }) {
@@ -71,7 +85,7 @@ export function AiPane({ slots = DEFAULT_AI_SLOTS, onClose }: { slots?: Record<A
             </button>
           ))}
         </div>
-        <span className="wb-ai-context" title={current?.title}>{mode !== "agent" ? current?.title || "" : ""}</span>
+        <span className="wb-ai-context" title={current?.title}>{mode === "chat" || mode === "tools" ? current?.title || "" : ""}</span>
         {onClose && (
           <button className="wb-icon-btn" title={zh ? "收起 AI 面板 (Ctrl+L)" : "Hide AI pane (Ctrl+L)"} onClick={onClose}>
             <Icon name="close" size={14} />

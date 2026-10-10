@@ -40,6 +40,7 @@ from .routers import (
     settings,
     skills,
     tasks,
+    terminal,
     usage,
 )
 
@@ -65,6 +66,7 @@ def _close_streams_on_exit_signal(app: FastAPI) -> None:
                 try:
                     loop.call_soon_threadsafe(app.state.sessions.close_streams)
                     loop.call_soon_threadsafe(lambda: asyncio.create_task(app.state.browser.close()))
+                    loop.call_soon_threadsafe(lambda: asyncio.create_task(app.state.terminals.close()))
                 except Exception:  # loop already closed
                     pass
                 _previous(sig, frame)
@@ -92,10 +94,13 @@ async def lifespan(app: FastAPI):
     from .harness.browser.engine import BrowserManager
     app.state.browser = BrowserManager(app.state.sessions)
     app.state.sessions.browser = app.state.browser
+    from .harness.terminal import TerminalManager
+    app.state.terminals = TerminalManager()
     _close_streams_on_exit_signal(app)
     try:
         yield
     finally:
+        await app.state.terminals.close()
         # sessions first: their turns may be waiting on workflow runs
         await app.state.sessions.shutdown()
         await app.state.browser.close()
@@ -149,6 +154,7 @@ app.include_router(sessions.router)
 app.include_router(harness.router)
 app.include_router(harness.workspace_router)
 app.include_router(browser.router)
+app.include_router(terminal.router)
 
 
 # ---------------------------------------------------------------------------

@@ -159,9 +159,11 @@ export function ExtensionsPanel() {
     <div className="panel-body extensions-panel">
       <div className="extensions-heading">
         <div><span className="extensions-mark">▦</span><strong>{T.title}</strong></div>
+        <div className="extensions-heading-actions">
         <button onClick={() => setFeedbackOpen((open) => !open)}>{T.feedback}</button>
         <button onClick={() => void toggleDeveloper()}>{T.developer}</button>
         <button onClick={() => fileRef.current?.click()} disabled={busy === "import"}>{T.import}</button>
+        </div>
         <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => importManifest(e.target.files?.[0])} />
       </div>
       <p className="extension-safety">🔒 {T.safe}</p>

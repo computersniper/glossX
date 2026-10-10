@@ -154,7 +154,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
         patchState(id, (s) => applySessionEvent(s, name, payload) as SessionState);
         if (name === "browser.updated") useBrowser.getState().put(id, payload);
         if (name === "tool.updated" && String(payload?.tool || "").startsWith("browser_") && !["denied", "error", "awaiting_approval"].includes(payload?.status)) {
-          if (useStore.getState().mode === "glossx" && !useStore.getState().openTabs.some((t) => t.kind === "browser" && t.id === id)) useStore.getState().openBrowserTab(id);
+          if (useStore.getState().mode === "glossx" && useStore.getState().browserSessionId !== id) useStore.getState().openBrowserTab(id);
         }
           if (name === "session.updated" || name === "turn.completed" || name === "usage.updated") {
           syncSummary(id);

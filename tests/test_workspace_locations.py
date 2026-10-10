@@ -128,3 +128,14 @@ def test_relocation_reserves_workspace_against_new_turn(client, tmp_path, monkey
         worker.join(10)
     assert not worker.is_alive()
     ok(replies[0])
+
+
+def test_open_terminal_prevents_relocation(client, tmp_path):
+    p = project(client)
+    with client.websocket_connect(f"/api/workspace/{p['id']}/terminal") as socket:
+        assert socket.receive_json()["type"] == "ready"
+        response = move(client, p["id"], tmp_path / "terminal-busy")
+        assert response.status_code == 409 and response.json()["code"] == "busy"
+        assert "terminal" in response.json()["detail"].lower()
+        socket.send_json({"type": "close"})
+    assert not (tmp_path / "terminal-busy").exists()

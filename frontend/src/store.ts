@@ -21,8 +21,8 @@ import { evictPdfDoc } from "./pdf/docCache";
 // ---- workbench layout + editor tabs ----
 export type UiMode = "gloss" | "glossx"; // classic reader | agent workbench
 export type Activity = "library" | "threads" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings" | "browser";
-export type AiMode = "agent" | "chat" | "tools";
-export type BottomTab = "trace" | "runs" | "tasks";
+export type AiMode = "agent" | "chat" | "tools" | "browser";
+export type BottomTab = "trace" | "runs" | "tasks" | "terminal";
 export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme" | "branches" | "newBranch" | "commit" | "tryBranch" | "browserUrl";
 // file / checkpoint ids are `<workspace key>|<path or checkpoint id>`;
 // vcsdiff = `<key>|<path>` (working tree vs HEAD); commit = `<key>|<commit id>`
@@ -131,6 +131,7 @@ interface State {
   openVcsDiffTab: (project: string | null | undefined, path: string) => void;
   openCommitTab: (project: string | null | undefined, commitId: string) => void;
   openBrowserTab: (sessionId: string) => void;
+  browserSessionId: string | null;
   restoreTabs: () => Promise<void>;
   openCitation: (span: AgentSpan) => Promise<void>;
   // agent
@@ -337,15 +338,19 @@ export const useStore = create<State>((set, get) => ({
     addTab({ kind: "commit", id });
     void get().activateTab(`commit:${id}`);
   },
+  browserSessionId: readStr("gloss.browserSession", "") || null,
   openBrowserTab: (id) => {
-    addTab({ kind: "browser", id });
-    void get().activateTab(`browser:${id}`);
+    localStorage.setItem("gloss.browserSession", id);
+    set({ browserSessionId: id });
+    get().setLayout({ aiOpen: true, aiMode: "browser", aiWidth: Math.max(520, get().layout.aiWidth) });
   },
   restoreTabs: async () => {
     const saved = readJson<{ tabs: EditorTab[]; active: string | null }>(TABS_KEY, { tabs: [], active: null });
     const known = new Set(get().papers.map((p) => p.id));
+    const legacyBrowser = (Array.isArray(saved.tabs) ? saved.tabs : []).find((t) => t.kind === "browser" && `browser:${t.id}` === saved.active);
+    if (legacyBrowser) get().openBrowserTab(legacyBrowser.id);
     const tabs = (Array.isArray(saved.tabs) ? saved.tabs : []).filter(
-      (t) => t && typeof t.id === "string" && (t.kind === "paper" ? known.has(t.id) : ["run", "welcome", "file", "browser"].includes(t.kind)),
+      (t) => t && typeof t.id === "string" && (t.kind === "paper" ? known.has(t.id) : ["run", "welcome", "file"].includes(t.kind)),
     );
     if (!tabs.length) return;
     set({ openTabs: tabs });

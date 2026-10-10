@@ -377,6 +377,10 @@ async def _vcs(func, *args: Any, **kwargs: Any) -> Any:
 def _refuse_while_running(request: Request, project_id: str, action: str) -> JSONResponse | None:
     """Switching the tree under a running agent turn would confuse it."""
     manager = getattr(request.app.state, "sessions", None)
+    terminals = getattr(request.app.state, "terminals", None)
+    if terminals is not None and terminals.has_active(_project(project_id)):
+        return JSONResponse({"detail": f"A terminal is open in this workspace. Close it before you {action}.",
+                             "code": "busy"}, status_code=409)
     busy = manager.busy_sessions(_project(project_id)) if manager is not None else []
     if not busy:
         return None
