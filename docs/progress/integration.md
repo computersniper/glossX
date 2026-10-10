@@ -44,3 +44,10 @@ Git 提交只注明实际参与的作者，不沿用旧交接文档中的 Claude
 - 提交 `e7a2a5f`：GitHub **CI 通过**（run 38034164695），**Preview build 通过**（run 38034164646）。
 - 同一提交本地复核：后端全量 155 passed / 10 skipped；前端 tsc、27 tests、build 通过。
 - 上面"待完成"里的全量检查、推送、按 SHA 核对 CI 三项至此完成。浏览器内的"合并分支 / 删除分支"仍未真实点击，见 `docs/PROGRESS.md` 第 4 节。
+
+## 续作收尾（2026-10-10 傍晚）
+
+- "前端分支交互最终确认"完成：新增 `scripts/dev/ui_merge_delete.cjs`，在真实服务上用浏览器点击合并、冲突合并、删除分支，3 项通过，页面错误 0。用法：`node scripts/dev/ui_merge_delete.cjs <base_url> <截图目录>`（脚本里的 Playwright 和 Chromium 路径是本机路径，换机器要改）。
+- 独立重跑 `verify_workspace.py`（真实 Codex）通过。
+- 修复欢迎页卡片标题与快捷键标签重叠。
+- 至此暂停时列出的"剩余顺序"全部完成。

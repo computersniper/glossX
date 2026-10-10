@@ -90,8 +90,11 @@ packaging/GlossX.spec  scripts/  .github/workflows/（ci.yml, preview-build.yml,
 
 - 本轮功能代码已完成并推送。远程核验（2026-10-10）：提交 `e7a2a5f` 的 **CI 通过**（Backend tests、Frontend build）、**Preview build 通过**（`GlossX.exe` 和 npm 包可在该次运行的 Artifacts 下载）。此前快照 `3391160` 的 CI 失败是半成品，属预期。
 - 本地复核（同日，`e7a2a5f`）：后端全量 **155 passed / 10 skipped**；前端 `tsc`、`npm test` 27 通过、`npm run build` 通过。
+- 独立复核另一组 agent 的成果（2026-10-10 傍晚）：
+  - 重跑 `scripts/dev/verify_workspace.py`（真实 Codex `gpt-5.6-sol`，全新隔离目录）全部通过，`fs_write` / `fs_read` / `vcs_status` 均为 done，回合自动提交和分支提交都产生了。第一次重跑因 Codex 账号用量额度用完而失败（GlossX 如实显示了原因），额度恢复后通过。
+  - 浏览器真实点击"合并分支""冲突合并""删除分支"：`scripts/dev/ui_merge_delete.cjs`，3 项通过，页面错误 0。冲突时界面有提示，合并被中止，`main` 内容不变、仓库干净。
+  - 修了欢迎页卡片标题与快捷键标签重叠的样式问题（`glossx.css` 的 `.wb-actions`）。
 - 仍未做：
-  - 浏览器里没有真实点击过"合并分支"和"删除分支"（接口层已用真实服务验证）；
   - 没有在浏览器里用真实模型跑过对话（真实 Codex 只通过接口驱动验证）；
   - 真实模型下的 `run_workflow literature-review`、MCP、SSH、Claude Code 代理执行；
   - 中文界面下后端发来的文字（审批原因、系统提示、命令说明）仍是英文。
