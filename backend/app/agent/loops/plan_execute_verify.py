@@ -17,18 +17,7 @@ async def run(state: RunState) -> None:
     wc, emit, meter = state.wc, state.emit, state.meter
 
     if not state.workflow_ran:
-        seed = core.seed_step(state)
-        if seed:
-            wc.plan.append(seed)
-            state.publish_plan()
-            await core.execute(state, [seed])
-        steps = await core.plan(state)
-        for s in steps:
-            s["round"] = 1
-        wc.plan.extend(steps)
-        state.publish_plan()
-        await core.execute(state, steps)
-        state.publish_plan()
+        await core.gather_evidence(state)
 
     await core.write_and_verify(state, 1, first=True)
     state.rounds = 1

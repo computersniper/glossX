@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import plan_execute_verify, react
+from . import plan_execute_verify, react, reflexion
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,14 @@ LOOPS: dict[str, LoopPlugin] = {
             "the result, repeat until the decider says done; then write and verify."
         ),
         run=react.run,
+    ),
+    "reflexion": LoopPlugin(
+        id="reflexion",
+        card=(
+            "Plan-execute-verify with self-reflection: after each round, critique the "
+            "verdicts into lessons and replan with them; stop when coverage stops improving."
+        ),
+        run=reflexion.run,
     ),
 }
 DEFAULT_LOOP = "plan-execute-verify"

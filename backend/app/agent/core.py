@@ -79,6 +79,15 @@ VERIFY_SHAPE = (
     '"confidence": 0.0, "note": "short reason"}]}'
 )
 
+REPAIR_SYSTEM = (
+    "You repair a research answer after fact checking. Some of its claims were "
+    "judged unsupported by the cited evidence. Rewrite the answer so that it no "
+    "longer states those claims: delete them, or say plainly that the evidence "
+    "does not establish them. Keep every supported statement and its citation "
+    "markers exactly as written; never add new facts or new citation markers."
+)
+REPAIR_SHAPE = '{"answer": "<the repaired markdown answer>"}'
+
 REFLECT_SYSTEM = (
     "You are the reflection step of GlossX, a research agent. Decide whether the "
     "current answer adequately covers every sub-question with supported claims. "
@@ -117,6 +126,10 @@ class RunState:
     rounds: int = 0
     stop_reason: str | None = None
     workflow_ran: bool = False
+    # set by a workflow's ``agent.writer`` step: how this kind of answer is written
+    writer_instructions: str = ""
+    # claims the verifier rejected and :func:`repair` removed from the answer
+    rejected_claims: list[dict] = field(default_factory=list)
 
     @property
     def provider(self) -> str | None:
@@ -381,17 +394,13 @@ async def synthesize(state: RunState, round_no: int) -> dict:
         f"{wrap_untrusted('evidence-spans', evidence) if evidence else '(no evidence spans were found)'}\n\n"
         f"Write the answer in: {output_language()}."
     )
+    if state.writer_instructions:
+        user += f"\n\nHOW TO WRITE THIS ANSWER (from the workflow):\n{state.writer_instructions}"
     out = await json_complete(system_prompt(SYNTH_SYSTEM), user, SYNTH_SHAPE, provider=state.provider)
     out = out if isinstance(out, dict) else {}
     answer = str(out.get("answer") or "").strip()
 
-    def keep(match: re.Match) -> str:
-        return match.group(0) if match.group(1) in provided else ""
-
-    cleaned = CITE.sub(keep, answer)
-    if cleaned != answer:
-        cleaned = re.sub(r"[ \t]+([.,;:!?)])", r"\1", cleaned)
-    answer = cleaned
+    answer = strip_citations(answer, provided)
     claims = []
     raw_claims = out.get("claims") if isinstance(out.get("claims"), list) else []
     for c in raw_claims[:MAX_CLAIMS]:
@@ -465,6 +474,62 @@ async def verify(state: RunState, draft: dict) -> list[dict]:
     return claims
 
 
+def strip_citations(answer: str, allowed: set[str]) -> str:
+    """Drop ``[S:id]`` markers whose id is not in ``allowed``."""
+
+    def keep(match: re.Match) -> str:
+        return match.group(0) if match.group(1) in allowed else ""
+
+    cleaned = CITE.sub(keep, answer)
+    if cleaned != answer:
+        cleaned = re.sub(r"[ \t]+([.,;:!?)])", r"\1", cleaned)
+    return cleaned
+
+
+async def repair(state: RunState) -> None:
+    """Remove claims the verifier judged unsupported from the final answer.
+
+    The rejected claims leave ``state.claims`` (and so project memory) and are
+    kept in ``state.rejected_claims``; the answer text is rewritten by the LLM so
+    it no longer asserts them. If the rewrite is impossible (no budget, provider
+    error) the answer text is kept and the event log says so.
+    """
+    bad = [c for c in state.claims if c.get("verdict") == "unsupported"]
+    if not bad or state.draft is None:
+        return
+    emit = state.emit
+    state.claims = [c for c in state.claims if c.get("verdict") != "unsupported"]
+    state.rejected_claims = bad
+    answer = str(state.draft.get("answer") or "")
+    if not answer.strip():
+        return
+    emit(event("verify", "started", f"repairing the answer: removing {len(bad)} unsupported claim(s)"))
+    if state.meter.exhausted:
+        emit(event("verify", "info", "no budget left to rewrite the answer; unsupported claims are "
+                                     "only dropped from the claim list"))
+        return
+    allowed = set(CITE.findall(answer))
+    user = (
+        f"ANSWER:\n{wrap_untrusted('draft-answer', answer)}\n\n"
+        f"UNSUPPORTED CLAIMS (remove these):\n"
+        f"{wrap_untrusted('unsupported-claims', chr(10).join('- ' + c['text'] for c in bad))}\n\n"
+        f"Write the repaired answer in: {output_language()}."
+    )
+    try:
+        out = await json_complete(system_prompt(REPAIR_SYSTEM), user, REPAIR_SHAPE, provider=state.provider)
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:  # includes BudgetExceeded: repairing is best-effort
+        emit(event("verify", "failed", f"could not rewrite the answer: {err(error)}"))
+        return
+    repaired = str((out or {}).get("answer") or "").strip() if isinstance(out, dict) else ""
+    if not repaired:
+        emit(event("verify", "failed", "repair returned an empty answer; keeping the original text"))
+        return
+    state.draft["answer"] = strip_citations(repaired, allowed)
+    emit(event("verify", "completed", f"answer repaired; {len(bad)} unsupported claim(s) removed"))
+
+
 def coverage(claims: list[dict]) -> float:
     """Share of claims backed by evidence (partial counts half)."""
     if not claims:
@@ -491,6 +556,23 @@ async def reflect(state: RunState, rounds_left: int) -> tuple[str, str, Any]:
     decision = str(out.get("decision") or "stop").strip().lower()
     reason = str(out.get("reason") or "")[:500]
     return ("replan" if decision == "replan" else "stop"), reason, out.get("new_steps")
+
+
+async def gather_evidence(state: RunState) -> None:
+    """First round without a workflow: seed evidence, plan, execute the plan."""
+    wc = state.wc
+    seed = seed_step(state)
+    if seed:
+        wc.plan.append(seed)
+        state.publish_plan()
+        await execute(state, [seed])
+    steps = await plan(state)
+    for s in steps:
+        s["round"] = 1
+    wc.plan.extend(steps)
+    state.publish_plan()
+    await execute(state, steps)
+    state.publish_plan()
 
 
 def seed_step(state: RunState) -> dict | None:
@@ -520,6 +602,7 @@ def final(state: RunState) -> dict:
     return {
         "answer": draft["answer"],
         "claims": claims,
+        "rejected_claims": list(state.rejected_claims),
         "citations": citations,
         "sub_questions": list(state.wc.sub_questions),
         "stop_reason": state.stop_reason or "goal_met",

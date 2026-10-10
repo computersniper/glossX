@@ -1027,6 +1027,11 @@ def _v2_loop(raw: Any) -> dict[str, Any] | None:
         if isinstance(rounds, bool) or not isinstance(rounds, int) or not 1 <= rounds <= 3:
             raise ValueError("plugin loop.stop.max_rounds must be an integer between 1 and 3")
         clean_stop["max_rounds"] = rounds
+    if "patience" in stop:
+        patience = stop["patience"]
+        if isinstance(patience, bool) or not isinstance(patience, int) or not 1 <= patience <= 3:
+            raise ValueError("plugin loop.stop.patience must be an integer between 1 and 3")
+        clean_stop["patience"] = patience
     for key in ("max_usd",):  # accepted for forward compatibility, not enforced
         if key in stop and isinstance(stop[key], (int, float)) and not isinstance(stop[key], bool):
             clean_stop[key] = float(stop[key])

@@ -102,12 +102,14 @@ async def _paper_search_spans(args: dict[str, Any], ctx: RunContext) -> Any:
     paper_ids = args.get("paper_ids")
     if isinstance(paper_ids, str):
         paper_ids = [paper_ids]
+    if isinstance(paper_ids, list):
+        # workflow templates may project ids that are missing (None) for some items
+        paper_ids = [str(p) for p in paper_ids if isinstance(p, (str, int)) and str(p)]
     if not isinstance(paper_ids, list) or not paper_ids:
         paper_ids = list(ctx.paper_ids)
     if not paper_ids:
         # no run scope: search the whole library
         paper_ids = [p["id"] for p in store.list_papers()[:50]]
-    paper_ids = [str(p) for p in paper_ids if isinstance(p, (str, int))]
     spans = ctx.spans.search(query, paper_ids, k=k)
     return {"query": query, "spans": spans}
 
