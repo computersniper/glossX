@@ -58,7 +58,7 @@ function useMenus(): Menu[] {
     ] },
     { id: "go", label: L("Go", "转到"), key: "G", entries: [
       { label: L("Library", "论文库"), run: show("library") },
-      { label: L("Threads", "对话"), run: show("threads") },
+      { label: L("Threads", "对话列表"), run: () => { st.setLayout({ aiOpen: true, aiMode: "threads" }); useSessions.getState().setSideView("threads"); } },
       { label: L("Workspace", "工作区"), run: show("workspace") },
       { label: L("Source control", "源代码管理"), run: show("scm") },
       { label: L("Scholar search", "学术搜索"), run: show("search") },
