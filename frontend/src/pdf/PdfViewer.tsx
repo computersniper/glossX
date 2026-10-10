@@ -100,7 +100,10 @@ export function PdfViewer() {
   const addChatAttachment = useStore((s) => s.addChatAttachment);
 
   const [scale, setScale] = useState(1.35);
-  const [rendered, setRendered] = useState(false);
+  // Id of the paper whose document is loaded. A boolean flag missed tab switches:
+  // a cached document resolves at once, so false→true batched into no change and
+  // the previous paper's pages stayed on screen.
+  const [loadedId, setLoadedId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const docRef = useRef<any>(null);
@@ -125,13 +128,13 @@ export function PdfViewer() {
   useEffect(() => {
     if (!current) return;
     let cancelled = false;
-    setRendered(false);
+    setLoadedId(null);
     restoreRef.current = current.id;
     // documents are owned by the shared cache (evicted when the tab closes)
     getPdfDoc(current.id).then((doc: any) => {
       if (cancelled) return;
       docRef.current = doc;
-      setRendered(true);
+      setLoadedId(current.id);
     }).catch(() => {});
     return () => {
       cancelled = true;
@@ -151,7 +154,7 @@ export function PdfViewer() {
   // Render all pages whenever the doc is ready or the scale changes.
   useEffect(() => {
     const doc = docRef.current;
-    if (!doc || !rendered) return;
+    if (!doc || !loadedId || loadedId !== current?.id) return;
     let cancelled = false;
     // cancel any in-flight renders from a previous scale so they don't collide
     // with the new ones on the same canvas (which makes PDF.js throw).
@@ -215,7 +218,7 @@ export function PdfViewer() {
     return () => {
       cancelled = true;
     };
-  }, [rendered, scale, current?.id]);
+  }, [loadedId, scale, current?.id]);
 
   // Scroll to a requested page/section.
   useEffect(() => {
