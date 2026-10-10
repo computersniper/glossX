@@ -94,6 +94,8 @@ interface SessionsStore {
   remove: (id: string) => Promise<void>;
   /** Fork the active chat up to and including `messageId` (whole chat when omitted); `prefill` lands in the composer. */
   fork: (messageId?: string | null, prefill?: { text: string; attachments?: Attachment[] }, sessionId?: string) => Promise<void>;
+  /** Go back to `messageId` in this chat (dropping it too unless `include`); `prefill` lands in the composer. */
+  rewind: (messageId: string, opts: { include?: boolean; restoreFiles?: boolean; prefill?: { text: string; attachments?: Attachment[] } }) => Promise<void>;
   compact: (focus?: string) => Promise<void>;
   compose: (p: { text?: string; attachments?: Attachment[]; send?: boolean }) => void;
   clearError: () => void;
@@ -505,6 +507,24 @@ export const useSessions = create<SessionsStore>((set, get) => {
         get().select(forked.id);
         if (prefill) set({ prefill: { ...prefill, id: Date.now() } });
         useStore.getState().notify(isZh() ? "已分叉出新对话" : "Forked into a new chat");
+      } catch (e) {
+        fail(e);
+      }
+    },
+
+    rewind: async (messageId, { include, restoreFiles, prefill }) => {
+      const id = get().activeId;
+      if (!id) return;
+      try {
+        const res = await sessionsApi.rewind(id, messageId, { include, restoreFiles });
+        if (res?.session) patchState(id, (s) => applySessionEvent(s, "session.updated", res.session) as SessionState);
+        syncSummary(id);
+        if (prefill) set({ prefill: { ...prefill, id: Date.now() } });
+        if (res?.reverted?.length) window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
+        const zh = isZh();
+        const files = res?.reverted?.length ? (zh ? `，已撤销 ${res.reverted.length} 个文件的修改` : `; reverted ${res.reverted.length} file(s)`) : "";
+        const conflicts = res?.conflicts?.length ? (zh ? `（${res.conflicts.length} 个文件之后又被改过，已覆盖）` : ` (${res.conflicts.length} had later edits and were overwritten)`) : "";
+        useStore.getState().notify((zh ? "已回退到这条消息" : "Rewound to this message") + files + conflicts);
       } catch (e) {
         fail(e);
       }

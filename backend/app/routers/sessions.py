@@ -199,6 +199,23 @@ async def fork_session(session_id: str, request: Request, body: ForkBody | None 
         raise _fail(error) from error
 
 
+class RewindBody(BaseModel):
+    message_id: str = Field(min_length=1, max_length=64)
+    include: bool = False
+    restore_files: bool = False
+
+
+@router.post("/{session_id}/rewind")
+async def rewind_session(session_id: str, body: RewindBody, request: Request):
+    """Go back to a message in place (Claude Code's rewind): later messages are
+    dropped, and ``restore_files`` also reverts the file edits made since."""
+    try:
+        return await _manager(request).rewind(session_id, body.message_id, include=body.include,
+                                              restore_files=body.restore_files)
+    except _HANDLED as error:
+        raise _fail(error) from error
+
+
 @router.post("/{session_id}/messages")
 async def post_message(session_id: str, body: MessageBody, request: Request):
     attachments = [a.model_dump(exclude_none=True) for a in body.attachments or []]

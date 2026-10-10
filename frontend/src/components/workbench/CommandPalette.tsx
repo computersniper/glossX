@@ -4,7 +4,7 @@ import { THEMES } from "../ThemePicker";
 import {
   Activity, ArrowLeft, ArrowRightLeft, Bell, Blocks, BookOpen, Check, ChevronRight, CornerDownLeft, FileText, FolderKanban, FolderTree,
   GitBranch, GitBranchPlus, GitCommitHorizontal, GitCompareArrows, GitMerge, History, Home, Languages, Library, ListTree, MessageSquare, MessagesSquare,
-  NotebookText, Palette, PanelBottom, PanelLeft, PanelRight, ScrollText, Search, Settings, SlidersHorizontal, Sparkles, SquarePen, Upload, Wrench, X,
+  NotebookText, Palette, PanelBottom, PanelLeft, PanelRight, ScrollText, Search, Settings, SlidersHorizontal, Sparkles, SquarePen, Upload, Wrench, X, ZoomIn, ZoomOut,
   type LucideIcon,
 } from "lucide-react";
 import { activityOf, useSessions } from "../../sessionStore";
@@ -15,6 +15,7 @@ import { branchName, commitChanges, createBranch, mergeBranch, switchBranch, use
 import { openInstructions } from "./WorkspaceView";
 import { browserApi } from "../../api/browser";
 import { openBrowser } from "../../browserStore";
+import { contentZoomReset, zoomIn, zoomOut, zoomReset } from "../../zoom";
 
 interface Item {
   id: string;
@@ -175,6 +176,10 @@ export function CommandPalette() {
       { id: "ai", group: G.view, icon: PanelRight, label: L("Toggle AI pane", "切换 AI 面板"), keys: "Ctrl+L", run: () => st.setLayout({ aiOpen: !layout.aiOpen }) },
       { id: "aiFocus", group: G.view, icon: PanelRight, label: L("Focus AI pane", "聚焦 AI 面板"), keys: "Ctrl+Alt+B", run: () => focusAiPane() },
       { id: "bottom", group: G.view, icon: PanelBottom, label: L("Toggle bottom panel", "切换底部面板"), keys: "Ctrl+J", run: () => st.setLayout({ bottomOpen: !layout.bottomOpen }) },
+      { id: "zoomIn", group: G.view, icon: ZoomIn, label: L("View: Zoom in", "视图：放大"), keys: "Ctrl+=", run: zoomIn, keepOpen: true },
+      { id: "zoomOut", group: G.view, icon: ZoomOut, label: L("View: Zoom out", "视图：缩小"), keys: "Ctrl+-", run: zoomOut, keepOpen: true },
+      { id: "zoomReset", group: G.view, icon: Search, label: L("View: Reset zoom", "视图：重置缩放"), keys: "Ctrl+0", run: zoomReset },
+      { id: "contentZoomReset", group: G.view, icon: Search, label: L("Editor: Reset font zoom", "编辑器：重置字体缩放"), run: contentZoomReset },
       { id: "agentMode", group: G.view, icon: Sparkles, label: L("AI pane: Agent", "AI 面板：智能体"), run: () => st.setLayout({ aiOpen: true, aiMode: "agent" }) },
       { id: "chatMode", group: G.view, icon: MessageSquare, label: L("AI pane: Paper chat", "AI 面板：论文对话"), run: () => st.setLayout({ aiOpen: true, aiMode: "chat" }) },
       { id: "toolsMode", group: G.view, icon: Wrench, label: L("AI pane: Paper tools", "AI 面板：论文工具"), run: () => st.setLayout({ aiOpen: true, aiMode: "tools" }) },

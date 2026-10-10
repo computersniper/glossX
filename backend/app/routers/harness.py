@@ -56,6 +56,10 @@ async def relocate_workspace(project_id: str, body: WorkspaceLocationBody, reque
     blocked = _refuse_while_running(request, project_id, "relocate the workspace")
     if blocked is not None:
         return blocked
+    terminals = getattr(request.app.state, "terminals", None)
+    if terminals is not None:
+        # Detached shells keep their scrollback and reopen in the new location.
+        await terminals.close_detached(project)
     try:
         destination = locations.normalize_path(body.path)
         source = _root(project_id)
