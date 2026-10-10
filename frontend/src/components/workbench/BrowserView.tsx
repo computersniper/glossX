@@ -6,19 +6,6 @@ import { useStore } from "../../store";
 import { useSessions } from "../../sessionStore";
 import { EmptyState, Spinner } from "../ui";
 
-export function BrowserActivity() {
-  const zh = useStore((s) => s.uiLang) === "zh";
-  const states = useBrowser((s) => s.states);
-  const sessions = useSessions((s) => s.list);
-  return <div className="wb-side-body gx-browser-activity">
-    <div className="gx-browser-intro"><Globe size={24} /><h3>{zh ? "一起浏览与研究" : "Browse and research together"}</h3><p>{zh ? "智能体和你共享会话里的浏览器。随时接管页面，阅读后把正文发回对话。" : "Share a browser with the agent in each thread. Take over at any time and send what you read back to chat."}</p>
-      <button type="button" className="gx-btn primary" onClick={() => void openBrowser()}><Globe size={14} />{zh ? "打开浏览器" : "Open browser"}</button>
-      <button type="button" className="gx-btn ghost" onClick={() => useStore.getState().openPalette("browserUrl")}>{zh ? "打开网址…" : "Open a URL…"}</button>
-    </div>
-    {Object.entries(states).filter(([, s]) => s.tabs?.length).map(([id, state]) => <button key={id} type="button" className="gx-browser-session" onClick={() => void openBrowser(undefined, id)}><Globe size={14} /><span><strong>{sessions.find((s) => s.id === id)?.title || (zh ? "浏览会话" : "Browser thread")}</strong><small>{state.title || state.url || `${state.tabs.length} tabs`}</small></span></button>)}
-  </div>;
-}
-
 export function BrowserView({ sessionId, visible }: { sessionId: string; visible: boolean }) {
   const zh = useStore((s) => s.uiLang) === "zh";
   const state = useBrowser((s) => s.states[sessionId]);

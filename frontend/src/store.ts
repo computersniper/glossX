@@ -20,7 +20,7 @@ import { evictPdfDoc } from "./pdf/docCache";
 
 // ---- workbench layout + editor tabs ----
 export type UiMode = "gloss" | "glossx"; // classic reader | agent workbench
-export type Activity = "library" | "threads" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings" | "browser";
+export type Activity = "library" | "threads" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings";
 export type AiMode = "agent" | "chat" | "tools" | "browser";
 export type BottomTab = "trace" | "runs" | "tasks" | "terminal";
 export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme" | "branches" | "newBranch" | "commit" | "tryBranch" | "browserUrl";
@@ -236,7 +236,11 @@ export const useStore = create<State>((set, get) => ({
   },
   view: "library",
   closePaper: () => set({ view: "library", selection: null }),
-  layout: readJson<Layout>(LAYOUT_KEY, DEFAULT_LAYOUT),
+  layout: ((saved) => ({
+    ...saved,
+    // The browser lives in the right pane; older layouts may still point the side bar at it.
+    activity: (saved.activity as string) === "browser" ? DEFAULT_LAYOUT.activity : saved.activity,
+  }))(readJson<Layout>(LAYOUT_KEY, DEFAULT_LAYOUT)),
   setLayout: (patch) => {
     const layout = { ...get().layout, ...patch };
     writeJson(LAYOUT_KEY, layout);

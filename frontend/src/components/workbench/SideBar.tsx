@@ -16,12 +16,10 @@ import { ThreadsHeadActions, ThreadsView } from "./ThreadsView";
 import { ScmHeadActions, ScmView } from "./ScmView";
 import { ask } from "./dialog";
 import { Icon } from "./icons";
-import { BrowserActivity } from "./BrowserView";
 
 export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
   { id: "threads", icon: "threads", en: "Threads", zh: "对话" },
-  { id: "browser", icon: "browser", en: "Browser", zh: "浏览器" },
   { id: "workspace", icon: "workspace", en: "Workspace", zh: "工作区" },
   { id: "scm", icon: "scm", en: "Source control", zh: "源代码管理" },
   { id: "projects", icon: "projects", en: "Projects", zh: "项目" },
@@ -387,7 +385,6 @@ function SettingsView() {
 }
 
 const VIEWS: Record<Activity, () => JSX.Element> = {
-  browser: BrowserActivity,
   library: LibraryView,
   threads: ThreadsView,
   workspace: WorkspaceView,

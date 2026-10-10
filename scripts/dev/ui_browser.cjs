@@ -28,7 +28,7 @@ const checks = [];
       localStorage.setItem('glossx.session', JSON.stringify(sid));
       localStorage.setItem('gloss.browserSession', sid);
       localStorage.setItem('gloss.tabs', JSON.stringify({ tabs: [{ kind: 'paper', id: paperId }], active: `paper:${paperId}` }));
-      localStorage.setItem('gloss.layout', JSON.stringify({ sideOpen: true, activity: 'browser', aiOpen: true, aiMode: 'browser', bottomOpen: false, sideWidth: 245, aiWidth: 520 }));
+      localStorage.setItem('gloss.layout', JSON.stringify({ sideOpen: true, activity: 'library', aiOpen: true, aiMode: 'browser', bottomOpen: false, sideWidth: 245, aiWidth: 520 }));
     }, { sid, paperId });
     page = await context.newPage();
     const errors = []; page.on('pageerror', e => errors.push(e.message));
