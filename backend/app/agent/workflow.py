@@ -10,7 +10,9 @@
 Internal roles (not registry capabilities): ``agent.planner`` (sub-questions
 and search queries), ``decider.screen`` (relevance screening with the
 decider), and ``agent.verifier`` / ``agent.writer`` which are deferred to the
-loop's synthesize -> verify -> reflect phases that run after the steps.
+loop's synthesize -> verify -> reflect phases that run after the steps. An
+``agent.writer`` step may carry ``args.instructions``: how the answer of this
+workflow is written (a verdict first, a quiz at the end, ...).
 """
 from __future__ import annotations
 
@@ -439,6 +441,9 @@ async def execute_workflow(state: RunState, manifest: dict[str, Any]) -> None:
             state.wc.observe(spec["id"], spec["use"], "completed", result=outputs[spec["id"]])
         elif role in {"verifier", "writer"}:
             outputs[spec["id"]] = None
+            instructions = (spec.get("args") or {}).get("instructions")
+            if role == "writer" and isinstance(instructions, str) and instructions.strip():
+                state.writer_instructions = instructions.strip()[:2000]
             emit(event("execute", "info", f"{spec['use']} runs in the loop after the workflow steps",
                        step_id=spec["id"], capability=spec["use"]))
         else:

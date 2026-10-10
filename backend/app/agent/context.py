@@ -167,6 +167,8 @@ class WorkingContext:
         self.observations: list[dict] = []
         self.evidence_ids: list[str] = []
         self.memory_notes: list[dict] = []
+        # verbal lessons from earlier rounds (``loop:reflexion``)
+        self.reflections: list[str] = []
 
     def add_evidence(self, ids: list[str]) -> None:
         for sid in ids:
@@ -201,6 +203,9 @@ class WorkingContext:
         if self.memory_notes:
             notes = "\n".join(f"- [M:{n['id']}] {n['text']}" for n in self.memory_notes)
             parts.append("PROJECT MEMORY (earlier findings):\n" + wrap_untrusted("project-memory", notes))
+        if self.reflections:
+            lessons = "\n".join(f"- {r}" for r in self.reflections[-6:])
+            parts.append("LESSONS FROM EARLIER ROUNDS:\n" + lessons)
         obs_lines = []
         budget_chars = max(2000, max_tokens * 3)
         # compaction: older observations keep their ids and status, newest keep detail

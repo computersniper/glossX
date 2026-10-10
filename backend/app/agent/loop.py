@@ -8,7 +8,9 @@
    workflow's ``loop.use``, else ``plan-execute-verify``.
 3. **Workflow** (if routed): the engine runs the manifest's steps.
 4. **Loop**: plan/execute (generic) then synthesize -> verify -> reflect.
-5. **Memory**: supported claims are appended to the project's memory.
+5. **Repair**: claims the verifier judged unsupported are removed from the
+   answer and listed separately as ``rejected_claims``.
+6. **Memory**: supported claims are appended to the project's memory.
 
 Every claim in the answer cites evidence spans (``[S:<paper_id>#<chunk>]``)
 and is graded by the verifier. Step failures become observations; only an
@@ -32,6 +34,7 @@ from .core import (  # re-exported for backwards compatibility
     err,
     event,
     final,
+    repair,
 )
 from .decider import get_decider
 from .gate import BudgetExceeded, BudgetMeter, Gate
@@ -178,6 +181,8 @@ async def _drive(state: RunState) -> dict:
     except BudgetExceeded as error:
         state.stop_reason = "budget"
         emit(event("budget", "stopped", f"run stopped: {err(error)}"))
+    # unsupported claims never reach the answer, the claim list or project memory
+    await repair(state)
     if state.gate.denied and (
         state.stop_reason == "no_progress"
         or (state.stop_reason == "goal_met"
