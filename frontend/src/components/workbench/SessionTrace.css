@@ -27,3 +27,4 @@
 .session-trace-hint { color: var(--text2); line-height: 1.6; }
 .session-trace-empty { padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text2); text-align: center; }
 .session-trace-empty p { max-width: 470px; margin: 0; line-height: 1.7; }
+.session-trace-about { margin: 0 0 10px; color: var(--text2); font-size: 12px; line-height: 1.5; }

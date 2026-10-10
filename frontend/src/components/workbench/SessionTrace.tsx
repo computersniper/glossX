@@ -115,6 +115,7 @@ export function SessionTraceView({ state, zh }: { state: SessionState; zh: boole
   if (!state.session) return <div className="session-trace-empty"><Activity size={24} /><strong>{zh ? "对话运行轨迹" : "Chat activity"}</strong><p>{zh ? "选择一个对话，查看它如何读取文件、浏览网页、调用工具和完成回答。需要批准的操作和每轮用量也会显示在这里。" : "Select a chat to see file reads, browser actions, tools and responses, including approval requests and turn usage."}</p></div>;
   return <section className="session-trace" aria-label={zh ? "当前对话运行轨迹" : "Current chat activity"}>
     <header className="session-trace-header"><span><Activity size={15} /><strong>{state.session.title || (zh ? "当前对话" : "Current chat")}</strong></span><span className={`session-trace-state ${state.status}`}>{statusText(state.status, zh)}</span></header>
+    <p className="session-trace-about">{zh ? "这里按顺序列出智能体在当前对话里实际做的每一步：你的请求、读写文件、浏览网页、调用工具、它的回答，以及每轮的用量。" : "Every step the agent actually took in this chat, in order: your requests, file reads and edits, browsing, tool calls, its answers and each turn's usage."}</p>
     {!state.loaded && !state.messages.length ? <p className="session-trace-hint">{zh ? "正在读取会话记录…" : "Loading chat history…"}</p>
       : !state.messages.length ? <p className="session-trace-hint">{zh ? "发送一条消息后，实际执行的步骤会按顺序出现在这里。" : "Send a message to see the actual steps in execution order."}</p>
       : <ol className="session-trace-list">{state.messages.map((message) => <TraceEntry key={message.id} message={message} state={state} zh={zh} />)}</ol>}

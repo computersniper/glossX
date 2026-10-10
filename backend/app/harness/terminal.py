@@ -88,14 +88,22 @@ class TerminalSession:
             self.master = master
             os.set_blocking(master, False)
 
+            slave_name = os.ttyname(slave)
+
             def controlling_terminal():
-                # Only one syscall after fork; modules are imported beforehand.
-                fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+                # uvloop runs this before it redirects stdio, so fd 0 may not be
+                # the PTY yet. Start a session and acquire the PTY by name.
+                os.setsid()
+                fd = os.open(slave_name, os.O_RDWR)
+                try:
+                    fcntl.ioctl(fd, termios.TIOCSCTTY, 0)
+                finally:
+                    os.close(fd)
 
             try:
                 self.process = await asyncio.create_subprocess_exec(
                     *args, cwd=self.cwd, env=env, stdin=slave, stdout=slave, stderr=slave,
-                    start_new_session=True, preexec_fn=controlling_terminal,
+                    preexec_fn=controlling_terminal,
                 )
             finally:
                 os.close(slave)

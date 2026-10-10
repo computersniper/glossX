@@ -92,7 +92,7 @@ function TasksTab() {
 }
 
 const TABS: { id: BottomTab; en: string; zh: string; C: () => JSX.Element }[] = [
-  { id: "trace", en: "Activity", zh: "操作记录", C: SessionTrace },
+  { id: "trace", en: "Activity log", zh: "执行记录", C: SessionTrace },
   { id: "runs", en: "Runs", zh: "运行记录", C: RunsTab },
   { id: "tasks", en: "Tasks", zh: "任务", C: TasksTab },
 ];

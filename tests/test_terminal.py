@@ -82,3 +82,25 @@ def test_real_shell_close_and_manager_shutdown(tmp_path):
         with pytest.raises(RuntimeError, match='stopping'):
             await manager.open(None)
     asyncio.run(check())
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='PTY shells are POSIX only')
+def test_pty_shell_starts_under_uvloop(tmp_path):
+    # uvicorn[standard] serves the app on uvloop, whose child setup differs
+    # from asyncio's; the shell must still get the PTY as its terminal.
+    uvloop = pytest.importorskip('uvloop')
+
+    async def check():
+        session = TerminalSession('default', tmp_path)
+        await session.start()
+        try:
+            await session.write('tty; echo uvloop-$((40+2))\n')
+            text = ''
+            for _ in range(100):
+                text += (await asyncio.wait_for(session.read(), 5)).decode('utf-8', 'replace')
+                if 'uvloop-42' in text:
+                    break
+            assert 'uvloop-42' in text and '/dev/pts/' in text, text
+        finally:
+            await session.close()
+    uvloop.run(check())
