@@ -232,6 +232,8 @@ export const sessionsApi = {
   remove: (id: string) => request<unknown>(S(id), { method: "DELETE" }),
   /** Copy the session up to and including `messageId` (the whole session when omitted). */
   fork: (id: string, messageId?: string | null) => request<SessionSummary>(`${S(id)}/fork`, { method: "POST", json: messageId ? { message_id: messageId } : {} }),
+  rewind: (id: string, messageId: string, opts: { include?: boolean; restoreFiles?: boolean } = {}) =>
+    request<{ removed: number; reverted: string[]; conflicts: string[]; session: any }>(`${S(id)}/rewind`, { method: "POST", json: { message_id: messageId, include: !!opts.include, restore_files: !!opts.restoreFiles } }),
   send: (id: string, text: string, attachments?: Attachment[]) =>
     request<SendResult>(`${S(id)}/messages`, {
       method: "POST",

@@ -371,6 +371,62 @@ class SessionManager:
         rt.persist()
         return rt.public(with_messages=True)
 
+    async def rewind(self, session_id: str, message_id: str, *, include: bool = False,
+                     restore_files: bool = False) -> dict[str, Any]:
+        """Go back to ``message_id`` in place: drop every later message (and the
+        message itself unless ``include``). With ``restore_files`` the file edits
+        this thread (and its subagents) made since then are reverted too."""
+        rt = self._rt(session_id)
+        if rt.parent is not None or rt.session.get("parent_id"):
+            raise ValueError("subagent sessions are read-only")
+        if rt.busy():
+            raise SessionBusyError("a turn is running in this session; stop it before you rewind")
+        session = rt.session
+        messages = session["messages"]
+        index = next((i for i, m in enumerate(messages) if m.get("id") == message_id), None)
+        if index is None:
+            raise LookupError("message not found in this session")
+        cut = index + 1 if include else index
+        removed = messages[cut:]
+        if not removed:
+            return {"removed": 0, "reverted": [], "conflicts": [], "session": rt.public(with_messages=True)}
+        since = min(float(m.get("created_at") or 0) for m in removed) or None
+        reverted: list[str] = []
+        conflicts: list[str] = []
+        if restore_files and since:
+            key = workspace.key_for(session.get("project_id"))
+            owners = {rt.id} | {c.id for c in self._sessions.values() if c.session.get("parent_id") == rt.id}
+
+            def restore() -> None:
+                for cp in workspace.list_checkpoints(key, limit=workspace.MAX_CHECKPOINTS):  # newest first
+                    if (cp.get("session_id") in owners and cp.get("status") == "applied"
+                            and cp.get("source") != "revert" and (cp.get("created_at") or 0) >= since):
+                        out = workspace.revert_checkpoint(key, cp["id"])
+                        reverted.append(cp["path"])
+                        if out.get("conflict"):
+                            conflicts.append(cp["path"])
+
+            await asyncio.to_thread(restore)
+        session["messages"] = messages[:cut]
+        session.pop("provider_thread", None)  # the provider's own thread still holds the dropped turns
+        through = None
+        for msg in session["messages"]:
+            if msg.get("compacted") and msg.get("type") != "system_note":
+                through = msg["id"]
+        if through:
+            session["context"]["compacted_through"] = through
+        else:
+            session["context"].pop("compacted_through", None)
+        ctx_mod.recount(session)
+        engine.add_note(rt, "cache_reset", "Prompt cache reset: conversation rewound.", reason="rewind")
+        rt.emit("context.updated", dict(session["context"]))
+        rt.emit("session.updated", rt.public(with_messages=True))
+        rt.persist()
+        if reverted:
+            self.workspace_changed(session.get("project_id"))
+        return {"removed": len(removed), "reverted": sorted(set(reverted)),
+                "conflicts": sorted(set(conflicts)), "session": rt.public(with_messages=True)}
+
     def result(self, session_id: str, ref: str) -> str:
         self._rt(session_id)
         text = read_result(session_id, ref)
