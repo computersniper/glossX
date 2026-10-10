@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ArrowUp, Command, FolderTree, MessageSquare, Upload, Globe, type LucideIcon } from "lucide-react";
+import { useEffect } from "react";
+import { Command, FolderTree, MessageSquare, Upload, Globe, type LucideIcon } from "lucide-react";
 import { splitWorkspaceId, tabKey, useStore, type EditorTab } from "../../store";
 import { useSessions } from "../../sessionStore";
 import { Outline } from "../Outline";
@@ -184,18 +184,10 @@ function Welcome({ visible }: { visible: boolean }) {
   const compose = useSessions((s) => s.compose);
   const newChat = useSessions((s) => s.newChat);
   const zh = useStore((s) => s.uiLang) === "zh";
-  const [q, setQ] = useState("");
   const T = zh
     ? { kicker: "研究工作台", title: "把论文读进去，把问题想清楚。", tag: "导入论文，向智能体提出问题；它会逐段阅读、给出带出处的回答，并把笔记和代码留在工作区里。", ph: "提出一个研究问题…", imp: "导入论文", impH: "arXiv、DOI、链接或 PDF", chat: "新对话", chatH: "向智能体提问或布置任务", ws: "打开工作区", wsH: "笔记、代码与修改记录", pal: "命令面板", papers: "最近论文", chats: "最近对话", runs: "最近运行", keys: "快捷键", noneP: "导入第一篇论文后，它会出现在这里。", noneC: "还没有对话。" }
     : { kicker: "Research workbench", title: "Read closely. Ask better questions.", tag: "Import papers and put questions to the agent — it reads passage by passage, answers with sources, and leaves notes and code in your workspace.", ph: "Ask a research question…", imp: "Import a paper", impH: "arXiv, DOI, URL or PDF", chat: "New chat", chatH: "Ask or hand over a task", ws: "Open workspace", wsH: "Notes, code and change history", pal: "Command palette", papers: "Recent papers", chats: "Recent chats", runs: "Recent runs", keys: "Keyboard", noneP: "Import your first paper and it will show up here.", noneC: "No chats yet." };
 
-  const ask = () => {
-    const text = q.trim();
-    if (!text) return;
-    newChat();
-    compose({ text, send: true });
-    setQ("");
-  };
   const actions: { icon: LucideIcon; title: string; hint: string; keys?: string; run: () => void }[] = [
     { icon: Upload, title: T.imp, hint: T.impH, run: () => openPalette("import") },
     { icon: MessageSquare, title: T.chat, hint: T.chatH, keys: "Ctrl+L", run: () => { newChat(); compose({}); } },
@@ -211,16 +203,6 @@ function Welcome({ visible }: { visible: boolean }) {
           <div className="wb-hero-kicker"><Logo size={20} x /><span>GlossX</span><i>旁注</i><em>{T.kicker}</em></div>
           <h1>{T.title}</h1>
           <p>{T.tag}</p>
-          <form
-            className="wb-hero-ask"
-            onSubmit={(e) => {
-              e.preventDefault();
-              ask();
-            }}
-          >
-            <input value={q} placeholder={T.ph} onChange={(e) => setQ(e.target.value)} />
-            <button type="submit" className="gx-send" disabled={!q.trim()} aria-label={zh ? "发送" : "Send"}><ArrowUp size={15} strokeWidth={2.25} /></button>
-          </form>
         </header>
 
         <div className="wb-actions">

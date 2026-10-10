@@ -8,7 +8,7 @@ import { applySessionEvent, emptySessionState } from "./harness/sessionReducer.m
 import { useStore } from "./store";
 import { useBrowser } from "./browserStore";
 
-export type ModelChoice = { provider: string | null; model: string | null };
+export type ModelChoice = { provider: string | null; model: string | null; effort?: string | null };
 type Conn = "open" | "reconnecting" | "closed";
 
 const ACTIVE_KEY = "glossx.session";
@@ -234,7 +234,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
     },
 
     openInbox: () => {
-      useStore.getState().setLayout({ activity: "threads", sideOpen: true });
+      useStore.getState().setLayout({ aiOpen: true, aiMode: "threads" });
       get().setSideView("inbox");
     },
 
@@ -316,7 +316,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
       set({ activeId: id, pendingBranch: null });
       if (id) {
         const sess = get().list.find((s) => s.id === id);
-        if (sess) set((st) => ({ draft: { mode: sess.mode || st.draft.mode, model: { provider: sess.model?.provider ?? null, model: sess.model?.model ?? null } } }));
+        if (sess) set((st) => ({ draft: { mode: sess.mode || st.draft.mode, model: { provider: sess.model?.provider ?? null, model: sess.model?.model ?? null, effort: (sess.model as any)?.effort ?? null } } }));
         watch(id);
       }
     },
@@ -336,6 +336,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
             mode: draft.mode,
             provider: draft.model.provider,
             model: draft.model.model,
+            effort: draft.model.effort || null,
             branch: get().pendingBranch,
           });
           id = created.id;
@@ -379,7 +380,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
             const mode = res.session.mode;
             if (mode && mode !== get().draft.mode) set((st) => ({ draft: { ...st.draft, mode } }));
             const model = res.session.model;
-            if (res.command === "model" && model) set((st) => ({ draft: { ...st.draft, model: { provider: model.provider ?? null, model: model.model ?? null } } }));
+            if (res.command === "model" && model) set((st) => ({ draft: { ...st.draft, model: { provider: model.provider ?? null, model: model.model ?? null, effort: st.draft.model.effort ?? null } } }));
           }
           const missing = (res?.message?.attachments || []).filter((a) => a.ok === false);
           if (missing.length) {

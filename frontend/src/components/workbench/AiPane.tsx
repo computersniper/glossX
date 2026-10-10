@@ -9,9 +9,11 @@ import { Icon } from "./icons";
 import { BrowserView } from "./BrowserView";
 import { openBrowser } from "../../browserStore";
 import { useSessions } from "../../sessionStore";
+import { ThreadsHeadActions, ThreadsView } from "./ThreadsView";
 
 const MODES: { id: AiMode; icon: string; en: string; zh: string }[] = [
   { id: "agent", icon: "agent", en: "Agent", zh: "智能体" },
+  { id: "threads", icon: "threads", en: "Threads", zh: "对话列表" },
   { id: "chat", icon: "chat", en: "Paper chat", zh: "论文对话" },
   { id: "tools", icon: "tools", en: "Tools", zh: "论文工具" },
   { id: "browser", icon: "browser", en: "Browser", zh: "浏览器" },
@@ -38,6 +40,16 @@ function ToolsSlot() {
   return current ? <SidePanel variant="tools" /> : <NeedsPaper />;
 }
 
+/** Every thread (and the inbox), next to the agent chat they open in. */
+function ThreadsSlot() {
+  return (
+    <div className="wb-ai-threads">
+      <div className="wb-pane-head"><span className="spacer" /><ThreadsHeadActions /></div>
+      <ThreadsView />
+    </div>
+  );
+}
+
 function BrowserSlot() {
   const browserId = useStore((s) => s.browserSessionId);
   const activeId = useSessions((s) => s.activeId);
@@ -51,6 +63,7 @@ function BrowserSlot() {
  *  be swapped (e.g. a session-based agent chat) without touching the layout. */
 export const DEFAULT_AI_SLOTS: Record<AiMode, () => ReactNode> = {
   agent: () => <SessionChat />,
+  threads: () => <ThreadsSlot />,
   chat: () => <ChatSlot />,
   tools: () => <ToolsSlot />,
   browser: () => <BrowserSlot />,

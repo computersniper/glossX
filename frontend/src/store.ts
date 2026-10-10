@@ -20,8 +20,8 @@ import { evictPdfDoc } from "./pdf/docCache";
 
 // ---- workbench layout + editor tabs ----
 export type UiMode = "gloss" | "glossx"; // classic reader | agent workbench
-export type Activity = "library" | "threads" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings";
-export type AiMode = "agent" | "chat" | "tools" | "browser";
+export type Activity = "library" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings";
+export type AiMode = "agent" | "threads" | "chat" | "tools" | "browser";
 export type BottomTab = "trace" | "runs" | "tasks" | "terminal";
 export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme" | "branches" | "newBranch" | "commit" | "tryBranch" | "browserUrl";
 // file / checkpoint ids are `<workspace key>|<path or checkpoint id>`;
@@ -239,7 +239,8 @@ export const useStore = create<State>((set, get) => ({
   layout: ((saved) => ({
     ...saved,
     // The browser lives in the right pane; older layouts may still point the side bar at it.
-    activity: (saved.activity as string) === "browser" ? DEFAULT_LAYOUT.activity : saved.activity,
+    // The browser and the thread list live in the right pane now; older layouts may still point the side bar at them.
+    activity: ["browser", "threads"].includes(saved.activity as string) ? DEFAULT_LAYOUT.activity : saved.activity,
   }))(readJson<Layout>(LAYOUT_KEY, DEFAULT_LAYOUT)),
   setLayout: (patch) => {
     const layout = { ...get().layout, ...patch };

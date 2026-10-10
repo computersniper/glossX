@@ -1232,3 +1232,7 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .gx-file-body .gx-prose.reading .markdown { font-size: calc(15px * var(--gx-content-zoom, 1)); }
 .gx-commit .gx-commit-file .gx-diff-scroll { font-size: calc(11.5px * var(--gx-content-zoom, 1)); }
 .wb-report-inner { zoom: var(--gx-content-zoom, 1); }
+
+/* the thread list in the right pane */
+.wb-ai-threads { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.wb-ai-threads > .wb-pane-head { flex-shrink: 0; }

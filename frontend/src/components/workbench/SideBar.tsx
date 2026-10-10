@@ -12,14 +12,12 @@ import { HarnessSettings } from "../HarnessSettings";
 import { EmptyState, MenuButton, MenuItem, Segmented } from "../ui";
 import { useSessions } from "../../sessionStore";
 import { WorkspaceView } from "./WorkspaceView";
-import { ThreadsHeadActions, ThreadsView } from "./ThreadsView";
 import { ScmHeadActions, ScmView } from "./ScmView";
 import { ask } from "./dialog";
 import { Icon } from "./icons";
 
 export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
-  { id: "threads", icon: "threads", en: "Threads", zh: "对话" },
   { id: "workspace", icon: "workspace", en: "Workspace", zh: "工作区" },
   { id: "scm", icon: "scm", en: "Source control", zh: "源代码管理" },
   { id: "projects", icon: "projects", en: "Projects", zh: "项目" },
@@ -386,7 +384,6 @@ function SettingsView() {
 
 const VIEWS: Record<Activity, () => JSX.Element> = {
   library: LibraryView,
-  threads: ThreadsView,
   workspace: WorkspaceView,
   scm: ScmView,
   projects: ProjectsView,
@@ -409,7 +406,6 @@ export function SideBar() {
       <div className="wb-pane-head">
         <span>{zh ? meta.zh : meta.en}</span>
         <span className="spacer" />
-        {activity === "threads" && <ThreadsHeadActions />}
         {activity === "scm" && <ScmHeadActions />}
       </div>
       {ACTIVITIES.filter((a) => visited.has(a.id)).map((a) => {
