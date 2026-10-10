@@ -272,7 +272,7 @@ def test_startup_stderr_and_cancellation_cleanup_without_disabling_sandbox(tmp_p
 
         monkeypatch.setattr(module.asyncio, 'create_subprocess_exec', spawn)
         monkeypatch.setattr(module, 'terminate_process_tree', terminate)
-        monkeypatch.setattr(module, 'discover', lambda path: BrowserExecutable('Chromium', tmp_path / 'chromium'))
+        monkeypatch.setattr(module, 'discover_all', lambda path: [BrowserExecutable('Chromium', tmp_path / 'chromium')])
         monkeypatch.setattr(job, 'BrowserJob', Job)
         monkeypatch.setattr(os, 'killpg', lambda *args: None, raising=False)
         browser = module.BrowserProcess(tmp_path)
@@ -355,3 +355,56 @@ def test_cancelled_operation_releases_lease_and_session_lock():
         assert not leases
         assert not state.lock.locked()
     asyncio.run(check())
+
+
+def test_handed_off_launch_retries_fresh_profile_then_next_browser(tmp_path, monkeypatch):
+    # Code 0 before DevTools is ready means another browser process took the
+    # launch. Retry once with a new profile, then fall back to the next browser.
+    from app.harness.browser import process as module
+    from app.harness.browser import job
+    from app.harness.browser.discovery import BrowserExecutable
+    import os
+    import time
+    launches = []
+    edge, chrome = BrowserExecutable('Edge', tmp_path / 'msedge'), BrowserExecutable('Chrome', tmp_path / 'chrome')
+
+    class Job:
+        def assign(self, pid):
+            pass
+
+        def close(self):
+            pass
+
+    stale = tmp_path / 'browser' / 'profile-1-old'
+    stale.mkdir(parents=True)
+    old = time.time() - module.STALE_PROFILE_SECONDS - 60
+    os.utime(stale, (old, old))
+    fresh_other = tmp_path / 'browser' / 'profile-2-live'
+    fresh_other.mkdir()
+    monkeypatch.setenv('WEBVIEW2_USER_DATA_FOLDER', 'C:/webview')
+
+    async def check():
+        async def spawn(*args, **kwargs):
+            profile = next(a.split('=', 1)[1] for a in args if a.startswith('--user-data-dir='))
+            launches.append((args[0], profile, kwargs['env']))
+            reader = asyncio.StreamReader()
+            reader.feed_eof()
+            return SimpleNamespace(pid=99999999, returncode=0, stderr=reader)
+
+        async def terminate(actual):
+            pass
+
+        monkeypatch.setattr(module.asyncio, 'create_subprocess_exec', spawn)
+        monkeypatch.setattr(module, 'terminate_process_tree', terminate)
+        monkeypatch.setattr(module, 'discover_all', lambda path: [edge, chrome])
+        monkeypatch.setattr(job, 'BrowserJob', Job)
+        monkeypatch.setattr(os, 'killpg', lambda *args: None, raising=False)
+        browser = module.BrowserProcess(tmp_path)
+        with pytest.raises(CDPError, match='Every installed browser failed') as raised:
+            await browser.start()
+        assert 'Edge' in str(raised.value) and 'Chrome' in str(raised.value)
+    asyncio.run(check())
+    assert [launch[0] for launch in launches] == [str(edge.path)] * 2 + [str(chrome.path)] * 2
+    assert len({launch[1] for launch in launches}) == 4
+    assert all('WEBVIEW2_USER_DATA_FOLDER' not in launch[2] for launch in launches)
+    assert not stale.exists() and fresh_other.exists()

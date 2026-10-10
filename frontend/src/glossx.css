@@ -36,13 +36,6 @@
 .gx-browser-foot ol { position: absolute; right: 10px; bottom: 24px; width: min(460px, 90%); padding: 12px; list-style: none; border: 1px solid var(--gx-line); border-radius: 7px; background: var(--gx-s1); box-shadow: 0 4px 22px #0003; max-height: 220px; overflow: auto; z-index: 5; }
 .gx-browser-foot li { display: flex; gap: 9px; padding: 4px 0; overflow-wrap: anywhere; }
 .gx-browser-foot time { white-space: nowrap; color: var(--gx-text-3); }
-.gx-browser-intro { padding: 22px 18px; display: flex; align-items: flex-start; flex-direction: column; gap: 10px; color: var(--gx-text-2); }
-.gx-browser-intro h3 { color: var(--gx-text); font-size: 14px; margin: 0; }
-.gx-browser-intro p { font-size: 12px; line-height: 1.7; margin: 0 0 10px; }
-.gx-browser-session { display: flex; gap: 10px; width: 100%; padding: 12px 18px; background: transparent; color: var(--gx-text); border: 0; border-top: 1px solid var(--gx-line-soft); text-align: left; cursor: pointer; }
-.gx-browser-session:hover { background: var(--gx-hover); }
-.gx-browser-session span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.gx-browser-session small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gx-text-2); }
 .gx-browser-result { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; margin-bottom: 12px; }
 .gx-browser-result img { max-width: 100%; max-height: 260px; object-fit: contain; border: 1px solid var(--gx-line); border-radius: 5px; }
 .gx-browser-result code { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--gx-text-2); }
