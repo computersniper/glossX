@@ -88,8 +88,12 @@ packaging/GlossX.spec  scripts/  .github/workflows/（ci.yml, preview-build.yml,
 
 ## 4. 当前剩余工作
 
-> **下一轮任务（尚未开始写代码，等待接手）**：内置 agent 浏览器、缓存命中率的采集 / 优化 / 显示、修掉 GlossX 模式的整页滚动条。
+> **本轮任务（进行中）**：内置 agent 浏览器、缓存命中率的采集 / 优化 / 显示、修掉 GlossX 模式的整页滚动条。
 > 规格：`docs/glossx-browser-cache.md`。完整任务书、分工、实测数据和验收清单：**`docs/progress/handover-browser-cache.md`**。优先级：滚动条 → 浏览器 → 缓存。
+>
+> 接手第一阶段：工作台视口/flex 收缩加固及 24 项真实浏览器布局检查完成；浏览器发现、异步 CDP、独立进程/profile、AX 快照/过期编号、URL 校验基础模块和真实 Edge 冒烟完成。**浏览器工具/API/前端、完整网络安全拦截和缓存仍未完成**。后端 178 passed / 10 skipped；前端 27 项、类型检查、构建通过。详细限制与下一步见 `docs/progress/browser-backend.md`、`docs/progress/browser-frontend.md`。
+>
+> 用户追加要求：论文工作区须可自定义，代码继续兼容 Linux 和 Windows；工作区自定义尚未实现，不自动迁移已有目录。
 >
 > 2026-10-10 晚已完成并推送（`d2680df`）：新 logo（带 X）、README 改版、删掉 Gloss 模式的 Agent workspace、设置里四种模型接入方式的开关。
 

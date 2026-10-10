@@ -348,7 +348,12 @@
 /* ==========================================================================
    Shell
    ========================================================================== */
-.wb-main { flex: 1; min-height: 0; display: flex; }
+/* Only the workbench owns the viewport; classic Gloss keeps document scrolling.
+   Keep every flex ancestor shrinkable, so tall settings/editor content is
+   handled by its own scroll container rather than the document. */
+html:has(.app.mode-glossx), body:has(.app.mode-glossx) { overflow: hidden; }
+.app.mode-glossx { height: 100dvh; min-height: 0; }
+.wb-main { flex: 1; min-height: 0; min-width: 0; display: flex; }
 
 /* activity bar */
 .wb-activity { flex: 0 0 46px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 8px; background: var(--gx-chrome); border-right: 1px solid var(--gx-line-soft); }
@@ -360,7 +365,7 @@
 .wb-act.on::before { content: ""; position: absolute; left: -6px; top: 9px; bottom: 9px; width: 2.5px; border-radius: 0 3px 3px 0; background: var(--accent); }
 
 /* title bar */
-.wb-column { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wb-column { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .wb-titlebar { flex: 0 0 40px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 10px; background: var(--gx-chrome); border-bottom: 1px solid var(--gx-line-soft); }
 .wb-titlebar > .spacer { min-width: 0; }
 .wb-title-search {
@@ -379,8 +384,8 @@
 
 /* panes + sashes */
 .wb-panes { flex: 1; min-height: 0; display: flex; position: relative; }
-.wb-side-host, .wb-ai-host { flex: 0 0 auto; min-width: 0; display: flex; background: var(--gx-s1); }
-.wb-center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wb-side-host, .wb-ai-host { flex: 0 0 auto; min-width: 0; min-height: 0; display: flex; background: var(--gx-s1); }
+.wb-center { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .wb-sash { position: relative; z-index: 3; flex: 0 0 1px; background: var(--gx-line-soft); transition: background var(--gx-fast); }
 .wb-sash::after { content: ""; position: absolute; inset: 0; transition: background var(--gx-fast); }
 .wb-sash-x { cursor: col-resize; } .wb-sash-x::after { left: -3px; right: -3px; }
@@ -390,7 +395,7 @@
 .wb-sash-y:hover::after, .wb-sash-y:active::after { top: -1px; bottom: -1px; background: var(--accent); }
 
 /* side bar */
-.wb-sidebar { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wb-sidebar { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .wb-pane-head { flex: 0 0 auto; display: flex; align-items: center; height: 36px; padding: 0 14px; color: var(--gx-text-2); font-size: var(--gx-fs-xs); font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
 .wb-side-view { flex: 1; min-height: 0; flex-direction: column; }
 .wb-side-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }

@@ -12,6 +12,12 @@
 - Python 用 `backend\.venv\Scripts\python.exe`（3.11，基于 conda 环境 xnewenv）。本机 PATH 没有 `python`。
 - 真实模型只用 Codex：GlossX 设置里模型必须是 `gpt-5.6-sol`。Codex 账号有用量额度，真实调用要少而小。不要改用户的 `~/.codex`、`~/.claude`。
 
+## 0.1 接手后的补充要求与阶段状态
+
+- 用户补充：运行环境是 WSL，可调用 Linux 和 Windows 工具；**实现继续兼容 Linux/Windows**，不能硬编码本机 Windows 路径。
+- 用户补充：**论文工作区要可自定义**。现有每论文工作区目录固定在数据目录内，尚未实现自定义目录；下一阶段应明确全局默认位置/单论文位置及已有文件、Git 历史的安全迁移行为，不自动改动用户现有目录。
+- 第一阶段实际完成与未完成项见 `browser-backend.md` / `browser-frontend.md`（同目录）；本文件开头“三项没有代码”描述的是原交接时刻，不代表新的阶段状态。
+
 ## 1. 优先级和顺序
 
 用户明确要求：**先把内置浏览器做出来**。
