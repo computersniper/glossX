@@ -153,6 +153,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "timeout": 600,
         },
         "local_codex": {
+            "cli_path": "",  # blank uses PATH; set an executable/npm shim to select a CLI version
             # empty model = use codex's own configured default
             "model": "",
             # codex reasoning effort: "" | minimal | low | medium | high

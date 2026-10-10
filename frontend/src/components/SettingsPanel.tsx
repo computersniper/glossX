@@ -222,6 +222,14 @@ export function SettingsPanel() {
           <option key={p} value={p}>{PROVIDER_NAMES[p]?.[uiLang === "zh" ? 1 : 0] || p}</option>
         ))}
       </select>
+      {cfg.provider === "local_codex" && <>
+        <label>{uiLang === "zh" ? "Codex CLI 路径" : "Codex CLI path"}</label>
+        <input aria-label="Codex CLI path" value={cfg.providers?.local_codex?.cli_path || ""}
+          placeholder={uiLang === "zh" ? "留空使用 PATH；也可指定 codex.exe 或 codex.cmd" : "Blank uses PATH; or specify codex.exe / codex.cmd"}
+          onChange={(e) => setProv("local_codex", "cli_path", e.target.value)} />
+        <p className="usage-note">{uiLang === "zh" ? "安装了多个版本时，指定实际可用的 CLI。先保存，再测试；测试结果会显示调用路径。" : "If multiple versions are installed, choose the working CLI. Save before testing; the result shows the command path."}</p>
+      </>}
+
       <div className="test-conn">
         <button className="small" onClick={testConn} disabled={testing}>
           {testing ? T.testing : T.testBtn}

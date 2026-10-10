@@ -39,6 +39,12 @@ def _cfg() -> dict:
     return load_config()["providers"]["local_codex"]
 
 
+def _command() -> list[str]:
+    # Explicit executable or npm shim; blank preserves the user's PATH order.
+    configured = str(_cfg().get("cli_path") or "").strip()
+    return resolve_cli_command(configured or "codex")
+
+
 # Benign warnings the CLI prints on every run; they never explain a failure.
 _NOISE_MARKERS = ("failed to load models cache",)
 
@@ -60,6 +66,34 @@ def _failure_detail(err: bytes, out: bytes, prompt: str, limit: int = 1500) -> s
     Drop the echoed prompt and banner, prefer explicit error lines, and keep
     the tail of the remaining output.
     """
+    # exec --json emits nested JSON strings in error/turn.failed events.
+    # Extract the actual server message instead of warning text or JSON tails.
+    def message(value):
+        for _ in range(8):
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    return value
+            elif isinstance(value, dict):
+                value = value.get("error", value.get("message"))
+            else:
+                return None
+        return None
+
+    structured = []
+    for line in out.splitlines():
+        try:
+            event = json.loads(line)
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if isinstance(event, dict) and event.get("type") in {"error", "turn.failed"}:
+            detail = message(event)
+            if detail and not any(marker in detail for marker in _NOISE_MARKERS):
+                structured.append(detail)
+    if structured:
+        return "\n".join(dict.fromkeys(structured))[-limit:]
+
     text = err.decode(errors="replace")
     if prompt:
         text = text.replace(prompt, "")
@@ -207,7 +241,7 @@ class LocalCodexProvider(Provider):
 
     async def test_connection(self) -> str:
         """Check subscription login without launching a full Codex inference."""
-        cmd = resolve_cli_command("codex") + ["login", "status"]
+        cmd = _command() + ["login", "status"]
         proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -225,7 +259,7 @@ class LocalCodexProvider(Provider):
             detail = (out or err).decode(errors="replace").strip()
             if proc.returncode != 0:
                 raise RuntimeError(detail or f"codex login status exited {proc.returncode}")
-            return detail or "Codex is signed in"
+            return (detail or "Codex is signed in") + "\nCLI: " + " ".join(cmd[:-2])
         finally:
             if proc is not None and proc.returncode is None:
                 await terminate_process_tree(proc)
@@ -281,7 +315,7 @@ class LocalCodexProvider(Provider):
         fd, out_path = tempfile.mkstemp(prefix="gloss-codex-", suffix=".txt")
         os.close(fd)
         image_paths = _materialize_message_images(messages)
-        cmd = resolve_cli_command("codex") + ["exec"]
+        cmd = _command() + ["exec"]
         if session_id:
             cmd += [
                 "resume",

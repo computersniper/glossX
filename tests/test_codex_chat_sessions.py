@@ -383,3 +383,22 @@ def test_chat_endpoint_commits_codex_session_with_completed_turn(
     assert chat["title"] == "question"
     public_chat = client.get(f"/api/papers/{paper_id}/chats").json()["chats"][0]
     assert "provider_session_id" not in public_chat
+
+
+def test_codex_explicit_cli_bypasses_old_path(monkeypatch):
+    selected = []
+    monkeypatch.setattr(local_codex, "_cfg", lambda: {"cli_path": "C:/New Codex/codex.exe"})
+    monkeypatch.setattr(local_codex, "resolve_cli_command", lambda name: selected.append(name) or [name])
+    assert local_codex._command() == ["C:/New Codex/codex.exe"]
+    assert selected == ["C:/New Codex/codex.exe"]
+
+
+def test_codex_failure_extracts_nested_server_message():
+    reason = "The model is not supported when using Codex with a ChatGPT account."
+    nested = json.dumps({"type": "error", "status": 400, "error": {"message": reason}})
+    output = "\n".join(json.dumps(event) for event in [
+        {"type": "thread.started", "thread_id": "x"},
+        {"type": "error", "message": nested},
+        {"type": "turn.failed", "error": {"message": nested}},
+    ]).encode()
+    assert local_codex._failure_detail(b"warning: can degrade performance and cause issues", output, "") == reason

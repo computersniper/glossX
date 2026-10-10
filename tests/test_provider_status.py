@@ -64,4 +64,4 @@ def test_local_codex_connection_uses_fast_login_status(
     assert captured["args"] == ("codex", "login", "status")
     assert captured["kwargs"]["cwd"] == str(tmp_path)
     assert captured["kwargs"]["creationflags"] == 1
-    assert reply == "Logged in using ChatGPT"
+    assert reply == "Logged in using ChatGPT\nCLI: codex"
