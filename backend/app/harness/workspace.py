@@ -280,7 +280,9 @@ def revert_checkpoint(key: str, cp_id: str) -> dict[str, Any]:
                 target.unlink()
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(cp["before"], encoding="utf-8")
+            # Bytes, like write_text below: text mode would turn "\n" into
+            # "\r\n" on Windows and every later diff would touch all lines.
+            target.write_bytes(cp["before"].encode("utf-8"))
         cp["status"] = "reverted"
         cp["reverted_at"] = time.time()
         _write_json(_cp_dir(key) / f"{cp['id']}.json", cp)
