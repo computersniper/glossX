@@ -164,7 +164,7 @@ export function Workbench() {
       <div className="wb-main">
         <nav className="wb-activity" aria-label="Activity bar">
           <button className="wb-activity-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={24} x /></button>
-          {ACTIVITIES.map((a) => (
+          {ACTIVITIES.filter((a) => !a.hidden).map((a) => (
             <button
               key={a.id}
               className={`wb-act${layout.activity === a.id && layout.sideOpen ? " on" : ""}`}

@@ -1,8 +1,9 @@
-// Side bar: threads grouped by project, and the inbox (docs/glossx-workspaces.md §1).
+// Side bar: every project with its papers and threads, and the inbox
+// (docs/glossx-workspaces.md §1, docs/progress/projects-redesign.md).
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bell, BookOpen, CheckCheck, ChevronRight, CircleAlert, CircleCheck, FolderKanban, GitBranch, GitFork, Inbox, MessageCircleQuestion,
-  MessagesSquare, Pencil, Search, ShieldQuestion, SquarePen, Trash2, type LucideIcon,
+  Bell, BookOpen, CheckCheck, ChevronRight, CircleAlert, CircleCheck, FileText, FolderKanban, FolderPlus, FolderTree, GitBranch, GitFork, Inbox,
+  MessageCircleQuestion, MessagesSquare, MoreHorizontal, Pencil, Search, Settings2, ShieldQuestion, SquarePen, Trash2, type LucideIcon,
 } from "lucide-react";
 import { isBlocking, type Attention, type SessionSummary } from "../../api/harness";
 import { useStore } from "../../store";
@@ -145,6 +146,7 @@ function ThreadRow({ s, zh, inbox, groupBranch }: { s: SessionSummary; zh: boole
 }
 
 const GROUP_CAP = 6;
+const PAPER_CAP = 8;
 const COLLAPSED_KEY = "glossx.threadGroups";
 
 function readCollapsed(): string[] {
@@ -156,10 +158,17 @@ function readCollapsed(): string[] {
   }
 }
 
-type Group = { id: string | null; name: string; kind?: string; branch: string | null; items: SessionSummary[]; latest: number };
+type Group = { id: string | null; name: string; kind?: string; branch: string | null; items: SessionSummary[]; latest: number; paperIds: string[] };
 
+/** One project: its header selects it (the center paper, workspace and new
+ *  threads follow), the caret folds it, and it lists its papers and threads. */
 function ProjectGroup({ g, zh, open, onToggle, filtering }: { g: Group; zh: boolean; open: boolean; onToggle: () => void; filtering: boolean }) {
   const isActive = useStore((s) => (s.agentProjectId || null) === g.id);
+  const selectProject = useStore((s) => s.selectProject);
+  const openPaper = useStore((s) => s.openPaper);
+  const setLayout = useStore((s) => s.setLayout);
+  const papers = useStore((s) => s.papers);
+  const shownPaper = useStore((s) => (s.activeTabKey?.startsWith("paper:") ? s.activeTabKey.slice(6) : null));
   const newThread = useSessions((s) => s.newThread);
   const liveBranch = useBranch(isActive ? g.id : "__none__");
   const branch = (isActive ? liveBranch : null) || g.branch;
@@ -168,14 +177,22 @@ function ProjectGroup({ g, zh, open, onToggle, filtering }: { g: Group; zh: bool
   const waiting = g.items.filter((s) => isBlocking(attentionOf(s))).length;
   const unread = g.items.filter((s) => s.unread).length;
   const I = g.id === null ? MessagesSquare : g.kind === "paper" ? BookOpen : FolderKanban;
+  // a paper workspace's header already opens its paper; research projects list theirs
+  const linked = g.kind === "paper" ? [] : g.paperIds.map((id) => papers.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p);
+  const select = () => {
+    selectProject(g.id);
+    if (!open) onToggle();
+  };
   return (
     <div className={`gx-th-group${open ? " open" : ""}${isActive ? " current" : ""}`}>
       <div className="gx-th-group-head">
-        <button type="button" className="gx-th-group-toggle" aria-expanded={open} title={g.name} onClick={onToggle}>
+        <button type="button" className="gx-th-group-caret" aria-expanded={open} aria-label={open ? (zh ? "折叠" : "Collapse") : zh ? "展开" : "Expand"} onClick={onToggle}>
           <ChevronRight size={12} className="gx-tree-caret" />
+        </button>
+        <button type="button" className="gx-th-group-toggle" aria-current={isActive || undefined} title={zh ? `切换到「${g.name}」` : `Switch to ${g.name}`} onClick={select}>
           <I size={13} strokeWidth={1.7} className="gx-th-group-icon" />
           <span className="gx-th-group-name">{g.name}</span>
-          {branch && <BranchChip name={branch} title={zh ? `工作区分支：${branch}` : `Workspace branch: ${branch}`} />}
+          {branch && isActive && <BranchChip name={branch} title={zh ? `工作区分支：${branch}` : `Workspace branch: ${branch}`} />}
           {!open && (waiting > 0 || unread > 0) && <i className={`gx-th-group-dot${waiting ? " blocking" : ""}`} />}
         </button>
         <button
@@ -187,9 +204,27 @@ function ProjectGroup({ g, zh, open, onToggle, filtering }: { g: Group; zh: bool
         >
           <SquarePen size={13} />
         </button>
+        {g.id !== null && (
+          <MenuButton className="gx-icon-btn gx-th-new" chevron={false} placement="bottom-end" width={200} title={zh ? "更多" : "More"} label={<MoreHorizontal size={13} />}>
+            {(close) => (
+              <>
+                <MenuItem icon={<FolderTree size={14} />} label={zh ? "工作区文件" : "Workspace files"} onSelect={() => { close(); selectProject(g.id); setLayout({ activity: "workspace", sideOpen: true }); }} />
+                <MenuItem icon={<GitBranch size={14} />} label={zh ? "源代码管理" : "Source control"} onSelect={() => { close(); selectProject(g.id); setLayout({ activity: "scm", sideOpen: true }); }} />
+                <MenuSep />
+                <MenuItem icon={<Settings2 size={14} />} label={zh ? "项目详情与论文" : "Project details & papers"} onSelect={() => { close(); selectProject(g.id); setLayout({ activity: "projects", sideOpen: true }); }} />
+              </>
+            )}
+          </MenuButton>
+        )}
       </div>
       {open && (
         <div className="gx-th-list">
+          {linked.map((p) => (
+            <button key={p.id} type="button" className={`gx-th-paper${shownPaper === p.id ? " active" : ""}`} title={p.title} onClick={() => { if (!isActive) selectProject(g.id); void openPaper(p.id).catch(() => {}); }}>
+              <FileText size={12} />
+              <span>{p.title || p.id}</span>
+            </button>
+          ))}
           {g.items.length === 0 && <div className="gx-th-none">{zh ? "还没有对话" : "No threads yet"}</div>}
           {shown.map((s) => <ThreadRow key={s.id} s={s} zh={zh} groupBranch={branch} />)}
           {shown.length < g.items.length && (
@@ -211,13 +246,17 @@ export function ThreadsHeadActions() {
   const unread = useSessions((s) => s.inbox.unread);
   const blocking = useSessions((s) => s.inbox.blocking);
   const newThread = useSessions((s) => s.newThread);
+  const openPalette = useStore((s) => s.openPalette);
   return (
     <>
+      <button type="button" className="gx-icon-btn" title={zh ? "新建研究项目" : "New research project"} onClick={() => openPalette("newProject")}>
+        <FolderPlus size={14} />
+      </button>
       <button
         type="button"
         className={`gx-icon-btn gx-bell-btn${view === "inbox" ? " open" : ""}`}
         aria-pressed={view === "inbox"}
-        title={view === "inbox" ? (zh ? "返回按项目分组的对话" : "Back to threads by project") : inboxTitle(zh, unread, blocking)}
+        title={view === "inbox" ? (zh ? "返回项目列表" : "Back to projects") : inboxTitle(zh, unread, blocking)}
         onClick={() => setView(view === "inbox" ? "threads" : "inbox")}
       >
         <InboxBell />
@@ -262,13 +301,14 @@ export function ThreadsView() {
   const needle = q.trim().toLowerCase();
   const match = (s: SessionSummary) => !needle || `${s.title} ${s.preview || s.last_message || ""} ${s.project?.name || ""} ${s.branch || ""}`.toLowerCase().includes(needle);
 
+  const [allPapers, setAllPapers] = useState(false);
   const groups = useMemo(() => {
     const byId = new Map<string | null, Group>();
     const ensure = (id: string | null, name?: string): Group => {
       let g = byId.get(id);
       if (!g) {
         const p = id ? projects.find((x) => x.id === id) : undefined;
-        g = { id, name: id === null ? (zh ? "通用" : "General") : p?.name || name || id, kind: p?.kind, branch: p?.workspace?.vcs?.branch || null, items: [], latest: 0 };
+        g = { id, name: id === null ? (zh ? "通用" : "General") : p?.name || name || id, kind: p?.kind, branch: p?.workspace?.vcs?.branch || null, items: [], latest: p?.created_at || 0, paperIds: p?.paper_ids || [] };
         byId.set(id, g);
       }
       return g;
@@ -279,10 +319,17 @@ export function ThreadsView() {
       g.items.push(s);
       g.latest = Math.max(g.latest, activityOf(s));
     }
+    // every project is listed, threads or not; a filter keeps only matching names
+    for (const p of projects) if (!needle || p.name.toLowerCase().includes(needle)) ensure(p.id);
     if (!needle) ensure(activeProject); // the active project is always there, so a thread can be started in it
     for (const g of byId.values()) g.items.sort((a, b) => activityOf(b) - activityOf(a));
-    return [...byId.values()].sort((a, b) => Number(b.id === activeProject) - Number(a.id === activeProject) || Number(a.id === null) - Number(b.id === null) || b.latest - a.latest);
+    const rank = (g: Group) => (g.id === activeProject ? 0 : g.id === null ? 3 : g.kind === "paper" ? 2 : 1);
+    return [...byId.values()].sort((a, b) => rank(a) - rank(b) || b.latest - a.latest);
   }, [list, projects, activeProject, needle, zh]);
+  // one workspace per paper adds up: idle ones beyond the cap are one click away
+  const idle = groups.filter((g) => g.kind === "paper" && g.id !== activeProject && g.items.length === 0);
+  const hidden = allPapers || needle ? new Set<string | null>() : new Set(idle.slice(PAPER_CAP).map((g) => g.id));
+  const visibleGroups = groups.filter((g) => !hidden.has(g.id));
 
   const toggle = (key: string) => setCollapsed((prev) => {
     const next = new Set(prev);
@@ -310,7 +357,7 @@ export function ThreadsView() {
     <div className="wb-side-body gx-threads">
       <label className="wb-filter">
         <Search size={13} />
-        <input placeholder={zh ? "筛选对话…" : "Filter threads…"} value={q} onChange={(e) => setQ(e.target.value)} />
+        <input placeholder={zh ? "筛选项目和对话…" : "Filter projects and threads…"} value={q} onChange={(e) => setQ(e.target.value)} />
         {loading && <Spinner size={11} />}
       </label>
       {view === "inbox" && (
@@ -343,20 +390,29 @@ export function ThreadsView() {
               </div>
             ))
           )
-        ) : list.length === 0 && !loading ? (
+        ) : list.length === 0 && projects.length === 0 && !loading ? (
           <EmptyState
             icon={<MessagesSquare size={20} />}
             title={zh ? "还没有对话" : "No threads yet"}
             hint={zh ? "每个对话都属于一个项目，并在该项目的工作区里工作。" : "Every thread belongs to a project and works in that project’s workspace."}
             action={<button type="button" className="gx-btn sm" onClick={() => newThread()}><SquarePen size={12} /> {zh ? "新对话" : "New thread"}</button>}
           />
-        ) : groups.length === 0 || (needle && groups.every((g) => g.items.length === 0)) ? (
+        ) : groups.length === 0 ? (
           <div className="muted wb-empty">{zh ? "没有匹配的对话" : "No matching threads"}</div>
         ) : (
-          groups.map((g) => {
-            const key = g.id ?? "__general";
-            return <ProjectGroup key={key} g={g} zh={zh} filtering={!!needle} open={!!needle || !collapsed.has(key)} onToggle={() => toggle(key)} />;
-          })
+          <>
+            {visibleGroups.map((g) => {
+              const key = g.id ?? "__general";
+              // idle paper workspaces start folded; what the user opened stays open
+              const open = !!needle || (g.items.length || g.paperIds.length > 1 || g.id === activeProject ? !collapsed.has(key) : collapsed.has(`+${key}`));
+              return <ProjectGroup key={key} g={g} zh={zh} filtering={!!needle} open={open} onToggle={() => toggle(g.items.length || g.paperIds.length > 1 || g.id === activeProject ? key : `+${key}`)} />;
+            })}
+            {hidden.size > 0 && (
+              <button type="button" className="gx-link gx-th-all" onClick={() => setAllPapers(true)}>
+                {zh ? `显示其余 ${hidden.size} 个论文工作区` : `Show ${hidden.size} more paper workspaces`}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

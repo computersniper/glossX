@@ -230,7 +230,7 @@ export function CommandPalette() {
         useSessions.getState().compose({ text, send: true });
       } else if (mode === "newProject") {
         await st.createProject(text);
-        st.setLayout({ activity: "projects", sideOpen: true });
+        st.setLayout({ activity: "threads", sideOpen: true });
       } else if (mode === "commit") {
         await commitChanges(st.agentProjectId, text);
       } else if (mode === "newBranch") {

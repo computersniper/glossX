@@ -255,7 +255,7 @@ export function WorkspaceView() {
   return (
     <div className="wb-side-body gx-ws">
       <div className="gx-ws-head">
-        <button type="button" className="gx-ws-scope" title={T.pick} onClick={() => setLayout({ activity: "projects", sideOpen: true })}>
+        <button type="button" className="gx-ws-scope" title={T.pick} onClick={() => setLayout({ activity: "threads", sideOpen: true })}>
           <FolderTree size={13} />
           <span>{projectName || T.scope}</span>
         </button>

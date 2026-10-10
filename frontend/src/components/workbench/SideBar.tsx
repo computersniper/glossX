@@ -18,13 +18,14 @@ import { ask } from "./dialog";
 import { Icon } from "./icons";
 import { BrowserActivity } from "./BrowserView";
 
-export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
+/** `hidden` views have no activity bar button; they open from another view. */
+export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string; hidden?: boolean }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
-  { id: "threads", icon: "threads", en: "Threads", zh: "对话" },
+  { id: "threads", icon: "projects", en: "Projects", zh: "项目" },
   { id: "browser", icon: "browser", en: "Browser", zh: "浏览器" },
   { id: "workspace", icon: "workspace", en: "Workspace", zh: "工作区" },
   { id: "scm", icon: "scm", en: "Source control", zh: "源代码管理" },
-  { id: "projects", icon: "projects", en: "Projects", zh: "项目" },
+  { id: "projects", icon: "projects", en: "Project details", zh: "项目详情", hidden: true },
   { id: "search", icon: "search", en: "Search (Scholar)", zh: "学术搜索" },
   { id: "capabilities", icon: "plugins", en: "Capabilities & Plugins", zh: "能力与插件" },
   { id: "settings", icon: "settings", en: "Settings", zh: "设置" },

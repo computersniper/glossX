@@ -309,7 +309,7 @@ export function ScmView() {
   return (
     <div className="wb-side-body gx-ws gx-scm">
       <div className="gx-ws-head">
-        <button type="button" className="gx-ws-scope" title={zh ? "切换项目" : "Switch project"} onClick={() => setLayout({ activity: "projects", sideOpen: true })}>
+        <button type="button" className="gx-ws-scope" title={zh ? "切换项目" : "Switch project"} onClick={() => setLayout({ activity: "threads", sideOpen: true })}>
           <GitCommitHorizontal size={14} />
           <span>{projectName || (zh ? "默认工作区" : "Default workspace")}</span>
         </button>

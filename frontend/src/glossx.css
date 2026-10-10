@@ -143,13 +143,25 @@
 /* Threads, workspace history and branch controls. */
 .gx-threads { display:flex; flex-direction:column; min-height:0; }
 .gx-th-scroll { flex:1; overflow:auto; padding:6px 8px 16px; }
-.gx-th-group { margin-bottom:12px; }
+.gx-th-group { margin-bottom:4px; }
 .gx-th-group-head { display:flex; align-items:center; gap:4px; min-height:32px; }
 .gx-th-group-toggle { display:flex; align-items:center; gap:6px; flex:1; min-width:0; border:0; background:none; padding:4px 0; text-align:left; font-size:var(--gx-fs-xs); color:var(--gx-text-2); cursor:pointer; }
 .gx-th-group-icon { flex-shrink:0; }
 .gx-th-group-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gx-th-group-dot,.gx-unread { width:5px; height:5px; border-radius:50%; background:var(--gx-accent); display:inline-block; flex-shrink:0; }
 .gx-th-group-head .gx-branch { max-width:72px; }
+.gx-th-group-caret { display:flex; align-items:center; justify-content:center; width:18px; height:24px; padding:0; border:0; background:none; cursor:pointer; border-radius:var(--gx-r-xs); }
+.gx-th-group-caret:hover { background:var(--gx-hover); }
+.gx-th-group.open .gx-th-group-caret .gx-tree-caret { transform:rotate(90deg); }
+.gx-th-group-toggle { border-radius:var(--gx-r-sm); padding:4px 6px; }
+.gx-th-group-toggle:hover { background:var(--gx-hover); color:var(--gx-text); }
+.gx-th-group.current .gx-th-group-toggle { color:var(--gx-text); font-weight:600; background:var(--gx-accent-soft); }
+.gx-th-group-head .gx-th-new { opacity:.6; }
+.gx-th-group-head:hover .gx-th-new, .gx-th-group.current .gx-th-new { opacity:1; }
+.gx-th-paper { display:flex; align-items:center; gap:6px; width:100%; min-width:0; padding:5px 8px 5px 22px; border:0; background:none; border-radius:var(--gx-r-sm); color:var(--gx-text-2); font-size:var(--gx-fs-xs); text-align:left; cursor:pointer; }
+.gx-th-paper span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gx-th-paper:hover { background:var(--gx-hover); color:var(--gx-text); }
+.gx-th-paper.active { color:var(--gx-text); background:var(--gx-hover); }
 .gx-th-row { display:flex; position:relative; border-radius:var(--gx-r-sm); margin:2px 0; }
 .gx-th-row:hover { background:var(--gx-hover); }
 .gx-th-row.active { background:var(--gx-accent-soft); }
