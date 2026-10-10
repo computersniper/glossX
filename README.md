@@ -1,208 +1,150 @@
-> **GlossX** is the agent-harness edition of Gloss, built for research and learning. See [docs/glossx-design.md](./docs/glossx-design.md) for the design. Preview builds (Windows `GlossX.exe` and the npm package) are available as artifacts of the "Preview build" workflow under the repository's Actions tab.
-
 <p align="center">
-  <img src="./docs/logo.svg" width="84" alt="Gloss logo" />
+  <img src="./docs/logo.svg" width="84" alt="GlossX logo" />
 </p>
 
-<h1 align="center">Gloss · 旁注</h1>
+<h1 align="center">GlossX</h1>
 
-<p align="center"><b>A light that annotates your papers · a local, self-hosted AI paper-reading companion</b></p>
-
-<p align="center">
-  <img src="./docs/cover.svg" width="760" alt="Gloss — a beam of light illuminating a page, like a gloss written in the margins" />
-</p>
-
-<p align="center"><sub><i>A beam of light illuminating a page — like a gloss written in the margins.</i></sub></p>
+<p align="center"><b>An open, plugin-native agent harness for research and learning · built on the Gloss paper reader</b></p>
 
 <p align="center"><a href="./README.zh.md"><b>中文文档 →</b></a> · <a href="./CHANGELOG.md"><b>Changelog</b></a></p>
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/gloss-local"><img src="https://img.shields.io/npm/v/gloss-local?label=npm" alt="npm version" /></a>
-  <a href="https://github.com/computersniper/gloss/releases/latest"><img src="https://img.shields.io/github/v/release/computersniper/gloss?label=release" alt="GitHub release" /></a>
-  <a href="https://github.com/computersniper/gloss/actions/workflows/ci.yml"><img src="https://github.com/computersniper/gloss/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-</p>
-
-<p align="center"><a href="https://computersniper.github.io/gloss-site/"><b>🌐 Visit the Gloss website</b></a></p>
-
----
-
-Gloss (旁注) is a **self-hosted, locally-run** research-paper reader. A FastAPI backend serves a
-React / PDF.js reader UI and drives an LLM to help you skim, study, translate, and ask questions
-about a paper.
-
-The model **defaults to your local `claude` CLI**. It also supports the local `codex` CLI, the Anthropic API,
-and **any OpenAI-compatible endpoint** (local vLLM, a claude proxy, etc.). It can even **load and run
-Claude / Codex skills** directly against the paper you're reading.
-
-Everything runs on your own machine. Use Gloss as a native Windows app or open the web version in your browser.
+> **Status: under active development.** GlossX lives on the `glossX-dev` branch of a private
+> repository. There are **no public releases and no npm publication yet**. Preview builds
+> (`GlossX.exe` for Windows and the `glossx-local` npm tarball) are produced by the GitHub Actions
+> **"Preview build"** workflow and are available as workflow artifacts (kept for 14 days). Until
+> then, [run it from source](#-install--run).
+>
+> GlossX is built on **Gloss**, the local AI paper reader. The upstream project is
+> [computersniper/gloss](https://github.com/computersniper/gloss); its public releases and npm
+> package belong to that project, not to GlossX.
 
 ---
 
-## 👀 See Gloss in action
+GlossX is a **local, self-hosted** workbench in which an AI agent does research with you. It keeps
+everything Gloss does as a paper reader, and adds a full agent harness on top: long-lived agent
+**sessions** in which the model itself decides which tools to call, a Cursor-style workbench with a
+paper library, multi-tab PDF reader and workspace files, and a plugin system where everything
+(tools, commands, subagents, skills, hooks, workflows, providers) is a plugin.
 
-Read a paper, inspect the AI's structure, and keep a local library in the same
-workspace. For the interactive product tour, visit the
-[Gloss website](https://computersniper.github.io/gloss-site/).
+Everything runs on your own machine. Models can be your local **Claude Code CLI**, your local
+**Codex CLI**, the **Anthropic API**, or **any OpenAI-compatible endpoint**.
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="./docs/reader-summary.png" alt="Gloss reader: a paper PDF beside an AI-generated structured summary" />
-    </td>
-    <td width="25%" valign="top">
-      <img src="./docs/app-mindmap.png" alt="Gloss interactive mind map with a paper concept detail panel" />
-    </td>
-    <td width="25%" valign="top">
-      <img src="./docs/app-extensions.png" alt="Gloss Extension Marketplace with built-in and installed modules" />
-    </td>
-  </tr>
-  <tr>
-    <td valign="top"><b>Reader demo</b><br />A real PDF text layer stays beside a structured AI brief, with room for notes, chat, and annotations.</td>
-    <td valign="top"><b>Interactive mind maps</b><br />Explore paper concepts and their connections without leaving the reader.</td>
-    <td valign="top"><b>Extension Marketplace</b><br />Install, open, or remove reading modules for your workflow.</td>
-  </tr>
-</table>
+## Two modes
 
-<p align="center"><sub>Desktop application screenshots. The browser version uses the same local workspace.</sub></p>
+Switch between them with the toggle at the top left.
 
----
+| Mode | What it is |
+|---|---|
+| **Gloss** | The classic local AI paper reader: PDF reader with summary, notes, mind map, chat, translate, explain, highlights, annotations, references, scholar search, library, skills and plugins. |
+| **GlossX** | The research workbench: library, multi-tab PDF reader, a session-based agent chat where the model calls tools itself, workspace files with checkpoints, and the full harness described below. |
 
-## ✨ Features
+## Features
 
 | Feature | What it does |
 |---|---|
-| 📖 **PDF reader** | PDF.js with a real selectable text layer; select text to pop up actions (Explain / Translate / add-to-chat / highlight) |
-| 🧠 **Summary** | One-click TL;DR + problem / method / results / contributions / limitations |
-| 📝 **Notes** | Structured study notes, **copy** or **download `.md`** |
-| 🗺️ **Mind Map** | Interactive React Flow map: zoom, expand/collapse, click a node for its summary and connections |
-| 💬 **Chat** | Ask like a colleague — **BM25 retrieval (RAG)** over the whole paper, **persistent Codex sessions**, editable auto-titles, streaming, and multiple saved chats per paper |
-| 💡 **Explain** | Select an equation / term / table and get a one-shot explanation; math rendered with **KaTeX** |
-| 🌐 **Translate** | **Sentence-level**, **persistently cached**, **reused across page ranges**; translation-only by default with a show-original toggle; **click a sentence to flash-locate it in the PDF**; for arXiv, **translate the exact LaTeX source** so nothing is missed |
-| 📐 **arXiv LaTeX** | A **TeX tab** to read the paper's LaTeX source (exact, no extraction loss) — and translate from it |
-| 🖍️ **Auto-highlight** | The AI picks key sentences by category and **anchors colored highlights onto the PDF** |
-| ✍️ **Annotations** | Personal notes, multi-color highlights, pencil, pen, highlighter and eraser, all saved locally on the page |
-| 📎 **Lasso to chat** | Freehand-circle any PDF region, preview the screenshot, then attach it directly to Chat |
-| 🔗 **References** | Parses the bibliography, enriches via **Crossref / arXiv**, **each entry is clickable** |
-| 🔭 **Scholar** | Find related papers via **Semantic Scholar / arXiv** and **import** them in one click |
-| 📚 **Library** | Import by **arXiv id / DOI / URL / PDF upload**, managed in one place |
-| 🧩 **Skills** | Discover and run **Claude / Codex skills** against the current paper |
-| 🔌 **Plugins** | Install or uninstall extensible reader panels from the built-in marketplace |
-| ➕ **Add to chat** | Select content in the PDF or any panel → send it into Chat and get an answer about it |
-| 🎨 **Themes & reading modes** | **7 color themes**, plus PDF reading modes — **Normal / Sepia (护眼) / Night (夜间)** |
-| 🗣️ **Languages** | **Interface language** (English / 中文, default English), plus the AI's **answer language** and **translation target language** |
-| ⚙️ **Quality** | Long operations keep running across tab switches; panels stay mounted so **scroll position and mind-map viewport are preserved**; **Test-connection** button for each provider |
+| **Agent sessions** | Persistent, concurrent chat sessions; list, rename, fork, delete, interrupt. The model decides each turn which tools to call; tool calls render as compact cards with streaming output. |
+| **Permission modes** | **Ask** (read-only), **Agent** (writes and execution need approval), **Auto** (auto-approve workspace edits, execution still asks), **Plan** (read-only; ends with a plan you can accept). Allow / ask / deny rules; approve once, always, or deny with feedback. |
+| **Tools** | Library and paper tools (search, read sections or pages, span search, summary, explain, references, scholar search, import), workspace file tools, shell and Python execution, web search and fetch, todos, `ask_user`, project memory. |
+| **Workspace files and checkpoints** | A sandboxed workspace per project, with an explorer and editor tabs. Every write records a checkpoint so you can view a diff and accept or revert. `GLOSSX.md` project instructions are always injected. |
+| **Slash commands and @-mentions** | Built-in `/clear`, `/compact`, `/mode`, `/model`, `/review`, `/summarize`, `/todos`, `/help`, plus custom commands from markdown files. `@` attaches papers, spans, workspace files or runs. |
+| **Subagents** | Nested sessions with their own context, tool allowlist and turn budget. Built-in `reader`, `reviewer`, `coder`, `searcher`; define your own in markdown. |
+| **Skills** | Claude / Codex `SKILL.md` skills exposed as `skill_<name>` tools with progressive disclosure. |
+| **Hooks** | `pre_tool_use`, `post_tool_use`, `session_start` and `stop` shell hooks; a failing pre-tool hook blocks the call. |
+| **MCP client and server** | Launch stdio MCP servers and use their tools; GlossX also serves `/mcp` so Claude Code or Codex can use your library. |
+| **Claude Code / Codex delegates** | Hand a task to the local `claude` or `codex` CLI, with tools enabled, in a per-run sandbox directory. |
+| **SSH remote execution** | Run commands on configured hosts through the system `ssh` binary (key-based auth only). |
+| **Literature review with claim verification** | A built-in workflow: plan, search with fallbacks, screen, read with reader subagents, verify claims against paper spans, write a cited report. |
+| **Projects and memory** | Research projects with persistent memory notes recalled at plan time; verified claims are saved back. |
+| **Context management** | Token meter, auto-compaction at 80% of the context limit, large tool results stored by reference. |
+| **Plugins (manifest v2)** | Kinds: `tool`, `command`, `agent`, `skill`, `hook`, `mcp`, `workflow`, `loop`, `decider`, `provider`, `view`. Third-party manifests are declarative only; tool output is always treated as untrusted data. |
 
-Plugin authors can use the declarative [Gloss Plugin Authoring
-specification](docs/plugin-authoring.md). The host supplies cancellable tasks,
-stage progress, model controls, shared-context mode, and default worker
-presentation, so a minimal plugin only needs its analysis prompt and sidebar
-contribution.
+Plugin authors: see the [Gloss Plugin Authoring specification](docs/plugin-authoring.md).
 
----
+### In progress
 
-## 🚀 Install & run
+These features are specified in [docs/glossx-workspaces.md](./docs/glossx-workspaces.md) and are
+being implemented right now; they may be incomplete or absent in the current build.
 
-### Let Claude Code or Codex install it
+- **Threads and inbox** — sessions grouped under their project, per-thread unread and attention
+  state (needs approval, needs answer, finished, failed), a live inbox with an unread badge.
+- **A workspace per paper** — adding a paper automatically creates a project and a workspace seeded
+  with `GLOSSX.md` and `notes/`; research projects can hold several papers.
+- **Git-backed version control** — every workspace is a git repository, with auto-commit at the end
+  of a turn, branches, merge, restore, a source-control view, and agent `vcs_*` tools.
 
-Paste this into Claude Code or Codex:
+## Architecture
 
-```text
-Install and run https://github.com/computersniper/gloss on this computer. Use the easiest supported method for this OS, preserve existing Gloss data, and verify /api/health before giving me the local URL.
+```
+kernel          capability registry · scheduler · permission & sandbox gate · budget meter · trace log
+plugins         manifest v2 -> adapters: native Python · declarative manifest · Agent Skills ·
+                MCP (client + server) · Claude Code / Codex delegates · SSH · LLM providers
+harness         sessions · tool-calling loop · modes & permissions · context compaction ·
+                commands · subagents · skills · hooks · mentions
+workbench       React UI: library · multi-tab PDF reader · session chat · workspace explorer & editor
+classic Gloss   reader features: summary · notes · mind map · chat (RAG) · translate · highlights ...
 ```
 
-Gloss is available as a native Windows desktop app and as a local browser app on Windows, Linux, and macOS. Both keep the backend, papers, and generated results on your own machine.
+- **Kernel** is small and fixed: every capability has a short card, I/O schema, permissions, cost
+  hint and trust tier (`first-party`, `third-party`, `external`). Sensitive permissions
+  (`code:execute`, `remote:ssh`, `mcp:call`, `library:write`) require approval, and per-run budgets
+  stop runaway loops.
+- **Harness** runs the model-driven tool loop over any provider and streams events (SSE) to the UI.
+- **Workbench** is the Cursor-style front end: the AI pane is a session chat next to the PDF tabs
+  and workspace editor.
 
-### Windows desktop app
+Design documents: [docs/glossx-design.md](./docs/glossx-design.md),
+[docs/glossx-harness.md](./docs/glossx-harness.md).
 
-Download [Gloss-windows-x64.exe](https://github.com/computersniper/gloss/releases/latest/download/Gloss-windows-x64.exe), then double-click it.
-Gloss opens in its own desktop window, without a terminal or browser tab, and
-automatically selects a free local port.
+Repository layout: `backend/` (FastAPI, serves the built SPA), `frontend/` (React + Vite + pdfjs-dist
++ KaTeX + React Flow), `cli/`, `scripts/`, `packaging/`.
 
-### Choose a release download
+## Install & run
 
-Every tagged release includes a portable Windows desktop package and the npm
-package for the local browser app. Pick the supported path for your computer from the
-[latest release](https://github.com/computersniper/gloss/releases/latest):
+GlossX is not published yet, so choose one of the following.
 
-| Platform | Start here |
-| --- | --- |
-| Windows | Download [Gloss-windows-x64.exe](https://github.com/computersniper/gloss/releases/latest/download/Gloss-windows-x64.exe) |
-| Linux / macOS | Run the [local web app](#local-web-app--windows-linux-and-macos-with-npm-or-bun) with npm or Bun |
+### Preview builds
 
-The Windows downloads are standalone `.exe` files—there is nothing to unpack.
-See [release download notes](docs/releases.md) for platform-specific details.
+Open the repository's **Actions** tab, pick a run of the **Preview build** workflow, and download an
+artifact:
 
-### Local web app — Windows, Linux, and macOS with npm or Bun
+- `GlossX-windows-x64` — the portable Windows app `GlossX.exe` (no install, opens its own window).
+- `GlossX-npm-package` — the `glossx-local-*.tgz` npm tarball for Windows, Linux and macOS.
+  Install it with `npm install --global ./glossx-local-*.tgz`, then start with `glossx`.
 
-Requires Node.js 18+ and Python 3.11+:
+Artifacts expire after 14 days.
 
-```bash
-node --version
-python --version
-npm --version          # or: bun --version
+### From source
 
-npx gloss-local@latest
-# or
-bunx gloss-local@latest
-```
-
-Then open the local URL shown in the terminal (normally `http://localhost:8010`) in your browser.
-
-The first run installs the backend into an isolated environment; later runs reuse it. For a permanent
-command, run `npm install --global gloss-local` or `bun add --global gloss-local`, then start Gloss with
-`gloss`.
-
-Linux and macOS use exactly the commands above; no native `.exe`, `.app`, or `.dmg` is required. On
-Debian / Ubuntu, install `python3-venv` if the first run asks for it:
-`sudo apt install python3-venv`.
-
-### From source (developers)
-
-Requires Git, Node.js 20.19+, and Python 3.11+:
+Requires Git, Node.js 20.19+ and Python 3.11+:
 
 ```bash
-git clone https://github.com/computersniper/gloss.git
-cd gloss
+git clone https://github.com/computersniper/glossX.git
+cd glossX
+git checkout glossX-dev
 npm run setup
 npm start
 # or: bun run setup && bun run start
 ```
 
-#### Native scripts (optional)
+Open `http://localhost:8010`. Use `--port` and `--host` to change the address. The package ships the
+bins `glossx` and `glossx-local` (for example `glossx-local --help`, `glossx-local doctor`).
 
-```bash
-# Linux
-scripts/setup.sh
-scripts/run.sh
-
-# Windows PowerShell
-.\scripts\setup.ps1
-.\scripts\run.ps1
-```
-
-Open `http://localhost:8010`. Use `--port` and `--host` to change the address, for example:
-`npx gloss-local@latest --port 6006 --host 127.0.0.1`.
+Optional native scripts: `scripts/setup.sh` / `scripts/run.sh` (Linux) and
+`.\scripts\setup.ps1` / `.\scripts\run.ps1` (Windows PowerShell).
 
 ### Remote Linux over SSH
 
-Start Gloss on the server, then create a tunnel from your local computer:
-
 ```bash
 # Remote server
-npx gloss-local@latest --host 127.0.0.1 --port 8010
+glossx-local --host 127.0.0.1 --port 8010
 
 # Local computer
 ssh -N -L 8010:127.0.0.1:8010 -p <ssh-port> user@server
 ```
 
-Open `http://localhost:8010` locally.
+Then open `http://localhost:8010` locally.
 
-Persistent data is stored in `%LOCALAPPDATA%\Gloss\data` on Windows and
-`$XDG_DATA_HOME/gloss` (default `~/.local/share/gloss`) on Linux and macOS. Set `GLOSS_DATA_DIR` to override it.
-
----
-
-## 🧰 CLI
+## CLI
 
 ```bash
 ./gloss serve                  # Linux/macOS: start the web app
@@ -215,71 +157,120 @@ Persistent data is stored in `%LOCALAPPDATA%\Gloss\data` on Windows and
 ./gloss skills                 # list discovered Claude / Codex skills
 ```
 
-For example: `./gloss open 1706.03762` opens *Attention Is All You Need* and launches the reader.
+## Configuration
 
----
-
-## 🤖 AI providers & advanced settings
+### Providers
 
 Pick a provider in **Settings** (the generated `config.json` is stored in the data directory):
 
 | Provider | Notes | Key? |
 |---|---|---|
-| `local_claude` | **Default.** Calls the local `claude` CLI via your subscription | ❌ no key |
-| `local_codex` | Calls the local `codex` CLI via your ChatGPT subscription | ❌ no key |
-| `anthropic` | Anthropic API, or any Anthropic-compatible endpoint | ✅ `base_url` + `api_key` |
-| `openai` | Official OpenAI **or any OpenAI-compatible endpoint** | ✅ `base_url` + `api_key` |
+| `local_claude` | **Default.** Calls the local `claude` CLI via your subscription | no key |
+| `local_codex` | Calls the local `codex` CLI via your ChatGPT subscription | no key |
+| `anthropic` | Anthropic API, or any Anthropic-compatible endpoint | `base_url` + `api_key` |
+| `openai` | Official OpenAI **or any OpenAI-compatible endpoint** (local vLLM, a claude proxy, ...) | `base_url` + `api_key` |
 
-The `openai` entry can point at a **local vLLM** or **claude proxy** (e.g. `http://127.0.0.1:8899/v1`) for a fully-offline setup.
+Each provider can have its own model (for example `sonnet` / `opus`, a full model id, or blank for the
+CLI's default) and reasoning effort (`local_claude`: `low ... max`; `local_codex`: `minimal ... high`).
+Answer language and translation target language are configurable too. API keys are masked by the
+Settings API and runtime data stays out of version control.
 
-**Advanced (per provider):** model (e.g. `sonnet` / `opus`, a full model id, or blank for the CLI's default) and
-**reasoning effort** (`local_claude`: `low … max`; `local_codex`: `minimal … high`). **Answer language** and
-**translation target language** are also configurable (both default to Simplified Chinese). Keys are masked by the
-Settings API and runtime data directories are outside version control, so secrets never enter the repository.
+> **Codex note:** with the local Codex provider, if Codex's own default model is rejected for your
+> account, set a model your account supports in **Settings**.
 
----
+### Connections
 
-## 🏗️ Architecture
+Under the agent connections settings you can configure:
 
-```
-backend/          FastAPI (one process mounts every /api/*, and serves the built frontend SPA)
-  app/providers/  local_claude · local_codex · anthropic · openai · registry (LLM abstraction)
-  app/pdf/        PyMuPDF parsing (text blocks + bboxes) + structure heuristics (sections/refs/sentences)
-  app/features/   summarize · explain · translate · chat(RAG) · highlight · notes · mindmap · citations
-  app/search/     Scholar search / recommend (Semantic Scholar / arXiv)
-  app/skills/     discover & run Claude/Codex SKILL.md skills
-  app/library/    SQLite store + importers (arXiv/DOI/PDF)
-  app/routers/    papers · ai · citations · scholar · annotations · skills · settings
-frontend/         React + Vite + pdfjs-dist + KaTeX + React Flow (built to frontend/dist, served by the backend)
-cli/ gloss.py     scripts/ gloss.mjs · setup/run/dev (.sh + .ps1)
-```
+- **MCP servers** (`name, command, args, env, enabled`), launched over stdio on first use.
+- **SSH hosts** (`name, host, user, port, workdir`), key-based authentication only.
+- **CLI agents**: enable or disable the Claude Code and Codex delegates.
+- **Auto-approve** list for permissions you trust.
 
-**Data** lives in the platform data directory described above: a SQLite DB plus
-one folder per paper with its `original.pdf` and parsed `parsed.json`.
+A connection status check reports which servers, hosts and CLIs are reachable.
 
----
+### Permissions, hooks and context
 
-## 💡 Notes
+The harness settings hold the default mode, allow / ask / deny rules (a tool name, `tool:*`, or
+`shell_run(<prefix>*)`; deny beats ask beats allow), hooks, and the context limit (default 120k
+tokens). Reading is allowed by default; file writes ask; execution asks.
 
-- **Local `claude` / `codex` run standalone** — they sign in with your existing subscription (no API key),
-  and each answer is scoped to the current paper only, never mixed with your personal Claude/Codex config.
-- **Your data stays local** — papers, highlights, notes, and chats are stored in a local SQLite database plus
-  per-paper files in the platform data directory; nothing leaves your machine except the external lookups below.
-- **External lookups degrade gracefully** — References / Scholar go through the machine's HTTP proxy; if a
-  source is offline, Gloss falls back to local data instead of erroring the whole page.
-- **Generated results are cached** — summary / notes / mind map / translation / highlights are saved after the
-  first generation and reused on re-entry, so you don't re-spend compute or quota.
+### Agent directories (in progress)
 
----
+Like Claude Code's `.claude`, agent configuration lives in plain files. This layout is being
+implemented right now and may not be complete in the current build.
 
-## 🙏 Acknowledgments
+- **Global home `~/.glossx/`** (override with `GLOSSX_HOME`): `GLOSSX.md` (global instructions),
+  `settings.json` (permissions, hooks, context limit, default mode), `commands/*.md` (custom slash
+  commands), `agents/*.md` (subagent types) and `skills/`.
+- **Per workspace `<workspace>/.glossx/`**: a project `settings.json` (overrides the global one),
+  `commands/`, `agents/`, project memory and checkpoints. `GLOSSX.md` at the workspace root holds the
+  project instructions.
+- Library data (papers, database, sessions) stays in the data directory below.
+- Each paper added to the library gets its own project and workspace directory, and every workspace is
+  a git repository with auto-commit per agent turn and branches (see
+  [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)).
 
-Gloss is a **local, self-hosted reconstruction of [Moonlight](https://www.themoonlight.io/)** ("an AI colleague
-for reading research papers") — rebuilt from scratch to run entirely on your own machine. Its design also draws
-inspiration from two lovely projects:
+## Data location
 
-- **[Understand-Anything](https://github.com/Egonex-AI/Understand-Anything)** — for the interactive node-link
-  **mind map** (React Flow, click-to-focus, collapsible nodes).
-- **[DeepPaperNote](https://github.com/917Dhj/DeepPaperNote)** — for the structured, generated **study notes**.
+GlossX uses its **own data directory**, separate from Gloss, so it can run next to an installed
+Gloss:
 
-Huge thanks to the authors of all three. 🙏
+- Windows: `%LOCALAPPDATA%\GlossX\data`
+- Linux / macOS: `$XDG_DATA_HOME/glossx` (default `~/.local/share/glossx`)
+- Override with `GLOSS_DATA_DIR`.
+
+It holds the SQLite library, one folder per paper, `config.json`, sessions, workspaces and
+checkpoints, projects and memory, and custom commands and agents. Your Gloss data is never touched.
+
+## Notes
+
+- Local `claude` / `codex` use your existing subscription login (no API key).
+- Your data stays local; only external lookups (Crossref, arXiv, Semantic Scholar, web search/fetch)
+  leave your machine, and they degrade gracefully when offline.
+- Generated results (summary, notes, mind map, translation, highlights) are cached and reused.
+
+## Documentation
+
+- [docs/glossx-design.md](./docs/glossx-design.md) — kernel, plugin manifest v2, adapters, core agent, context, API
+- [docs/glossx-harness.md](./docs/glossx-harness.md) — sessions, tool loop, permissions, commands, subagents, hooks, UI
+- [docs/glossx-workspaces.md](./docs/glossx-workspaces.md) — threads and inbox, per-paper workspaces, version control (in progress)
+- [docs/plugin-authoring.md](./docs/plugin-authoring.md) — plugin authoring (Gloss)
+- [CHANGELOG.md](./CHANGELOG.md)
+
+## Classic Gloss mode
+
+Screenshots of the classic Gloss reader (the upstream project is
+[computersniper/gloss](https://github.com/computersniper/gloss)):
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="./docs/reader-summary.png" alt="Classic Gloss reader: a paper PDF beside an AI-generated structured summary" />
+    </td>
+    <td width="25%" valign="top">
+      <img src="./docs/app-mindmap.png" alt="Classic Gloss interactive mind map with a paper concept detail panel" />
+    </td>
+    <td width="25%" valign="top">
+      <img src="./docs/app-extensions.png" alt="Classic Gloss extension marketplace with built-in and installed modules" />
+    </td>
+  </tr>
+  <tr>
+    <td valign="top"><b>Reader</b><br />A real PDF text layer beside a structured AI brief, with notes, chat and annotations.</td>
+    <td valign="top"><b>Mind map</b><br />Explore paper concepts and their connections.</td>
+    <td valign="top"><b>Extensions</b><br />Install, open or remove reading modules.</td>
+  </tr>
+</table>
+
+## Acknowledgments
+
+GlossX builds on Gloss, a **local, self-hosted reconstruction of [Moonlight](https://www.themoonlight.io/)**
+("an AI colleague for reading research papers"), rebuilt from scratch to run entirely on your own
+machine. Its design also draws inspiration from two lovely projects:
+
+- **[Understand-Anything](https://github.com/Egonex-AI/Understand-Anything)** — for the interactive
+  node-link **mind map** (React Flow, click-to-focus, collapsible nodes).
+- **[DeepPaperNote](https://github.com/917Dhj/DeepPaperNote)** — for the structured, generated
+  **study notes**.
+
+Huge thanks to the authors of all three.
