@@ -343,3 +343,14 @@ def test_decider_tolerates_decorated_and_invalid_choices(fake_llm):
     fake_llm(decide={"choice": "zzz", "confidence": 0.9})
     out = asyncio.run(LLMJsonDecider().decide("q?", ["a", "b"]))
     assert out == {"choice": "a", "confidence": 0.0, "reason": "invalid choice 'zzz'; defaulted to first option"}
+
+
+def test_run_api_accepts_every_registered_loop():
+    from pydantic import ValidationError
+
+    from app.routers.agent import RunCreateBody
+
+    for loop_id in LOOPS:
+        assert RunCreateBody(goal="x", loop=f"loop:{loop_id}").loop == f"loop:{loop_id}"
+    with pytest.raises(ValidationError):
+        RunCreateBody(goal="x", loop="loop:nope")

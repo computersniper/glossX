@@ -14,7 +14,7 @@ from ..agent import connections as conn_mod
 from ..agent import projects
 from ..agent.adapters import cli_delegate, mcp_client, ssh
 from ..agent.capabilities import abuild_registry
-from ..agent.loops import list_loops
+from ..agent.loops import LOOPS, list_loops
 from ..agent.runs import ApprovalNotFoundError, RunNotFoundError
 from ..agent.workflow import list_workflows
 
@@ -58,8 +58,8 @@ class RunCreateBody(BaseModel):
     @classmethod
     def _loop_shape(cls, value: str) -> str:
         value = (value or "auto").strip()
-        if value.removeprefix("loop:") not in {"auto", "plan-execute-verify", "react"}:
-            raise ValueError("loop must be 'auto', 'plan-execute-verify' or 'react'")
+        if value.removeprefix("loop:") not in {"auto", *LOOPS}:
+            raise ValueError(f"loop must be 'auto' or one of: {', '.join(LOOPS)}")
         return value
 
 
