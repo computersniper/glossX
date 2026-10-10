@@ -74,6 +74,11 @@ async def run_process(
 ) -> dict[str, Any]:
     """Run ``argv``; kill the whole process group on timeout or cancellation."""
     started = time.monotonic()
+    if env is None and not getattr(sys, "frozen", False):
+        # Let commands find the backend's own interpreter as `python` even when
+        # the machine has no Python on PATH (common on Windows).
+        env = dict(os.environ)
+        env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     options: dict[str, Any] = dict(
         stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,

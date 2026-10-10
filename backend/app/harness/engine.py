@@ -170,6 +170,23 @@ def sync_status(rt: Runtime) -> None:
             node.emit("session.updated", node.public())
 
 
+def _human_pages(value: Any) -> Any:
+    """Copy of a tool result with evidence-span pages 1-based for the model.
+
+    Kernel spans carry the parsed 0-based page index (the UI needs that to jump),
+    but the model writes page numbers into answers and notes for the reader.
+    """
+    if isinstance(value, list):
+        return [_human_pages(item) for item in value]
+    if isinstance(value, dict):
+        out = {key: _human_pages(item) for key, item in value.items()}
+        span_id = value.get("id")
+        if isinstance(span_id, str) and "#" in span_id and isinstance(value.get("page"), int):
+            out["page"] = value["page"] + 1
+        return out
+    return value
+
+
 def _span_refs(rt: Runtime, result: Any, text: str) -> list[dict[str, Any]]:
     """Evidence spans a tool result refers to (for clickable citations in the UI)."""
     ids: list[str] = []
@@ -413,7 +430,7 @@ async def _invoke(rt: Runtime, spec: ToolSpec, call: dict[str, Any], args: dict[
         meta.update(result.meta or {})
         status, text, trusted = ("error" if result.is_error else "done"), result.text, result.trusted
     else:
-        status, text, trusted = "done", protocol.to_text(result), False
+        status, text, trusted = "done", protocol.to_text(_human_pages(result)), False
     if not trusted:
         spans = _span_refs(rt, None if isinstance(result, ToolOutput) else result, text)
         if spans:
