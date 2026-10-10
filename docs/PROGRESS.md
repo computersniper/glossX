@@ -88,6 +88,11 @@ packaging/GlossX.spec  scripts/  .github/workflows/（ci.yml, preview-build.yml,
 
 ## 4. 当前剩余工作
 
+> **下一轮任务（尚未开始写代码，等待接手）**：内置 agent 浏览器、缓存命中率的采集 / 优化 / 显示、修掉 GlossX 模式的整页滚动条。
+> 规格：`docs/glossx-browser-cache.md`。完整任务书、分工、实测数据和验收清单：**`docs/progress/handover-browser-cache.md`**。优先级：滚动条 → 浏览器 → 缓存。
+>
+> 2026-10-10 晚已完成并推送（`d2680df`）：新 logo（带 X）、README 改版、删掉 Gloss 模式的 Agent workspace、设置里四种模型接入方式的开关。
+
 - 本轮功能代码已完成并推送。远程核验（2026-10-10）：提交 `e7a2a5f` 的 **CI 通过**（Backend tests、Frontend build）、**Preview build 通过**（`GlossX.exe` 和 npm 包可在该次运行的 Artifacts 下载）。此前快照 `3391160` 的 CI 失败是半成品，属预期。
 - 本地复核（同日，`e7a2a5f`）：后端全量 **155 passed / 10 skipped**；前端 `tsc`、`npm test` 27 通过、`npm run build` 通过。
 - 独立复核另一组 agent 的成果（2026-10-10 傍晚）：
