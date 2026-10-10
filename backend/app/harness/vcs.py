@@ -121,9 +121,9 @@ def _git(root: Path, *args: str, check: bool = True, timeout: float = 60.0,
          input_text: str | None = None, identity: bool = False) -> Any:
     """Run git in ``root``. With ``check`` a non-zero exit raises :class:`VcsError`."""
     cfg = dict(BASE_CONFIG)
-    if identity:
-        cfg.update(_identity_config(root))
     try:
+        if identity:
+            cfg.update(_identity_config(root))
         done = platform_support.run_git(list(args), root, timeout=timeout,
                                         input_text=input_text, config=cfg)
     except FileNotFoundError as error:
@@ -289,6 +289,11 @@ def _rel(root: Path, path: Any, *, allow_root: bool = False) -> str:
     if rel == ".git" or rel.startswith(".git/"):
         raise ValueError("path must not be inside .git")
     return rel
+
+
+def _ps(rel: str) -> str:
+    """A workspace-relative path as a literal git pathspec (no globbing / magic)."""
+    return rel if rel == "." else f":(literal){rel}"
 
 
 def _rels(root: Path, paths: Any, *, allow_root: bool = True) -> list[str]:
@@ -501,7 +506,7 @@ def log(key: str, *, branch: str | None = None, limit: int = 50, path: str | Non
             args.append("HEAD")
         args.append("--")
         if path:
-            args.append(_rel(root, path, allow_root=True))
+            args.append(_ps(_rel(root, path, allow_root=True)))
         return _parse_log(_git(root, *args).stdout)
 
 
@@ -545,7 +550,7 @@ def diff(key: str, *, from_rev: str | None = None, to_rev: str | None = None,
     with lock_for(workspace.key_for(key)):
         root = ensure_repo(key)
         rel = _rel(root, path, allow_root=True) if path else None
-        spec = ["--", rel] if rel and rel != "." else ["--"]
+        spec = ["--", _ps(rel)] if rel and rel != "." else ["--"]
         common = ["--no-color", "--no-ext-diff", "--find-renames"]
         frm = str(from_rev or "").strip()
         to = str(to_rev or "").strip()
@@ -617,9 +622,10 @@ def _clean_message(message: Any) -> str:
 
 def _do_commit(root: Path, message: str, rels: list[str] | None = None) -> dict[str, Any] | None:
     """Stage (everything, or ``rels``) and commit. ``None`` when nothing changed."""
+    specs = [_ps(r) for r in rels or []]
     if rels:
-        _git(root, "add", "-A", "--", *rels)
-        staged = _git(root, "diff", "--cached", "--quiet", "--", *rels, check=False)
+        _git(root, "add", "-A", "--", *specs)
+        staged = _git(root, "diff", "--cached", "--quiet", "--", *specs, check=False)
     else:
         _git(root, "add", "-A")
         staged = _git(root, "diff", "--cached", "--quiet", check=False)
@@ -628,7 +634,7 @@ def _do_commit(root: Path, message: str, rels: list[str] | None = None) -> dict[
         return None
     args = ["commit", "--no-verify", "--cleanup=whitespace", "-F", "-"]
     if rels:
-        args += ["--", *rels]
+        args += ["--", *specs]
     _git(root, *args, input_text=message + "\n", identity=True)
     _forget_head(root)
     return _commit_info(root)
@@ -817,7 +823,7 @@ def restore(key: str, rev: Any, paths: Any = None) -> dict[str, Any]:
         if _changes(root):
             saved = _do_commit(root, f"Save changes before restoring {short}")
         done = _git(root, "restore", f"--source={sha}", "--staged", "--worktree", "--",
-                    *(rels or ["."]), check=False)
+                    *([_ps(r) for r in rels] or ["."]), check=False)
         if done.returncode != 0:
             _git(root, "reset", "--hard", "--quiet", "HEAD", check=False)
             if "did not match" in (done.stderr or ""):
@@ -855,12 +861,12 @@ def discard(key: str, paths: Any) -> dict[str, Any]:
                     tracked.append(change["old_path"])
         has_head = _git(root, "rev-parse", "--verify", "--quiet", "HEAD", check=False).returncode == 0
         for start in range(0, len(tracked), 100):
-            chunk = tracked[start:start + 100]
+            chunk = [_ps(p) for p in tracked[start:start + 100]]
             if has_head:
                 _git(root, "restore", "--source=HEAD", "--staged", "--worktree", "--", *chunk)
             else:
                 _git(root, "rm", "-r", "-f", "--quiet", "--cached", "--", *chunk, check=False)
-                untracked.extend(chunk)
+                untracked.extend(tracked[start:start + 100])
         for rel in untracked:
             target = root / rel
             try:
@@ -902,8 +908,8 @@ def turn_message(title: str, request: str, session_id: str, turn: int) -> str:
     """``<session title>: <first line of the user request>`` plus trailers."""
     title = " ".join(str(title or "").split()) or "Session"
     line = " ".join((str(request or "").strip().splitlines() or [""])[0].split())
-    stem = title.rstrip(".").removesuffix("..").rstrip(".")
-    if not line or line.lower().startswith(stem.lower()[:40]):
+    stem = title[:-3] if title.endswith("...") else title
+    if not line or line.lower().startswith(stem.lower()):
         subject = line or title
     else:
         subject = f"{title[:50]}: {line}"

@@ -10,6 +10,7 @@ import { relativeTime } from "../session/toolMeta";
 import { Spinner } from "../ui";
 import { CheckpointView, FileEditor, isDirty, useFiles } from "./FileEditor";
 import { Icon } from "./icons";
+import { CommitView, VcsDiffView } from "./VcsViews";
 import { SHORTCUTS } from "./shortcuts";
 
 const baseName = (path: string) => path.split("/").pop() || path;
@@ -22,10 +23,12 @@ function useTabTitle(tab: EditorTab) {
   if (tab.kind === "run") return run?.goal || (zh ? "运行报告" : "Run report");
   if (tab.kind === "file") return baseName(splitWorkspaceId(tab.id).ref);
   if (tab.kind === "checkpoint") return zh ? "修改差异" : "Change diff";
+  if (tab.kind === "vcsdiff") return `${baseName(splitWorkspaceId(tab.id).ref)} ${zh ? "（修改）" : "(changes)"}`;
+  if (tab.kind === "commit") return `${zh ? "提交" : "Commit"} ${splitWorkspaceId(tab.id).ref.slice(0, 7)}`;
   return papers.find((p) => p.id === tab.id)?.title || (zh ? "论文" : "Paper");
 }
 
-const TAB_ICON: Record<EditorTab["kind"], string> = { paper: "paper", run: "report", welcome: "home", file: "file", checkpoint: "diff" };
+const TAB_ICON: Record<EditorTab["kind"], string> = { paper: "paper", run: "report", welcome: "home", file: "file", checkpoint: "diff", vcsdiff: "diff", commit: "commit" };
 
 /** Close a tab, asking first when a workspace file has unsaved edits. */
 export function requestCloseTab(key: string) {
@@ -54,7 +57,7 @@ function TabButton({ tab }: { tab: EditorTab }) {
       role="tab"
       aria-selected={active}
       className={`wb-tab kind-${tab.kind}${active ? " active" : ""}${dirty ? " dirty" : ""}`}
-      title={tab.kind === "file" || tab.kind === "checkpoint" ? splitWorkspaceId(tab.id).ref : title}
+      title={tab.kind === "file" || tab.kind === "checkpoint" || tab.kind === "vcsdiff" || tab.kind === "commit" ? splitWorkspaceId(tab.id).ref : title}
       onClick={() => void activateTab(key)}
       onMouseDown={(e) => e.button === 1 && e.preventDefault()}
       onAuxClick={(e) => {
@@ -176,7 +179,6 @@ function Welcome({ visible }: { visible: boolean }) {
   const openPalette = useStore((s) => s.openPalette);
   const setLayout = useStore((s) => s.setLayout);
   const sessions = useSessions((s) => s.list);
-  const selectSession = useSessions((s) => s.select);
   const compose = useSessions((s) => s.compose);
   const newChat = useSessions((s) => s.newChat);
   const zh = useStore((s) => s.uiLang) === "zh";
@@ -252,14 +254,11 @@ function Welcome({ visible }: { visible: boolean }) {
                 key={s.id}
                 className="wb-row"
                 title={s.title}
-                onClick={() => {
-                  selectSession(s.id);
-                  setLayout({ aiOpen: true, aiMode: "agent" });
-                }}
+                onClick={() => useSessions.getState().openThread(s.id)}
               >
                 {s.status !== "idle" ? <Spinner size={13} /> : <Icon name="chat" size={14} />}
                 <span>{s.title}</span>
-                <em>{relativeTime(s.updated_at, zh)}</em>
+                <em>{relativeTime(s.last_activity_at || s.updated_at, zh)}</em>
               </button>
             ))}
             {runs.length > 0 && <h3>{T.runs}</h3>}
@@ -328,6 +327,12 @@ export function EditorArea() {
         ))}
         {openTabs.filter((t) => t.kind === "checkpoint").map((t) => (
           <CheckpointView key={t.id} id={t.id} visible={activeTabKey === tabKey(t)} />
+        ))}
+        {openTabs.filter((t) => t.kind === "vcsdiff").map((t) => (
+          <VcsDiffView key={t.id} id={t.id} visible={activeTabKey === tabKey(t)} />
+        ))}
+        {openTabs.filter((t) => t.kind === "commit").map((t) => (
+          <CommitView key={t.id} id={t.id} visible={activeTabKey === tabKey(t)} />
         ))}
         <Welcome visible={showWelcome} />
       </div>

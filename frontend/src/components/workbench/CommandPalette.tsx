@@ -2,14 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type PaletteMode } from "../../store";
 import { THEMES } from "../ThemePicker";
 import {
-  Activity, ArrowLeft, ArrowRightLeft, Blocks, BookOpen, Check, ChevronRight, CornerDownLeft, FileText, FolderKanban, FolderTree,
-  History, Home, Languages, Library, ListTree, MessageSquare, Palette, PanelBottom, PanelLeft, PanelRight, ScrollText, Search,
-  Settings, SlidersHorizontal, Sparkles, SquarePen, Upload, Wrench, X, type LucideIcon,
+  Activity, ArrowLeft, ArrowRightLeft, Bell, Blocks, BookOpen, Check, ChevronRight, CornerDownLeft, FileText, FolderKanban, FolderTree,
+  GitBranch, GitBranchPlus, GitCommitHorizontal, GitCompareArrows, GitMerge, History, Home, Languages, Library, ListTree, MessageSquare, MessagesSquare,
+  NotebookText, Palette, PanelBottom, PanelLeft, PanelRight, ScrollText, Search, Settings, SlidersHorizontal, Sparkles, SquarePen, Upload, Wrench, X,
+  type LucideIcon,
 } from "lucide-react";
-import { useSessions } from "../../sessionStore";
+import { activityOf, useSessions } from "../../sessionStore";
 import { relativeTime } from "../session/toolMeta";
 import { requestCloseTab } from "./EditorArea";
 import { focusAiPane } from "./focus";
+import { branchName, commitChanges, createBranch, mergeBranch, switchBranch, useVcs, useVcsEntry } from "../../vcsStore";
+import { openInstructions } from "./WorkspaceView";
 
 interface Item {
   id: string;
@@ -43,7 +46,7 @@ function fuzzy(query: string, text: string) {
   return score;
 }
 
-const INPUT_MODES = new Set<PaletteMode>(["import", "ask", "newProject"]);
+const INPUT_MODES = new Set<PaletteMode>(["import", "ask", "newProject", "newBranch", "tryBranch", "commit"]);
 
 export function CommandPalette() {
   const mode = useStore((s) => s.palette);
@@ -52,6 +55,9 @@ export function CommandPalette() {
   const runs = useStore((s) => s.recentRuns);
   const projects = useStore((s) => s.projects);
   const sessions = useSessions((s) => s.list);
+  const projectId = useStore((s) => s.agentProjectId);
+  const vcs = useVcsEntry(projectId);
+  const inboxCount = useSessions((s) => Math.max(s.inbox.unread, s.inbox.blocking));
   const layout = useStore((s) => s.layout);
   const uiLang = useStore((s) => s.uiLang);
   const zh = uiLang === "zh";
@@ -64,6 +70,7 @@ export function CommandPalette() {
     setQuery("");
     setIndex(0);
     if (mode) setTimeout(() => inputRef.current?.focus(), 0);
+    if (mode) useVcs.getState().ensure(useStore.getState().agentProjectId, 2000);
   }, [mode]);
 
   const close = () => openPalette(null);
@@ -71,6 +78,27 @@ export function CommandPalette() {
   const items: Item[] = useMemo(() => {
     const st = useStore.getState();
     const L = (en: string, zhText: string) => (zh ? zhText : en);
+    if (mode === "branches") {
+      const status = vcs.status;
+      const current = status?.branch || "";
+      return [
+        ...(status?.branches || []).map((b) => ({
+          id: `b:${b.name}`,
+          label: b.name,
+          detail: b.name === current ? L("current branch", "当前分支") : relativeTime(b.updated_at, zh),
+          icon: GitBranch,
+          checked: b.name === current,
+          run: () => (b.name === current ? undefined : switchBranch(projectId, b.name)),
+        })),
+        ...(status?.branches || []).filter((b) => b.name !== current).map((b) => ({
+          id: `m:${b.name}`,
+          label: L(`Merge ${b.name} into ${current}`, `把 ${b.name} 合并到 ${current}`),
+          icon: GitMerge,
+          run: () => mergeBranch(projectId, b.name),
+        })),
+        { id: "__new", label: L("Create a new branch…", "新建分支…"), icon: GitBranchPlus, keepOpen: true, run: () => openPalette("newBranch") },
+      ];
+    }
     if (mode === "papers") {
       return papers.map((p) => ({
         id: p.id,
@@ -86,28 +114,22 @@ export function CommandPalette() {
     if (mode === "chats") {
       return sessions.map((s) => ({
         id: s.id,
-        label: s.title || L("New chat", "新对话"),
-        detail: relativeTime(s.updated_at, zh),
+        label: s.title || L("New thread", "新对话"),
+        detail: [s.project?.name || projects.find((p) => p.id === s.project_id)?.name, relativeTime(activityOf(s), zh)].filter(Boolean).join(" · "),
         icon: MessageSquare,
-        run: () => {
-          useSessions.getState().select(s.id);
-          st.setLayout({ aiOpen: true, aiMode: "agent" });
-        },
+        run: () => useSessions.getState().openThread(s.id),
       }));
     }
     if (mode === "projects") {
       return [
-        { id: "__none", label: L("(no project)", "（不使用项目）"), icon: FolderKanban, checked: !st.agentProjectId, run: () => st.setAgentProjectId(null) },
-        ...projects.map((p) => ({
+        { id: "__none", label: L("General (no project)", "通用（不使用项目）"), icon: MessagesSquare, checked: !st.agentProjectId, run: () => st.setAgentProjectId(null) },
+        ...[...projects].sort((a, b) => Number(a.kind === "paper") - Number(b.kind === "paper")).map((p) => ({
           id: p.id,
           label: p.name,
-          detail: p.description,
-          icon: FolderKanban,
+          detail: p.kind === "paper" ? L("paper workspace", "论文工作区") : p.description || L("research project", "研究项目"),
+          icon: p.kind === "paper" ? BookOpen : FolderKanban,
           checked: st.agentProjectId === p.id,
-          run: () => {
-            st.setAgentProjectId(p.id);
-            st.setLayout({ activity: "projects", sideOpen: true });
-          },
+          run: () => st.setAgentProjectId(p.id),
         })),
       ];
     }
@@ -116,16 +138,29 @@ export function CommandPalette() {
     }
     if (mode !== "commands") return [];
     const toMode = (m: PaletteMode) => () => openPalette(m);
-    const G = { agent: L("Agent", "智能体"), papers: L("Papers", "论文"), go: L("Go to", "前往"), view: L("View", "视图"), prefs: L("Preferences", "偏好") };
+    const vcsOk = vcs.phase === "ok";
+    const nChanges = vcs.status?.changes.length || 0;
+    const G = { vcs: L("Source control", "源代码管理"), agent: L("Agent", "智能体"), papers: L("Papers", "论文"), go: L("Go to", "前往"), view: L("View", "视图"), prefs: L("Preferences", "偏好") };
     return [
       { id: "ask", group: G.agent, icon: Sparkles, label: L("Ask the agent…", "问智能体…"), run: toMode("ask"), keepOpen: true },
-      { id: "newChat", group: G.agent, icon: SquarePen, label: L("New chat", "新对话"), run: () => { useSessions.getState().newChat(); st.setLayout({ aiMode: "agent" }); focusAiPane(); } },
-      { id: "openChat", group: G.agent, icon: History, label: L("Open chat…", "打开对话…"), run: toMode("chats"), keepOpen: true },
+      { id: "newChat", group: G.agent, icon: SquarePen, label: L("New thread", "新对话"), run: () => { useSessions.getState().newThread(); focusAiPane(); } },
+      { id: "openChat", group: G.agent, icon: History, label: L("Open thread…", "打开对话…"), run: toMode("chats"), keepOpen: true },
+      { id: "inbox", group: G.agent, icon: Bell, label: L("Open inbox", "打开收件箱"), detail: inboxCount ? L(`${inboxCount} waiting`, `${inboxCount} 个待处理`) : undefined, run: () => useSessions.getState().openInbox() },
+      { id: "threads", group: G.agent, icon: MessagesSquare, label: L("Show threads", "显示全部对话"), run: () => { st.setLayout({ activity: "threads", sideOpen: true }); useSessions.getState().setSideView("threads"); } },
+      { id: "tryBranch", group: G.agent, icon: GitBranchPlus, label: L("New thread on a new branch…", "在新分支上开始对话…"), detail: L("try another approach", "换一种做法试试"), run: toMode("tryBranch"), keepOpen: true },
+      { id: "scm", group: G.vcs, icon: GitCompareArrows, label: L("Open source control", "打开源代码管理"), detail: nChanges ? L(`${nChanges} uncommitted`, `${nChanges} 个未提交`) : undefined, run: () => st.setLayout({ activity: "scm", sideOpen: true }) },
+      ...(vcsOk ? [
+        { id: "commit", group: G.vcs, icon: GitCommitHorizontal, label: L("Commit changes…", "提交修改…"), detail: nChanges ? undefined : L("nothing to commit", "没有可提交的修改"), run: toMode("commit"), keepOpen: true },
+        { id: "branches", group: G.vcs, icon: GitBranch, label: L("Switch or merge branch…", "切换或合并分支…"), detail: vcs.status?.branch || undefined, run: toMode("branches"), keepOpen: true },
+        { id: "newBranch", group: G.vcs, icon: GitBranchPlus, label: L("Create branch…", "新建分支…"), run: toMode("newBranch"), keepOpen: true },
+        { id: "vcsHistory", group: G.vcs, icon: History, label: L("Show commit history", "显示提交历史"), run: () => { st.setLayout({ activity: "scm", sideOpen: true }); setTimeout(() => window.dispatchEvent(new CustomEvent("glossx:scm-tab", { detail: "history" })), 60); } },
+      ] as Item[] : []),
       { id: "open", group: G.papers, icon: BookOpen, label: L("Open paper…", "打开论文…"), run: toMode("papers"), keepOpen: true },
       { id: "import", group: G.papers, icon: Upload, label: L("Import paper (arXiv / DOI / URL)…", "导入论文（arXiv / DOI / 链接）…"), run: toMode("import"), keepOpen: true },
       { id: "search", group: G.papers, icon: Search, label: L("Search scholar", "学术搜索"), run: () => st.setLayout({ activity: "search", sideOpen: true }) },
       { id: "library", group: G.go, icon: Library, label: L("Show library", "显示论文库"), run: () => st.setLayout({ activity: "library", sideOpen: true }) },
       { id: "workspace", group: G.go, icon: FolderTree, label: L("Show workspace files", "显示工作区文件"), run: () => st.setLayout({ activity: "workspace", sideOpen: true }) },
+      { id: "instructions", group: G.go, icon: NotebookText, label: L("Open GLOSSX.md (project instructions)", "打开 GLOSSX.md（项目说明）"), run: () => openInstructions(st.agentProjectId) },
       { id: "switchProject", group: G.go, icon: FolderKanban, label: L("Switch project…", "切换项目…"), run: toMode("projects"), keepOpen: true },
       { id: "newProject", group: G.go, icon: FolderKanban, label: L("New project…", "新建项目…"), run: toMode("newProject"), keepOpen: true },
       { id: "openRun", group: G.go, icon: ScrollText, label: L("Open run report…", "打开运行报告…"), run: toMode("runs"), keepOpen: true },
@@ -148,7 +183,7 @@ export function CommandPalette() {
       { id: "lang", group: G.prefs, icon: Languages, label: zh ? "Switch interface language to English" : "切换界面语言为中文", run: () => st.setUiLang(zh ? "en" : "zh") },
       { id: "mode", group: G.prefs, icon: ArrowRightLeft, label: L("Switch to Gloss mode (classic reader)", "切换到 Gloss 模式（经典阅读器）"), keys: "Ctrl+Shift+M", run: () => st.setMode("gloss") },
     ];
-  }, [mode, papers, runs, projects, sessions, layout, zh]);
+  }, [mode, papers, runs, projects, sessions, layout, zh, vcs, projectId, inboxCount]);
 
   const isInput = !!mode && INPUT_MODES.has(mode);
   const filtered = useMemo(() => {
@@ -189,6 +224,17 @@ export function CommandPalette() {
       } else if (mode === "newProject") {
         await st.createProject(text);
         st.setLayout({ activity: "projects", sideOpen: true });
+      } else if (mode === "commit") {
+        await commitChanges(st.agentProjectId, text);
+      } else if (mode === "newBranch") {
+        await createBranch(st.agentProjectId, text, { from: vcs.status?.branch });
+      } else if (mode === "tryBranch") {
+        // the branch is created by the server when the thread starts, so nothing changes until the first message
+        const name = branchName(text);
+        if (name) {
+          useSessions.getState().newThread({ branch: name });
+          focusAiPane();
+        }
       }
     } catch (e: any) {
       st.notify(String(e?.message || e));
@@ -219,12 +265,16 @@ export function CommandPalette() {
     commands: zh ? "输入命令…" : "Type a command…",
     papers: zh ? "搜索要打开的论文…" : "Search a paper to open…",
     runs: zh ? "搜索运行…" : "Search runs…",
-    chats: zh ? "搜索对话…" : "Search chats…",
+    chats: zh ? "搜索对话…" : "Search threads…",
     projects: zh ? "切换到项目…" : "Switch to project…",
     theme: zh ? "选择主题…" : "Pick a theme…",
     import: zh ? "arXiv 编号 / DOI / 链接，回车导入" : "arXiv id / DOI / URL, Enter to import",
     ask: zh ? "研究问题，回车交给智能体" : "Research question, Enter to hand to the agent",
     newProject: zh ? "新项目名称，回车创建" : "New project name, Enter to create",
+    branches: zh ? "切换到分支，或合并…" : "Switch to a branch, or merge one…",
+    newBranch: zh ? `新分支名称，回车从 ${vcs.status?.branch || "当前分支"} 创建并切换` : `New branch name — Enter creates it from ${vcs.status?.branch || "the current branch"} and switches`,
+    tryBranch: zh ? "分支名称，回车在该分支上开始一个新对话" : "Branch name — Enter starts a new thread on that branch",
+    commit: zh ? "提交说明，回车提交全部修改" : "Commit message — Enter commits every change",
   }[mode];
 
   return (

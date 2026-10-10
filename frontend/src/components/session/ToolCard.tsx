@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Ban, Check, ChevronRight, CircleAlert, ExternalLink, Quote, ShieldQuestion, Undo2 } from "lucide-react";
+import { Ban, Check, ChevronRight, CircleAlert, ExternalLink, GitCommitHorizontal, Quote, ShieldQuestion, Undo2 } from "lucide-react";
 import { sessionsApi, type ApprovalRequest, type CheckpointRef, type ToolCallMessage } from "../../api/harness";
-import { diffLines } from "../../harness/diff.mjs";
+import { diffLines, parseUnifiedDiff } from "../../harness/diff.mjs";
+import { splitDiff } from "../../harness/vcs.mjs";
 import { useStore } from "../../store";
 import { useSessions } from "../../sessionStore";
 import { Markdown } from "../Markdown";
 import { Spinner } from "../ui";
 import { DiffView, revertCheckpoint, rowsForCheckpoint, statsOf, useCheckpoint, useCheckpointMarks, useDiffRows, type DiffRow } from "./DiffView";
-import { argSummary, callSpans, formatDuration, formatTokens, openSpan, spanLabel, toolMeta } from "./toolMeta";
+import { argSummary, callCommit, callSpans, formatDuration, formatTokens, openSpan, spanLabel, toolMeta } from "./toolMeta";
 
 const EDIT_TOOLS = new Set(["fs_edit", "fs_write"]);
 
@@ -37,6 +38,21 @@ function ArgsTable({ args, omit }: { args: Record<string, any>; omit?: string[] 
         );
       })}
     </dl>
+  );
+}
+
+/** A `vcs_diff` result shown as a real diff (per file) instead of raw text. */
+function VcsDiffResult({ text, zh }: { text: string; zh: boolean }) {
+  const sections = (splitDiff(text) as { path: string; binary: boolean; text: string }[]).slice(0, 12);
+  return (
+    <div className="gx-vcs-diff">
+      {sections.map((s, i) => (
+        <div key={s.path + i}>
+          {(sections.length > 1 || s.path) && <code className="gx-vcs-diff-path">{s.path}</code>}
+          {s.binary ? <div className="gx-diff-empty">{zh ? "二进制文件" : "Binary file"}</div> : <DiffView rows={parseUnifiedDiff(s.text) as DiffRow[]} zh={zh} />}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -208,6 +224,8 @@ export function ToolCard({ call, project, sub, approvalFor, kidsOf }: ToolCardPr
     : isEdit && argsDiff(call) ? statsOf(argsDiff(call)!) : null;
   const live = call.status === "running" || call.status === "pending";
   const failure = call.status === "error" ? call.error || call.result_preview : null;
+  const commitId = callCommit(call);
+  const isVcsDiff = call.tool === "vcs_diff" && call.status === "done" && /^@@ /m.test(call.result_preview || "");
   const [full, setFull] = useState<string | null>(null);
   const loadFull = () => {
     const sid = call.session_id || useSessions.getState().activeId;
@@ -226,6 +244,19 @@ export function ToolCard({ call, project, sub, approvalFor, kidsOf }: ToolCardPr
             <span className="gx-diffstat"><b>+{stat.added}</b><i>−{stat.removed}</i></span>
           )}
           {spans.length > 0 && <span className="gx-tool-count"><Quote size={11} />{spans.length}</span>}
+          {commitId && (
+            <span
+              className="gx-tool-count gx-tool-commit"
+              role="link"
+              title={zh ? "查看这次提交" : "Open this commit"}
+              onClick={(e) => {
+                e.stopPropagation();
+                useStore.getState().openCommitTab(project, commitId);
+              }}
+            >
+              <GitCommitHorizontal size={11} />{commitId}
+            </span>
+          )}
           {isTask && (kids.length > 0 || !!call.subagent?.tool_calls) && (
             <span className="gx-tool-count" title={zh ? "子智能体的工具调用" : "Tool calls made by the subagent"}>
               {zh ? `${Math.max(kids.length, call.subagent?.tool_calls || 0)} 次调用` : `${Math.max(kids.length, call.subagent?.tool_calls || 0)} tool${Math.max(kids.length, call.subagent?.tool_calls || 0) === 1 ? "" : "s"}`}
@@ -283,7 +314,9 @@ export function ToolCard({ call, project, sub, approvalFor, kidsOf }: ToolCardPr
                 </div>
               )}
               {(call.result_preview || call.error) && (
-                isTask && call.status === "done" && full === null
+                isVcsDiff && full === null
+                  ? <VcsDiffResult text={call.result_preview || ""} zh={zh} />
+                  : isTask && call.status === "done" && full === null
                   ? <div className="gx-task-result gx-prose"><Markdown text={call.result_preview || ""} /></div>
                   : <pre className={`gx-result${call.status === "error" ? " bad" : ""}`}>{call.error && call.status === "error" ? call.error : full ?? call.result_preview}</pre>
               )}

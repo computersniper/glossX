@@ -36,6 +36,13 @@ _REF = re.compile(r"^r_[a-f0-9]{8,32}$")
 MAX_LOADED = 2000
 # events forwarded from a subagent session to its parent's stream
 FORWARDED = {"tool.updated", "approval.requested", "input.requested"}
+# inbox (docs/glossx-workspaces.md section 1)
+BLOCKING = ("approval", "input")
+ATTENTION = ("approval", "input", "error", "done")
+ACTIVITY_EVENTS = {"message.created", "message.completed", "tool.updated", "approval.requested",
+                   "input.requested", "approval.resolved", "input.resolved", "turn.completed",
+                   "error"}
+PREVIEW_CHARS = 160
 
 
 def now() -> float:
@@ -77,6 +84,7 @@ def new_session(
         "subagent_type": subagent_type,
         "created_at": ts,
         "updated_at": ts,
+        "last_activity_at": ts, "last_viewed_at": ts, "unread": False, "attention": None, "branch": None,
         "mode": mode,
         "model": {"provider": provider or None, "model": model or None},
         "messages": [],
@@ -85,6 +93,11 @@ def new_session(
         "usage": {"input_tokens_est": 0, "output_tokens_est": 0, "llm_calls": 0},
         "context": {"tokens_est": 0, "limit": context_limit, "compactions": 0},
         "scope_papers": [],
+        "last_activity_at": ts,
+        "last_viewed_at": ts,
+        "unread": False,
+        "attention": None,
+        "branch": None,
     }
 
 
@@ -128,6 +141,24 @@ def recover(data: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("mode", "agent")
     data.setdefault("title", "New chat")
     data.setdefault("parent_id", None)
+    data.setdefault("last_activity_at", data.get("updated_at", now()))
+    data.setdefault("last_viewed_at", data.get("updated_at", now()))
+    data.setdefault("unread", False)
+    data.setdefault("attention", None)
+    data.setdefault("branch", None)
+    if data["attention"] in {"approval", "input"}:
+        data["attention"] = "error"
+        data["unread"] = True
+    # sessions saved before the inbox existed count as seen
+    stamp = data.get("updated_at") or data.get("created_at") or now()
+    data.setdefault("created_at", stamp)
+    data.setdefault("updated_at", stamp)
+    data.setdefault("last_activity_at", stamp)
+    data.setdefault("last_viewed_at", stamp)
+    data["unread"] = bool(data.get("unread", False))
+    if data.get("attention") not in ("error", "done"):
+        data["attention"] = None  # approvals / questions do not survive a restart
+    data.setdefault("branch", None)
     data["status"] = "idle"
     for msg in data["messages"]:
         if msg.get("type") == "assistant" and msg.get("streaming"):
@@ -189,10 +220,25 @@ def copy_result(src_session: str, dst_session: str, ref: str) -> None:
 
 
 # -- public views -----------------------------------------------------------------
+def preview(session: dict[str, Any]) -> str:
+    """The last assistant text, on one line, at most ``PREVIEW_CHARS`` characters."""
+    for msg in reversed(session["messages"]):
+        if msg.get("type") == "assistant" and (msg.get("text") or "").strip():
+            text = " ".join(msg["text"][:2000].split())
+            return text if len(text) <= PREVIEW_CHARS else text[:PREVIEW_CHARS - 3].rstrip() + "..."
+    return ""
+
+
 def summary(session: dict[str, Any]) -> dict[str, Any]:
     last = next((m for m in reversed(session["messages"])
                  if m.get("type") in {"user", "assistant"} and m.get("text")), None)
     return {
+        "last_activity_at": session.get("last_activity_at") or session["updated_at"],
+        "last_viewed_at": session.get("last_viewed_at"),
+        "unread": bool(session.get("unread")),
+        "attention": session.get("attention"),
+        "preview": preview(session),
+        "branch": session.get("branch"),
         "id": session["id"],
         "title": session["title"],
         "project_id": session.get("project_id"),
@@ -208,6 +254,12 @@ def summary(session: dict[str, Any]) -> dict[str, Any]:
         "context": dict(session["context"]),
         "last_message": (last or {}).get("text", "")[:200],
         "forked_from": session.get("forked_from"),
+        "last_activity_at": session.get("last_activity_at", session["updated_at"]),
+        "last_viewed_at": session.get("last_viewed_at"),
+        "unread": session.get("unread", False), "attention": session.get("attention"),
+        "branch": session.get("branch"),
+        "preview": next((m.get("text", "")[:160] for m in reversed(session["messages"])
+                         if m.get("type") == "assistant" and m.get("text")), ""),
     }
 
 
@@ -238,6 +290,8 @@ class Runtime:
         self.spans = SpanStore()
         self.seq = 0
         self.turn_tools: dict[str, Any] = {}
+        self._last_inbox_key: tuple[bool, str | None] = (bool(session.get("unread")),
+                                                         session.get("attention"))
 
     @property
     def id(self) -> str:
@@ -255,11 +309,94 @@ class Runtime:
 
     # -- events -------------------------------------------------------------------
     def emit(self, name: str, payload: dict[str, Any]) -> None:
+        changed = self._track(name, payload) if self.parent is None else False
+        activity = {"message.added", "message.completed", "tool.updated", "approval.requested", "input.requested", "turn.completed", "error"}
+        if name in activity:
+            self.session["last_activity_at"] = now()
+            if name == "approval.requested":
+                self.session["attention"] = "approval"
+            elif name == "input.requested":
+                self.session["attention"] = "input"
+            elif name == "error" or (name == "turn.completed" and payload.get("stop_reason") == "error"):
+                self.session["attention"] = "error"
+            elif name == "turn.completed":
+                self.session["attention"] = "done" if payload.get("stop_reason") == "completed" else None
+            if name != "message.added" or payload.get("type") != "user":
+                self.session["unread"] = True
+            save(self.session)
+            if hasattr(self.manager, "notify_inbox"):
+                self.manager.notify_inbox()
         self.seq += 1
         for q in list(self.subscribers):
             q.put_nowait((name, payload, self.seq))
         if self.parent is not None and name in FORWARDED:
             self.parent._forward(name, payload)
+        if changed:
+            self._inbox_changed()
+
+    # -- inbox ----------------------------------------------------------------------
+    def attention(self) -> str | None:
+        """What the newest unseen event is. A pending question / approval wins
+        (it blocks the thread); otherwise the stored ``done`` / ``error``."""
+        if self.all_inputs():
+            return "input"
+        if self.all_approvals():
+            return "approval"
+        stored = self.session.get("attention")
+        return stored if stored in ("error", "done") else None
+
+    def _inbox_key(self) -> tuple[bool, str | None]:
+        return bool(self.session.get("unread")), self.attention()
+
+    def _track(self, name: str, payload: dict[str, Any]) -> bool:
+        """Update ``last_activity_at`` / ``unread`` / ``attention`` for an event of
+        this (root) session; True when the inbox has to be told."""
+        before = self._last_inbox_key
+        if name == "session.updated":
+            # no activity by itself, but a subagent's approval may have been resolved
+            self._last_inbox_key = self._inbox_key()
+            return self._last_inbox_key != before
+        if name not in ACTIVITY_EVENTS:
+            return False
+        session = self.session
+        stamp = now()
+        session["last_activity_at"] = stamp
+        if name == "message.created" and payload.get("type") == "user":
+            # the user wrote here: they have seen everything up to now
+            session.update(unread=False, attention=None, last_viewed_at=stamp)
+        elif name in {"approval.requested", "input.requested"}:
+            session["unread"] = True
+        elif name == "error":
+            session.update(unread=True, attention="error")
+        elif name == "turn.completed":
+            reason = payload.get("stop_reason")
+            if reason == "error":
+                session.update(unread=True, attention="error")
+            elif reason in {"completed", "budget"}:
+                session.update(unread=True, attention="done")
+        self._last_inbox_key = self._inbox_key()
+        return self._last_inbox_key != before
+
+    def _inbox_changed(self) -> None:
+        notify = getattr(self.manager, "inbox_changed", None)
+        if notify is not None:
+            try:
+                notify()
+            except Exception:
+                logger.exception("could not publish the inbox")
+
+    def mark_read(self) -> bool:
+        """The user looked at this thread: clears ``unread`` and a non-blocking
+        ``attention``. Returns True when something changed."""
+        before = self._inbox_key()
+        self.session.update(unread=False, attention=None, last_viewed_at=now())
+        self._last_inbox_key = self._inbox_key()
+        changed = self._last_inbox_key != before
+        save(self.session)  # not persist(): viewing must not reorder by recency
+        if changed:
+            self.emit("session.updated", self.public())
+            self._inbox_changed()
+        return changed
 
     def _forward(self, name: str, payload: dict[str, Any]) -> None:
         self.emit(name, payload)
@@ -315,6 +452,10 @@ class Runtime:
             status = "running"
         if status != self.session["status"]:
             self.session["status"] = status
+            if self.session.get("attention") in {"approval", "input"}:
+                self.session["attention"] = {"awaiting_approval": "approval", "awaiting_input": "input"}.get(status)
+                if hasattr(self.manager, "notify_inbox"):
+                    self.manager.notify_inbox()
             self.emit("session.updated", self.public())
         if self.parent is not None:
             self.parent.refresh_status()
@@ -328,16 +469,22 @@ class Runtime:
 
     def public(self, *, with_messages: bool = False) -> dict[str, Any]:
         out = summary(self.session)
+        out["attention"] = self.attention()
+        out["blocking"] = out["attention"] in BLOCKING
+        ref = getattr(self.manager, "project_ref", None)
+        out["project"] = ref(self.session.get("project_id")) if ref is not None else None
         out["todos"] = copy.deepcopy(self.session["todos"])
         out["scope_papers"] = list(self.session.get("scope_papers") or [])
         out["pending_approvals"] = [approval_payload(a) for a in self.all_approvals()]
         inputs = self.all_inputs()
         out["pending_input"] = input_payload(inputs[0]) if inputs else None
         try:
+            from . import vcs
             from .workspace import key_for, root_for
 
             out["workspace"] = {"key": key_for(self.session.get("project_id")),
-                                "path": str(root_for(self.session.get("project_id")))}
+                                "path": str(root_for(self.session.get("project_id"))),
+                                "vcs": vcs.brief(self.session.get("project_id"))}
         except Exception:
             out["workspace"] = None
         if with_messages:

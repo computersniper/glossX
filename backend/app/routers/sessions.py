@@ -5,9 +5,10 @@ import json
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..harness import vcs
 from ..harness.manager import NotPendingError, SessionBusyError, SessionNotFoundError
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -28,6 +29,11 @@ class SessionCreateBody(BaseModel):
     mode: Mode | None = None
     provider: str | None = Field(default=None, max_length=64)
     model: str | None = Field(default=None, max_length=120)
+    # work on this workspace branch (created from the current commit when new)
+    branch: str | None = Field(default=None, max_length=100)
+    # the paper in the active tab: scopes the session to it and, without a
+    # project_id, selects the paper's own project
+    paper_id: str | None = Field(default=None, max_length=64)
 
 
 class SessionPatchBody(BaseModel):
@@ -87,20 +93,70 @@ def _fail(error: Exception) -> HTTPException:
 _HANDLED = (LookupError, ValueError, SessionBusyError, NotPendingError)
 
 
+def _sse(events, named: bool) -> StreamingResponse:
+    async def stream():
+        yield ": connected\n\n"
+        async for name, payload, seq in events:
+            if name is None:
+                yield ": ping\n\n"
+                continue
+            data = json.dumps({**payload, "event": name, "seq": seq},
+                              ensure_ascii=False, default=str)
+            yield (f"event: {name}\n" if named else "") + f"data: {data}\n\n"
+
+    return StreamingResponse(
+        stream(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get("")
 async def list_sessions(request: Request, project_id: str | None = None,
-                        include_subagents: bool = False):
-    return _manager(request).list(project_id=project_id, include_subagents=include_subagents)
+                        include_subagents: bool = False,
+                        view: Literal["inbox"] | None = None):
+    """Sessions, most recently updated first. ``?view=inbox`` orders them for the
+    inbox: blocking attention, then unread, then the rest, each newest first."""
+    return _manager(request).list(project_id=project_id, include_subagents=include_subagents,
+                                  view=view)
 
 
 @router.post("")
 async def create_session(request: Request, body: SessionCreateBody | None = None):
     body = body or SessionCreateBody()
+    manager = _manager(request)
     try:
-        return _manager(request).create(title=body.title, project_id=body.project_id,
-                                        mode=body.mode, provider=body.provider, model=body.model)
+        project_id, paper_id = manager.resolve_new_session(body.project_id, body.paper_id)
+        branch = await manager.prepare_branch(project_id, body.branch)
+        return manager.create(title=body.title, project_id=project_id,
+                              mode=body.mode, provider=body.provider, model=body.model,
+                              branch=branch, paper_id=paper_id)
+    except vcs.VcsError as error:
+        return JSONResponse({"detail": str(error), "code": error.code, **error.extra},
+                            status_code=409)
     except _HANDLED as error:
         raise _fail(error) from error
+
+
+# -- inbox (declared before /{session_id} so "inbox" is never taken for an id) ---------------
+@router.get("/inbox/summary")
+async def inbox_summary(request: Request):
+    """``{unread, blocking, total, items}``; ``items`` are the first 20 threads in
+    inbox order."""
+    return _manager(request).inbox_summary()
+
+
+@router.get("/inbox/events")
+async def inbox_events(request: Request, named: bool = True):
+    """SSE: ``inbox.updated`` with the summary whenever a thread's unread /
+    attention changes (also for threads whose own stream is closed). The
+    summary is replayed on connect."""
+    return _sse(_manager(request).subscribe_inbox(), named)
+
+
+@router.post("/inbox/read")
+async def inbox_mark_all_read(request: Request, project_id: str | None = None):
+    """Mark every thread (of one project, with ``?project_id=``) as read."""
+    return _manager(request).mark_all_read(project_id)
 
 
 @router.get("/{session_id}")
@@ -162,20 +218,17 @@ async def session_events(session_id: str, request: Request, named: bool = True):
     except _HANDLED as error:
         raise _fail(error) from error
 
-    async def stream():
-        yield ": connected\n\n"
-        async for name, payload, seq in manager.subscribe(session_id):
-            if name is None:
-                yield ": ping\n\n"
-                continue
-            data = json.dumps({**payload, "event": name, "seq": seq},
-                              ensure_ascii=False, default=str)
-            yield (f"event: {name}\n" if named else "") + f"data: {data}\n\n"
+    return _sse(manager.subscribe(session_id), named)
 
-    return StreamingResponse(
-        stream(), media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+
+@router.post("/{session_id}/read")
+async def mark_session_read(session_id: str, request: Request):
+    """The thread is shown and focused: clears ``unread`` and a non-blocking
+    ``attention``. Returns the session summary."""
+    try:
+        return _manager(request).mark_read(session_id)
+    except _HANDLED as error:
+        raise _fail(error) from error
 
 
 @router.post("/{session_id}/interrupt")

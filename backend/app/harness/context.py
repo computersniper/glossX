@@ -137,7 +137,8 @@ def _read_instructions(path: Path) -> str:
 def instructions(workspace_root: Path | None) -> list[tuple[str, str]]:
     """``[(label, text)]`` of the global and the project ``GLOSSX.md``."""
     out = []
-    text = _read_instructions(config.GLOBAL_INSTRUCTIONS)
+    from . import home
+    text = "\n\n".join(_read_instructions(p) for p in home.global_instruction_files())
     if text:
         out.append(("Global instructions (GLOSSX.md in the data directory)", text))
     if workspace_root is not None:

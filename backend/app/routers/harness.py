@@ -6,11 +6,12 @@ import asyncio
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from ..agent import connections as conn_mod
 from ..agent import projects
-from ..harness import extensions, workspace
+from ..harness import extensions, home, vcs, workspace
 from ..harness import settings as settings_mod
 from ..harness.tools import build_table, harness_registry
 from ..library import store
@@ -57,7 +58,7 @@ async def list_tools(request: Request, mode: Literal["ask", "agent", "auto", "pl
     """Every harness tool with its permission state in ``mode`` (default: the
     session's mode, else ``default_mode``)."""
     project, mode = _session_scope(request, session_id, project_id, mode)
-    settings = settings_mod.load()
+    settings = settings_mod.load(workspace.root_for(project))
     mode = mode or settings["default_mode"]
     registry = await harness_registry(settings)
     table = build_table(registry, mode=mode, has_project=bool(project), include_unavailable=True)
@@ -82,21 +83,42 @@ async def list_agents(request: Request, project_id: str | None = None,
 
 
 # -- settings -----------------------------------------------------------------------------
+def _settings_view(project_id: str | None) -> dict[str, Any]:
+    """Global settings plus the read-only ``paths`` (and, for a project, the
+    ``effective`` settings after its ``.glossx/settings.json`` is merged in)."""
+    project = _project(project_id)
+    root = workspace.root_for(project)
+    out = settings_mod.load_global()
+    out["paths"] = home.paths(root)
+    if project_id not in (None, ""):
+        out["project_id"] = project or "default"
+        out["project_settings"] = home.read_workspace_settings(root)
+        out["effective"] = settings_mod.load(root)
+    return out
+
+
 @router.get("/settings")
-async def get_settings():
-    return settings_mod.load()
+async def get_settings(project_id: str | None = None):
+    """The user's settings (``~/.glossx/settings.json``). ``paths`` is read-only:
+    ``{home, global_instructions, workspace_config, ...}``; ``workspace_config``
+    is the ``.glossx`` folder of ``project_id`` (default: the default workspace)."""
+    return _settings_view(project_id)
 
 
 @router.put("/settings")
-async def put_settings(body: dict[str, Any]):
-    """Partial update: keys that are present replace the stored value."""
+async def put_settings(body: dict[str, Any], project_id: str | None = None):
+    """Partial update of the global settings: keys that are present replace the
+    stored value. Read-only fields of the GET response are ignored."""
     try:
+        body = {k: v for k, v in body.items()
+                if k not in {"paths", "effective", "project_settings", "project_id"}}
         unknown = set(body) - set(settings_mod.DEFAULT_SETTINGS)
         if unknown:
             raise ValueError(f"unknown settings field: {', '.join(sorted(unknown))}")
-        return settings_mod.save(body)
+        settings_mod.save(body)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+    return _settings_view(project_id)
 
 
 # -- mentions -----------------------------------------------------------------------------
@@ -243,3 +265,174 @@ async def revert_checkpoint(project_id: str, checkpoint_id: str):
         raise _ws_error(error) from error
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
+
+
+# -- version control (docs/glossx-workspaces.md section 3) ---------------------------------
+class CommitBody(BaseModel):
+    message: str = Field(min_length=1, max_length=5000)
+    paths: list[str] | None = Field(default=None, max_length=500)
+
+
+class BranchBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    from_: str | None = Field(default=None, max_length=200, alias="from")
+    checkout: bool = False
+
+    model_config = {"populate_by_name": True}
+
+
+class CheckoutBody(BaseModel):
+    branch: str = Field(min_length=1, max_length=100)
+    stash: bool = False
+    discard: bool = False
+
+
+class MergeBody(BaseModel):
+    branch: str = Field(min_length=1, max_length=100)
+
+
+class RestoreBody(BaseModel):
+    rev: str = Field(min_length=1, max_length=200)
+    paths: list[str] | None = Field(default=None, max_length=500)
+
+
+class DiscardBody(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=500)
+
+
+def _vcs_key(project_id: str) -> str:
+    _root(project_id)  # 404 for an unknown project, creates the workspace
+    return workspace.key_for(_project(project_id))
+
+
+def _vcs_failure(error: Exception) -> JSONResponse:
+    """VCS errors as ``{"detail": <message>, "code": <reason>, ...}``: 409 when git
+    is missing or refuses (``available: false`` / ``changes`` say why), 404 for an
+    unknown branch / revision / path, 400 for invalid input."""
+    if isinstance(error, vcs.VcsError):
+        return JSONResponse({"detail": str(error), "code": error.code, **error.extra},
+                            status_code=409)
+    if isinstance(error, LookupError):
+        return JSONResponse({"detail": str(error).strip("'\""), "code": "not_found"},
+                            status_code=404)
+    return JSONResponse({"detail": str(error), "code": "invalid"}, status_code=400)
+
+
+_VCS_ERRORS = (vcs.VcsError, LookupError, ValueError)
+
+
+async def _vcs(func, *args: Any, **kwargs: Any) -> Any:
+    try:
+        return await asyncio.to_thread(func, *args, **kwargs)
+    except _VCS_ERRORS as error:
+        return _vcs_failure(error)
+
+
+def _refuse_while_running(request: Request, project_id: str, action: str) -> JSONResponse | None:
+    """Switching the tree under a running agent turn would confuse it."""
+    manager = getattr(request.app.state, "sessions", None)
+    busy = manager.busy_sessions(_project(project_id)) if manager is not None else []
+    if not busy:
+        return None
+    return JSONResponse(
+        {"detail": f"A thread is working in this workspace ({busy[0]['title']}). Wait for it "
+                   f"to finish or stop it before you {action}.",
+         "code": "busy", "sessions": busy}, status_code=409)
+
+
+def _sync_sessions(request: Request, project_id: str) -> None:
+    manager = getattr(request.app.state, "sessions", None)
+    if manager is not None:
+        manager.workspace_changed(_project(project_id))
+
+
+@workspace_router.get("/{project_id}/vcs/status")
+async def vcs_status(project_id: str):
+    """Always 200: ``available`` is false (with ``reason``) when git is missing."""
+    return await _vcs(vcs.status, _vcs_key(project_id))
+
+
+@workspace_router.get("/{project_id}/vcs/log")
+async def vcs_log(project_id: str, branch: str | None = None, limit: int = 50,
+                  path: str | None = None, skip: int = 0):
+    """Commits, newest first. ``branch=*`` lists every branch (for the graph)."""
+    return await _vcs(vcs.log, _vcs_key(project_id), branch=branch or None,
+                      limit=max(1, min(500, limit)), path=path or None, skip=max(0, skip))
+
+
+@workspace_router.get("/{project_id}/vcs/diff")
+async def vcs_diff(project_id: str, request: Request, to: str | None = None,
+                   path: str | None = None, format: str | None = None):
+    """Unified diff as ``{diff, from, to, path, truncated}`` (``?format=text`` or
+    ``Accept: text/plain`` returns the bare text)."""
+    result = await _vcs(vcs.diff, _vcs_key(project_id),
+                        from_rev=request.query_params.get("from") or None, to_rev=to or None,
+                        path=path or None)
+    accept = request.headers.get("accept", "")
+    if isinstance(result, dict) and (format == "text" or (
+            "text/plain" in accept and "application/json" not in accept)):
+        return PlainTextResponse(result["diff"])
+    return result
+
+
+@workspace_router.get("/{project_id}/vcs/file")
+async def vcs_file(project_id: str, path: str, rev: str | None = None):
+    return await _vcs(vcs.file_at, _vcs_key(project_id), rev=rev or None, path=path)
+
+
+@workspace_router.post("/{project_id}/vcs/commit")
+async def vcs_commit(project_id: str, body: CommitBody):
+    return await _vcs(vcs.commit, _vcs_key(project_id), body.message, body.paths)
+
+
+@workspace_router.post("/{project_id}/vcs/branches")
+async def vcs_create_branch(project_id: str, body: BranchBody, request: Request):
+    key = _vcs_key(project_id)
+    if body.checkout:
+        refused = _refuse_while_running(request, project_id, "switch branches")
+        if refused is not None:
+            return refused
+    result = await _vcs(vcs.create_branch, key, body.name, body.from_, checkout=body.checkout)
+    _sync_sessions(request, project_id)
+    return result
+
+
+@workspace_router.post("/{project_id}/vcs/checkout")
+async def vcs_checkout(project_id: str, body: CheckoutBody, request: Request):
+    key = _vcs_key(project_id)
+    if body.stash and body.discard:
+        raise HTTPException(400, "choose either stash or discard, not both")
+    refused = _refuse_while_running(request, project_id, "switch branches")
+    if refused is not None:
+        return refused
+    result = await _vcs(vcs.checkout, key, body.branch, stash=body.stash, discard=body.discard)
+    _sync_sessions(request, project_id)
+    return result
+
+
+@workspace_router.post("/{project_id}/vcs/merge")
+async def vcs_merge(project_id: str, body: MergeBody, request: Request):
+    key = _vcs_key(project_id)
+    refused = _refuse_while_running(request, project_id, "merge")
+    if refused is not None:
+        return refused
+    return await _vcs(vcs.merge, key, body.branch)
+
+
+@workspace_router.delete("/{project_id}/vcs/branches/{name:path}")
+async def vcs_delete_branch(project_id: str, name: str, force: bool = False):
+    return await _vcs(vcs.delete_branch, _vcs_key(project_id), name, force=force)
+
+
+@workspace_router.post("/{project_id}/vcs/restore")
+async def vcs_restore(project_id: str, body: RestoreBody, request: Request):
+    key = _vcs_key(project_id)
+    refused = _refuse_while_running(request, project_id, "restore a version")
+    if refused is not None:
+        return refused
+    return await _vcs(vcs.restore, key, body.rev, body.paths)
+
+
+@workspace_router.post("/{project_id}/vcs/discard")
+async def vcs_discard(project_id: str, body: DiscardBody):
+    return await _vcs(vcs.discard, _vcs_key(project_id), body.paths)

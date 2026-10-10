@@ -1,14 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, Archive, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleDot, Copy, FileCode, FileText, FlaskConical,
-  GitFork, History, Layers, ListChecks, MessageCircleQuestion, NotebookPen, Pencil, Quote, RefreshCw, Scale, ScrollText,
-  Search, Shrink, SquarePen, Telescope, TextSelect, Trash2, WifiOff, X, type LucideIcon,
+  GitBranch, GitBranchPlus, GitCommitHorizontal, GitFork, Inbox, Layers, ListChecks, MessageCircleQuestion, MessagesSquare, NotebookPen, Pencil, Quote,
+  RefreshCw, Scale, ScrollText, Shrink, SquarePen, Telescope, TextSelect, Trash2, WifiOff, X, type LucideIcon,
 } from "lucide-react";
-import type { ApprovalRequest, InputRequest, SessionMessage, SessionSummary, SpanRef, Todo, ToolCallMessage } from "../../api/harness";
+import type { ApprovalRequest, InputRequest, SessionMessage, SpanRef, Todo, ToolCallMessage } from "../../api/harness";
 import { useStore } from "../../store";
-import { useActiveSession, useSessions } from "../../sessionStore";
+import { activityOf, useActiveSession, useSessions } from "../../sessionStore";
+import { useVcsEntry } from "../../vcsStore";
+import { AttentionChip, BranchChip, attentionOf } from "../workbench/ThreadsView";
+import { ask } from "../workbench/dialog";
 import { Markdown } from "../Markdown";
-import { MenuButton, MenuItem, MenuSep, Popover, Spinner } from "../ui";
+import { MenuButton, MenuItem, MenuLabel, MenuSep, Popover, Spinner } from "../ui";
 import { Composer } from "./Composer";
 import { ToolCard } from "./ToolCard";
 import { callSpans, openSpan, relativeTime } from "./toolMeta";
@@ -133,8 +136,29 @@ function AssistantMessage({ m, zh, spans, canFork, old }: { m: Extract<SessionMe
   );
 }
 
-function SystemNote({ m, zh }: { m: Extract<SessionMessage, { type: "system_note" }>; zh: boolean }) {
+/** End-of-turn marker: the turn's changes were committed to the workspace history. */
+function CommitMark({ m, zh, project }: { m: Extract<SessionMessage, { type: "system_note" }>; zh: boolean; project: string }) {
+  const c = (m as any).commit as { id?: string; short?: string; message?: string } | undefined;
+  const id = c?.id || c?.short || /\b[0-9a-f]{7,40}\b/.exec(m.text || "")?.[0] || "";
+  const short = c?.short || id.slice(0, 7);
+  const message = (c?.message || "").split("\n")[0];
+  return (
+    <div className="gx-note kind-commit">
+      <button type="button" disabled={!id} title={id ? (zh ? "查看这次提交的改动" : "Show what this commit changed") : undefined} onClick={() => id && useStore.getState().openCommitTab(project, id)}>
+        <GitCommitHorizontal size={12} />
+        <span>{zh ? "已提交" : "committed"} {short && <code>{short}</code>}{message && <em>{message}</em>}</span>
+      </button>
+    </div>
+  );
+}
+
+function SystemNote({ m, zh, project }: { m: Extract<SessionMessage, { type: "system_note" }>; zh: boolean; project: string }) {
   const [open, setOpen] = useState(false);
+  if ((m as any).commit || /^(auto_?)?commit(ted)?$/.test(m.kind || "")) return <CommitMark m={m} zh={zh} project={project} />;
+  return <PlainNote m={m} zh={zh} open={open} setOpen={setOpen} />;
+}
+
+function PlainNote({ m, zh, open, setOpen }: { m: Extract<SessionMessage, { type: "system_note" }>; zh: boolean; open: boolean; setOpen: (v: boolean) => void }) {
   const first = (m.text || "").split("\n")[0];
   const kind = m.kind || "";
   const title = kind.includes("compact") ? (zh ? "上下文已压缩 · 查看摘要" : "Context compacted · view summary")
@@ -287,76 +311,135 @@ function EmptyChat({ zh, unavailable, onRetry }: { zh: boolean; unavailable: boo
   );
 }
 
-function HistoryMenu({ zh, close }: { zh: boolean; close: () => void }) {
+/** Compact "recent threads" menu; the full list lives in the Threads activity. */
+function RecentMenu({ zh, close }: { zh: boolean; close: () => void }) {
   const list = useSessions((s) => s.list);
   const activeId = useSessions((s) => s.activeId);
-  const select = useSessions((s) => s.select);
-  const remove = useSessions((s) => s.remove);
-  const loading = useSessions((s) => s.loadingList);
-  const [q, setQ] = useState("");
-  const needle = q.trim().toLowerCase();
-  const shown = needle ? list.filter((s) => `${s.title} ${s.last_message || ""}`.toLowerCase().includes(needle)) : list;
-  const dayStart = new Date().setHours(0, 0, 0, 0) / 1000;
-  const groups: [string, SessionSummary[]][] = [
-    [zh ? "今天" : "Today", shown.filter((s) => (s.updated_at || 0) >= dayStart)],
-    [zh ? "过去 7 天" : "Previous 7 days", shown.filter((s) => (s.updated_at || 0) < dayStart && (s.updated_at || 0) >= dayStart - 6 * 86400)],
-    [zh ? "更早" : "Older", shown.filter((s) => (s.updated_at || 0) < dayStart - 6 * 86400)],
-  ];
+  const openThread = useSessions((s) => s.openThread);
+  const unread = useSessions((s) => s.inbox.unread);
+  const blocking = useSessions((s) => s.inbox.blocking);
+  const recent = useMemo(() => [...list].sort((a, b) => activityOf(b) - activityOf(a)).slice(0, 7), [list]);
   return (
     <div className="gx-history">
-      <label className="gx-history-search">
-        <Search size={13} />
-        <input autoFocus value={q} placeholder={zh ? "搜索对话…" : "Search chats…"} onChange={(e) => setQ(e.target.value)} />
-        {loading && <Spinner size={12} />}
-      </label>
       <div className="gx-history-list">
-        {shown.length === 0 && <div className="gx-picker-empty">{list.length ? (zh ? "没有匹配的对话" : "No matching chats") : zh ? "还没有对话" : "No chats yet"}</div>}
-        {groups.filter(([, items]) => items.length).map(([label, items]) => (
-          <div key={label}>
-            <div className="gx-menu-heading">{label}</div>
-            {items.map((s) => (
-              <div key={s.id} className={`gx-history-item${s.id === activeId ? " selected" : ""}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    select(s.id);
-                    close();
-                  }}
-                >
-                  <span className={`gx-dot st-${s.status}`} />
-                  <span className="gx-history-title">{s.title || (zh ? "新对话" : "New chat")}</span>
-                  <span className="gx-history-time">{relativeTime(s.updated_at, zh)}</span>
-                </button>
-                <button
-                  type="button"
-                  className="gx-history-del"
-                  title={zh ? "删除" : "Delete"}
-                  onClick={() => confirm(zh ? `删除对话「${s.title}」？` : `Delete chat “${s.title}”?`) && void remove(s.id)}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        ))}
+        <div className="gx-menu-heading">{zh ? "最近的对话" : "Recent threads"}</div>
+        {recent.length === 0 && <div className="gx-picker-empty">{zh ? "还没有对话" : "No threads yet"}</div>}
+        {recent.map((s) => {
+          const att = attentionOf(s);
+          return (
+            <div key={s.id} className={`gx-history-item${s.id === activeId ? " selected" : ""}`}>
+              <button
+                type="button"
+                title={s.project?.name ? `${s.title} — ${s.project.name}` : s.title}
+                onClick={() => {
+                  openThread(s.id);
+                  close();
+                }}
+              >
+                {s.status === "running" ? <Spinner size={11} /> : s.unread ? <i className="gx-unread" /> : <span className={`gx-dot st-${s.status}`} />}
+                <span className="gx-history-title">{s.title || (zh ? "新对话" : "New thread")}</span>
+                {att && <AttentionChip kind={att} zh={zh} compact />}
+                <span className="gx-history-time">{relativeTime(activityOf(s), zh)}</span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="gx-history-foot">
+        <button
+          type="button"
+          onClick={() => {
+            close();
+            useStore.getState().setLayout({ activity: "threads", sideOpen: true });
+            useSessions.getState().setSideView("threads");
+          }}
+        >
+          <MessagesSquare size={13} />{zh ? `全部对话（${list.length}）` : `All threads (${list.length})`}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            close();
+            useSessions.getState().openInbox();
+          }}
+        >
+          <Inbox size={13} />{zh ? "收件箱" : "Inbox"}{(unread > 0 || blocking > 0) && <i className={blocking > 0 ? "blocking" : ""}>{Math.max(unread, blocking)}</i>}
+        </button>
       </div>
     </div>
   );
 }
 
+/** Which branch the next new thread runs on ("try another approach on a branch"). */
+function NewThreadBranch({ zh, project }: { zh: boolean; project: string }) {
+  const entry = useVcsEntry(project);
+  const pending = useSessions((s) => s.pendingBranch);
+  const setPending = useSessions((s) => s.setPendingBranch);
+  if (entry.phase !== "ok" || !entry.status) return null;
+  const current = entry.status.branch || "";
+  const isNew = !!pending && !entry.status.branches.some((b) => b.name === pending);
+  return (
+    <MenuButton
+      className={`gx-branch-pick${pending ? " set" : ""}`}
+      chevron={false}
+      width={260}
+      title={zh ? "这个对话在哪个分支上工作" : "The branch this thread will work on"}
+      label={<>{isNew ? <GitBranchPlus size={11} /> : <GitBranch size={11} />}<span>{pending || current}</span></>}
+    >
+      {(close) => (
+        <>
+          <MenuLabel>{zh ? "新对话使用的分支" : "Run the new thread on"}</MenuLabel>
+          {entry.status!.branches.map((b) => (
+            <MenuItem
+              key={b.name}
+              icon={<GitBranch size={13} />}
+              label={b.name}
+              detail={b.name === current ? (zh ? "工作区当前所在的分支" : "Where the workspace is now") : undefined}
+              selected={pending ? pending === b.name : b.name === current}
+              onSelect={() => {
+                close();
+                setPending(b.name === current ? null : b.name);
+              }}
+            />
+          ))}
+          {isNew && <MenuItem icon={<GitBranchPlus size={13} />} label={pending} detail={zh ? "发送第一条消息时创建" : "Created when you send the first message"} selected onSelect={close} />}
+          <MenuSep />
+          <MenuItem
+            icon={<GitBranchPlus size={13} />}
+            label={zh ? "在新分支上尝试…" : "Try on a new branch…"}
+            detail={zh ? "不影响当前分支，满意后再合并" : "Leaves this branch alone; merge it back if it works"}
+            onSelect={() => {
+              close();
+              useStore.getState().openPalette("tryBranch");
+            }}
+          />
+        </>
+      )}
+    </MenuButton>
+  );
+}
+
 function SessionBar({ zh }: { zh: boolean }) {
   const activeId = useSessions((s) => s.activeId);
-  const title = useSessions((s) => (s.activeId ? s.states[s.activeId]?.session?.title || s.list.find((x) => x.id === s.activeId)?.title : null));
+  const summary = useSessions((s) => (s.activeId ? s.states[s.activeId]?.session || s.list.find((x) => x.id === s.activeId) : null));
+  const title = summary?.title || null;
   const count = useSessions((s) => s.list.length);
-  const newChat = useSessions((s) => s.newChat);
+  const unread = useSessions((s) => s.inbox.unread);
+  const newThread = useSessions((s) => s.newThread);
   const rename = useSessions((s) => s.rename);
   const remove = useSessions((s) => s.remove);
   const compact = useSessions((s) => s.compact);
+  const fork = useSessions((s) => s.fork);
+  const activeProjectId = useStore((s) => s.agentProjectId);
+  const projectName = useStore((s) => {
+    const id = activeId ? summary?.project_id : s.agentProjectId;
+    return (activeId && summary?.project?.name) || s.projects.find((p) => p.id === id)?.name || "";
+  });
   const { status } = useActiveSession();
   const [editing, setEditing] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
-  const label = title || (zh ? "新对话" : "New chat");
+  const label = title || (zh ? "新对话" : "New thread");
 
   return (
     <div className="gx-session-bar">
@@ -376,34 +459,67 @@ function SessionBar({ zh }: { zh: boolean }) {
           }}
         />
       ) : (
-        <button ref={setAnchor} type="button" className={`gx-session-title${historyOpen ? " open" : ""}`} title={zh ? "对话历史" : "Chat history"} onClick={() => setHistoryOpen((o) => !o)}>
+        <button
+          ref={setAnchor}
+          type="button"
+          className={`gx-session-title${recentOpen ? " open" : ""}`}
+          title={`${label}${projectName ? ` — ${projectName}` : ""}\n${zh ? "最近的对话" : "Recent threads"}`}
+          onClick={() => setRecentOpen((o) => !o)}
+        >
           {status !== "idle" && <span className={`gx-dot st-${status}`} />}
           <span>{label}</span>
+          {!activeId && <em className="gx-session-scope">{projectName ? (zh ? `· ${projectName}` : `in ${projectName}`) : zh ? "· 通用" : "in General"}</em>}
           <ChevronDown size={12} className="gx-chevron" />
         </button>
       )}
-      <Popover anchor={anchor} open={historyOpen} onClose={() => setHistoryOpen(false)} width={320} className="gx-pop-flush">
-        {historyOpen && <HistoryMenu zh={zh} close={() => setHistoryOpen(false)} />}
+      {activeId && summary?.branch && <BranchChip name={summary.branch} title={zh ? `这个对话在分支 ${summary.branch} 上工作` : `This thread works on branch ${summary.branch}`} />}
+      {!activeId && <NewThreadBranch zh={zh} project={activeProjectId || "default"} />}
+      <Popover anchor={anchor} open={recentOpen} onClose={() => setRecentOpen(false)} width={320} className="gx-pop-flush">
+        {recentOpen && <RecentMenu zh={zh} close={() => setRecentOpen(false)} />}
       </Popover>
       <span className="spacer" />
-      <button type="button" className="gx-icon-btn" title={zh ? `对话历史（${count}）` : `History (${count})`} onClick={() => setHistoryOpen((o) => !o)}>
-        <History size={15} />
+      <button
+        type="button"
+        className="gx-icon-btn gx-bell-btn"
+        title={zh ? `全部对话（${count}）${unread ? ` · ${unread} 个未读` : ""}` : `All threads (${count})${unread ? ` · ${unread} unread` : ""}`}
+        onClick={() => {
+          useStore.getState().setLayout({ activity: "threads", sideOpen: true });
+          useSessions.getState().setSideView(unread ? "inbox" : "threads");
+        }}
+      >
+        <span className="gx-bell"><MessagesSquare size={15} />{unread > 0 && <i>{unread > 99 ? "99+" : unread}</i>}</span>
       </button>
-      <button type="button" className="gx-icon-btn" title={zh ? "新对话" : "New chat"} onClick={newChat}>
+      <button type="button" className="gx-icon-btn" title={zh ? "新对话" : "New thread"} onClick={() => newThread()}>
         <SquarePen size={15} />
       </button>
-      {activeId && (
-        <MenuButton className="gx-icon-btn" chevron={false} placement="bottom-end" width={210} label={<span className="gx-ellipsis">⋯</span>} title={zh ? "更多" : "More"}>
-          {(close) => (
-            <>
-              <MenuItem icon={<Pencil size={14} />} label={zh ? "重命名" : "Rename"} onSelect={() => { close(); setEditing(label); }} />
-              <MenuItem icon={<Shrink size={14} />} label={zh ? "压缩上下文" : "Compact context"} disabled={status !== "idle"} onSelect={() => { close(); void compact(); }} />
-              <MenuSep />
-              <MenuItem icon={<Trash2 size={14} />} danger label={zh ? "删除对话" : "Delete chat"} onSelect={() => { close(); if (confirm(zh ? "删除这个对话？" : "Delete this chat?")) void remove(activeId); }} />
-            </>
-          )}
-        </MenuButton>
-      )}
+      <MenuButton className="gx-icon-btn" chevron={false} placement="bottom-end" width={240} label={<span className="gx-ellipsis">⋯</span>} title={zh ? "更多" : "More"}>
+        {(close) => (
+          <>
+            {activeId && <MenuItem icon={<Pencil size={14} />} label={zh ? "重命名" : "Rename"} onSelect={() => { close(); setEditing(label); }} />}
+            {activeId && <MenuItem icon={<GitFork size={14} />} label={zh ? "分叉为新对话" : "Fork into a new thread"} disabled={status !== "idle"} onSelect={() => { close(); void fork(); }} />}
+            <MenuItem icon={<GitBranchPlus size={14} />} label={zh ? "在新分支上尝试…" : "Try on a new branch…"} detail={zh ? "新对话，在自己的分支上工作" : "A new thread that works on its own branch"} onSelect={() => { close(); useStore.getState().openPalette("tryBranch"); }} />
+            {activeId && <MenuItem icon={<Shrink size={14} />} label={zh ? "压缩上下文" : "Compact context"} disabled={status !== "idle"} onSelect={() => { close(); void compact(); }} />}
+            {activeId && <MenuSep />}
+            {activeId && (
+              <MenuItem
+                icon={<Trash2 size={14} />}
+                danger
+                label={zh ? "删除对话" : "Delete thread"}
+                onSelect={async () => {
+                  close();
+                  const ok = await ask({
+                    title: zh ? "删除这个对话？" : "Delete this thread?",
+                    body: zh ? `「${label}」及其全部消息会被删除。工作区里的文件和提交不受影响。` : `“${label}” and all of its messages will be deleted. Files and commits in the workspace are kept.`,
+                    actions: [{ id: "delete", label: zh ? "删除" : "Delete", danger: true }],
+                    cancel: zh ? "取消" : "Cancel",
+                  });
+                  if (ok) void remove(activeId);
+                }}
+              />
+            )}
+          </>
+        )}
+      </MenuButton>
     </div>
   );
 }
@@ -544,7 +660,7 @@ export function SessionChat() {
               ) : b.m.type === "user" ? (
                 <div key={b.m.id} className={`gx-msg-wrap${old}`}><UserMessage m={b.m} zh={zh} canFork={status === "idle"} prevId={b.prevId} /></div>
               ) : b.m.type === "system_note" ? (
-                <SystemNote key={b.m.id} m={b.m} zh={zh} />
+                <SystemNote key={b.m.id} m={b.m} zh={zh} project={project} />
               ) : (
                 <AssistantMessage key={b.m.id} m={b.m} zh={zh} spans={spans} canFork={status === "idle"} old={!!old} />
               );

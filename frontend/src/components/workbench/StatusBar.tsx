@@ -2,11 +2,11 @@ import { useStore } from "../../store";
 import { ProviderSwitcher } from "../ProviderSwitcher";
 import { THEMES } from "../ThemePicker";
 import { useAllAiTasks } from "../../api/aiTasks";
-import { Activity, Languages, Palette } from "lucide-react";
+import { Activity, BellRing, Languages, Palette } from "lucide-react";
 import { useActiveSession, useSessions } from "../../sessionStore";
 import { formatTokens } from "../session/toolMeta";
 import { MenuButton, MenuItem, MenuLabel, Spinner } from "../ui";
-import { Icon } from "./icons";
+import { BranchSwitcher, ProjectSwitcher } from "./BranchSwitcher";
 
 /** Three representative colors per theme for the picker swatches. */
 const SWATCH: Record<string, [string, string, string]> = {
@@ -24,7 +24,6 @@ const ACTIVE_IMPORT = new Set(["queued", "downloading", "parsing", "saving", "ca
 export function StatusBar() {
   const provider = useStore((s) => s.provider);
   const model = useStore((s) => s.providerModels[s.provider] || "");
-  const projectName = useStore((s) => s.projects.find((p) => p.id === s.agentProjectId)?.name || "");
   const runningRuns = useStore((s) => s.recentRuns.filter((r) => r.status === "running" || r.status === "awaiting_approval").length);
   const imports = useStore((s) => s.importJobs.filter((j) => ACTIVE_IMPORT.has(j.status)).length);
   const budget = useStore((s) => (s.agentRunId ? s.runs[s.agentRunId]?.budget : null));
@@ -38,6 +37,10 @@ export function StatusBar() {
   const zh = uiLang === "zh";
   const liveSessions = useSessions((s) => s.list.filter((x) => x.status && x.status !== "idle").length);
   const hasSession = useSessions((s) => !!s.activeId);
+  const blocking = useSessions((s) => s.inbox.blocking);
+  const waitingLocal = useSessions((s) => s.list.filter((x) => x.status === "awaiting_approval" || x.status === "awaiting_input" || x.attention === "approval" || x.attention === "input").length);
+  // the inbox stream is authoritative; the list covers backends without it
+  const waiting = Math.max(blocking, waitingLocal);
   const session = useActiveSession();
   const busy = runningRuns + imports + aiRunning + liveSessions;
   const ctxPct = session.context.limit ? Math.round((session.context.tokens_est / session.context.limit) * 100) : 0;
@@ -51,13 +54,18 @@ export function StatusBar() {
     <footer className="wb-status">
       <ProviderSwitcher />
       {model && <span className="wb-status-item muted" title={`${provider} · ${model}`}>{model}</span>}
-      <button
-        className="wb-status-item"
-        title={zh ? "当前项目" : "Active project"}
-        onClick={() => setLayout({ activity: "projects", sideOpen: true })}
-      >
-        <Icon name="projects" size={13} /> <span>{projectName || (zh ? "无项目" : "No project")}</span>
-      </button>
+      <ProjectSwitcher className="wb-status-item" placement="top-start" />
+      <BranchSwitcher />
+      {waiting > 0 && (
+        <button
+          className="wb-status-item attention"
+          title={zh ? `${waiting} 个对话在等你批准或回答` : `${waiting} thread${waiting === 1 ? " is" : "s are"} waiting for your approval or answer`}
+          onClick={() => useSessions.getState().openInbox()}
+        >
+          <BellRing size={13} />
+          <span>{zh ? `${waiting} 个在等你` : `${waiting} waiting for you`}</span>
+        </button>
+      )}
       <button
         className={`wb-status-item${busy ? " busy" : ""}`}
         title={zh ? `运行中：${liveSessions} 个对话，${runningRuns} 个智能体运行，${imports} 个导入，${aiRunning} 个 AI 任务` : `Running: ${liveSessions} chats, ${runningRuns} agent runs, ${imports} imports, ${aiRunning} AI tasks`}

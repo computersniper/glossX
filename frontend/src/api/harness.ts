@@ -333,7 +333,7 @@ export const harnessApi = {
     request<any>(`/api/harness/tools${query({ mode, ...scopeParams(scope) })}`).then((r) => listOf<HarnessTool>(r, "tools", "items")),
   commands: (scope?: HarnessScope) => request<any>(`/api/harness/commands${query(scopeParams(scope))}`).then((r) => listOf<HarnessCommand>(r, "commands", "items")),
   agents: (scope?: HarnessScope) => request<any>(`/api/harness/agents${query(scopeParams(scope))}`).then((r) => listOf<HarnessAgentType>(r, "agents", "items")),
-  getSettings: () => request<any>("/api/harness/settings").then((r) => normalizeSettings(r?.settings ?? r)),
+  getSettings: (projectId?: string | null) => request<any>("/api/harness/settings" + (projectId ? `?project_id=${encodeURIComponent(projectId)}` : "")).then((r) => normalizeSettings(r?.settings ?? r)),
   /** Partial update: only the top-level keys that are present are replaced (unknown keys are a 400). */
   putSettings: (body: Partial<HarnessSettings>) => request<any>("/api/harness/settings", { method: "PUT", json: body }).then((r) => normalizeSettings(r?.settings ?? r ?? body)),
   mentions: (q: string, scope?: HarnessScope, limit = 8) =>

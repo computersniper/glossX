@@ -74,6 +74,8 @@ def _close_streams_on_exit_signal(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from .harness import home
+    home.migrate()
     store.init_db()
     app.state.import_jobs = ImportJobManager(
         download_timeout=papers.IMPORT_DOWNLOAD_TIMEOUT,

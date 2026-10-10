@@ -1,7 +1,7 @@
 // Settings → Agent harness: default mode, context limit, permission rules, hooks,
 // and read-only lists of the registered tools, commands and subagent types.
 import { useEffect, useMemo, useState } from "react";
-import { Bot, ChevronRight, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck, ShieldQuestion, Slash, Trash2, Webhook, Wrench, X } from "lucide-react";
+import { Bot, ChevronRight, FolderCog, Globe, NotebookText, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck, ShieldQuestion, Slash, Trash2, Webhook, Wrench, X, type LucideIcon } from "lucide-react";
 import {
   HOOK_EVENTS, harnessApi, isMissing,
   type HarnessAgentType, type HarnessCommand, type HarnessSettings as Settings, type HarnessTool, type HookEvent, type SessionMode,
@@ -9,7 +9,8 @@ import {
 import { useStore } from "../store";
 import { MODES } from "./session/Composer";
 import { formatTokens } from "./session/toolMeta";
-import { EmptyState, Segmented, Spinner } from "./ui";
+import { EmptyState, Segmented, Spinner, Switch } from "./ui";
+import { useVcsEntry } from "../vcsStore";
 
 const RULES: { key: "allow" | "ask" | "deny"; icon: typeof ShieldCheck; en: string; zh: string; hintEn: string; hintZh: string }[] = [
   { key: "allow", icon: ShieldCheck, en: "Allow", zh: "允许", hintEn: "Runs without asking", hintZh: "无需询问直接执行" },
@@ -25,6 +26,13 @@ const HOOK_LABEL: Record<HookEvent, { en: string; zh: string }> = {
 };
 
 const LIMITS = [60_000, 120_000, 200_000, 400_000];
+
+/** Where the harness keeps its files (`paths` of GET /api/harness/settings). */
+const PATHS: { key: string; icon: LucideIcon; scope: "global" | "project"; en: string; zh: string; hintEn: string; hintZh: string }[] = [
+  { key: "home", icon: Globe, scope: "global", en: "GlossX home", zh: "GlossX 主目录", hintEn: "Settings, commands, subagents and skills shared by every project", hintZh: "所有项目共用的设置、命令、子智能体与技能" },
+  { key: "global_instructions", icon: NotebookText, scope: "global", en: "Global instructions", zh: "全局说明", hintEn: "GLOSSX.md the agent reads in every thread", hintZh: "智能体在每个对话里都会读取的 GLOSSX.md" },
+  { key: "workspace_config", icon: FolderCog, scope: "project", en: "Project config", zh: "项目配置", hintEn: "The .glossx folder of the active project: adds to and overrides the global files", hintZh: "当前项目的 .glossx 目录：补充并覆盖全局配置" },
+];
 
 function RuleList({ kind, rules, onChange, zh }: { kind: (typeof RULES)[number]; rules: string[]; onChange: (r: string[]) => void; zh: boolean }) {
   const [draft, setDraft] = useState("");
@@ -174,7 +182,7 @@ export function HarnessSettings() {
   async function load() {
     setState("loading");
     try {
-      const s = await harnessApi.getSettings();
+      const s = await harnessApi.getSettings(useStore.getState().agentProjectId);
       setSaved(s);
       setCfg(s);
       setState("ok");
@@ -191,6 +199,14 @@ export function HarnessSettings() {
     void load();
   }, []);
 
+  const projectId = useStore((s) => s.agentProjectId);
+  const projectName = useStore((s) => s.projects.find((p) => p.id === s.agentProjectId)?.name);
+  const vcsPhase = useVcsEntry(projectId).phase;
+  // the project config location follows the active project
+  useEffect(() => {
+    if (state === "ok" && !dirty) void harnessApi.getSettings(projectId).then((s) => { setSaved(s); setCfg(s); }).catch(() => {});
+  }, [projectId]);
+
   const dirty = useMemo(() => !!cfg && !!saved && JSON.stringify(cfg) !== JSON.stringify(saved), [cfg, saved]);
   const patch = (p: Partial<Settings>) => setCfg((c) => (c ? { ...c, ...p } : c));
 
@@ -199,12 +215,13 @@ export function HarnessSettings() {
     setSaving(true);
     try {
       // partial update: send only the keys this panel edits (unknown keys are rejected)
-      const clean: Pick<Settings, "default_mode" | "context_limit" | "permissions" | "hooks"> = {
+      const clean: Partial<Settings> = {
         default_mode: cfg.default_mode,
         context_limit: Math.max(4000, cfg.context_limit),
         permissions: cfg.permissions,
         hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, cfg.hooks[e].filter((h) => h.command.trim()).map((h) => ({ ...h, matcher: h.matcher.trim() || "*", command: h.command.trim() }))])) as Settings["hooks"],
       };
+      if (cfg.vcs) clean.vcs = cfg.vcs;
       const next = await harnessApi.putSettings(clean);
       setSaved(next);
       setCfg(next);
@@ -274,6 +291,45 @@ export function HarnessSettings() {
           </label>
         </div>
       </section>
+
+      <section className="gx-set">
+        <h4>{zh ? "版本控制" : "Version control"}</h4>
+        <Switch
+          checked={cfg.vcs?.auto_commit ?? true}
+          onChange={(v) => patch({ vcs: { ...(cfg.vcs || {}), auto_commit: v } })}
+          label={zh ? "每轮结束后自动提交" : "Commit automatically after each turn"}
+          hint={zh ? "智能体一轮工作结束时，把工作区的修改记为一次提交。关闭后仍可在“源代码管理”里手动提交；检查点不受影响。" : "When a turn ends, the workspace changes are recorded as one commit. With this off you can still commit by hand in Source control; checkpoints are unaffected."}
+        />
+        {vcsPhase === "nogit" && <p className="gx-set-hint">{zh ? "这台电脑上没有安装 Git，所以目前不会产生提交。" : "Git is not installed on this computer, so no commits are made for now."}</p>}
+      </section>
+
+      {cfg.paths && Object.values(cfg.paths).some(Boolean) && (
+        <section className="gx-set">
+          <h4>{zh ? "配置文件的位置" : "Where the agent’s files live"}</h4>
+          <p>
+            {zh ? "和 Claude Code 的 " : "Like Claude Code’s "}<code>.claude</code>{zh ? " 一样，GlossX 把智能体的文件放在 " : ", GlossX keeps the agent’s files in "}<code>.glossx</code>
+            {zh ? " 目录里：全局一份，每个项目的工作区里各一份。" : " folders: one global, and one inside each project’s workspace."}
+          </p>
+          <div className="gx-paths">
+            {[...PATHS, ...Object.keys(cfg.paths).filter((k) => !PATHS.some((p) => p.key === k)).map((k) => ({ key: k, icon: FolderCog, scope: "global" as const, en: k, zh: k, hintEn: "", hintZh: "" }))]
+              .filter((p) => cfg.paths?.[p.key])
+              .map((p) => {
+                const I = p.icon;
+                const value = String(cfg.paths![p.key]);
+                return (
+                  <div key={p.key} className="gx-path">
+                    <I size={14} />
+                    <div>
+                      <strong>{zh ? p.zh : p.en}<span className={`gx-tag${p.scope === "project" ? " warn" : ""}`}>{p.scope === "project" ? (zh ? `本项目${projectName ? ` · ${projectName}` : ""}` : `this project${projectName ? ` · ${projectName}` : ""}`) : zh ? "全局" : "global"}</span></strong>
+                      {(zh ? p.hintZh : p.hintEn) && <small>{zh ? p.hintZh : p.hintEn}</small>}
+                      <code title={zh ? "点击复制" : "Click to copy"} onClick={() => void navigator.clipboard?.writeText(value).then(() => notify(zh ? "已复制路径" : "Path copied")).catch(() => {})}>{value}</code>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </section>
+      )}
 
       <section className="gx-set">
         <h4>{zh ? "权限规则" : "Permission rules"}</h4>

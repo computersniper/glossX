@@ -50,7 +50,8 @@ def _safe_glob(iterator):
 
 
 def _skill_search_roots() -> list[tuple[str, Path]]:
-    roots: list[tuple[str, Path]] = []
+    from .. import config
+    roots: list[tuple[str, Path]] = [("glossx", config.SKILLS_DIR)]
     # Claude personal + project
     for base in {HOME, Path("/home/czb"), Path("/home/cjc"), Path.cwd()}:
         roots.append(("claude", base / ".claude" / "skills"))

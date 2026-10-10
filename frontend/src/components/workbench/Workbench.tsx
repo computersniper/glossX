@@ -11,6 +11,9 @@ import { StatusBar } from "./StatusBar";
 import { CommandPalette } from "./CommandPalette";
 import { Icon } from "./icons";
 import { aiPaneHasFocus, focusAiPane } from "./focus";
+import { DialogHost } from "./dialog";
+import { ProjectSwitcher } from "./BranchSwitcher";
+import { InboxBell, inboxTitle } from "./ThreadsView";
 
 const NARROW = "(max-width: 1099px)";
 
@@ -96,6 +99,40 @@ function useWorkbenchKeys() {
   }, []);
 }
 
+/**
+ * Inbox plumbing: the live badge, and "a thread that is visible and focused is
+ * read" — POST /read as activity arrives while the user is actually looking at it.
+ */
+function useInbox() {
+  const activeId = useSessions((s) => s.activeId);
+  const shown = useStore((s) => s.layout.aiOpen && s.layout.aiMode === "agent");
+  // anything that counts as activity on the active thread
+  const pulse = useSessions((s) => {
+    const id = s.activeId;
+    if (!id) return "";
+    const st = s.states[id];
+    const row = s.list.find((x) => x.id === id);
+    return `${st?.messages.length || 0}|${st?.status || ""}|${row?.unread ? 1 : 0}|${row?.attention || ""}|${st?.session?.unread ? 1 : 0}|${st?.session?.attention || ""}`;
+  });
+  useEffect(() => {
+    useSessions.getState().startInbox();
+  }, []);
+  useEffect(() => {
+    if (!activeId || !shown) return;
+    const check = () => {
+      if (document.visibilityState === "visible" && document.hasFocus()) void useSessions.getState().markRead(activeId);
+    };
+    const timer = window.setTimeout(check, 500);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [activeId, shown, pulse]);
+}
+
 export function Workbench() {
   const layout = useStore((s) => s.layout);
   const setLayout = useStore((s) => s.setLayout);
@@ -104,6 +141,9 @@ export function Workbench() {
   const zh = useStore((s) => s.uiLang) === "zh";
   const narrow = useNarrow();
   useWorkbenchKeys();
+  useInbox();
+  const unread = useSessions((s) => s.inbox.unread);
+  const blocking = useSessions((s) => s.inbox.blocking);
   const sessionsAvailable = useSessions((s) => s.available);
   // session list for the welcome page / status bar; retried while the backend is still starting
   useEffect(() => {
@@ -143,13 +183,22 @@ export function Workbench() {
         <div className="wb-column">
           <header className="wb-titlebar">
             <ModeToggle />
+            <ProjectSwitcher />
             <span className="spacer" />
             <button className="wb-title-search" onClick={() => openPalette("commands")}>
               <Icon name="search" size={13} />
-              <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, chats…"}</span>
+              <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, threads…"}</span>
               <kbd>Ctrl K</kbd>
             </button>
             <span className="spacer" />
+            <button
+              className={`wb-icon-btn wb-title-bell${blocking > 0 ? " blocking" : ""}`}
+              title={inboxTitle(zh, unread, blocking)}
+              aria-label={inboxTitle(zh, unread, blocking)}
+              onClick={() => useSessions.getState().openInbox()}
+            >
+              <InboxBell size={16} />
+            </button>
             <div className="wb-title-toggles">
             <button className={`wb-icon-btn${layout.sideOpen ? " on" : ""}`} title={zh ? "侧边栏 (Ctrl+B)" : "Side bar (Ctrl+B)"} onClick={() => setLayout({ sideOpen: !layout.sideOpen })}>
               <Icon name="sidebar" size={16} />
@@ -213,6 +262,7 @@ export function Workbench() {
       </div>
       <StatusBar />
       <CommandPalette />
+      <DialogHost />
     </div>
   );
 }

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import logging
+from ..agent import projects
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
@@ -60,6 +62,7 @@ async def upload_paper(file: UploadFile = File(...)):
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
+    await run_in_threadpool(_seed_paper_project, paper["id"])
     return paper
 
 
@@ -96,6 +99,7 @@ async def import_paper(body: ImportBody):
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
+    await run_in_threadpool(_seed_paper_project, paper["id"])
     return paper
 
 
@@ -163,6 +167,7 @@ async def patch_paper(paper_id: str, body: PaperPatch):
 async def delete_paper(paper_id: str):
     if not store.get_paper(paper_id):
         raise HTTPException(404, "paper not found")
+    projects.unlink_deleted_paper(paper_id)
     store.delete_paper(paper_id)
     return {"ok": True}
 
@@ -232,3 +237,18 @@ async def get_fulltext(paper_id: str):
     if not parsed:
         raise HTTPException(404, "parsed data not found")
     return {"full_text": parsed["full_text"]}
+
+
+def _seed_paper_project(paper_id: str) -> None:
+    try:
+        projects.ensure_paper_project(paper_id)
+    except Exception:
+        logging.getLogger(__name__).exception("Could not create workspace for paper %s", paper_id)
+
+
+@router.get("/{paper_id}/project")
+async def get_paper_project(paper_id: str):
+    try:
+        return await run_in_threadpool(projects.ensure_paper_project, paper_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error

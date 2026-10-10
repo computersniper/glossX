@@ -193,7 +193,9 @@ def list_commands(workspace_root: Path | None = None) -> list[dict[str, Any]]:
                 "mode": meta.get("mode") if meta.get("mode") in {"ask", "agent", "auto", "plan"} else None,
             }
 
-    add_md(config.COMMANDS_DIR, "user", override=False)
+    from . import home
+    for directory in home.global_dirs("commands"):
+        add_md(directory, "user", override=False)
     if workspace_root is not None:
         add_md(workspace_root / ".glossx" / "commands", "project", override=True)
     for cap in _skills():
@@ -283,7 +285,9 @@ def list_agents(workspace_root: Path | None = None) -> list[dict[str, Any]]:
                 "path": str(path),
             }
 
-    add_md(config.AGENTS_DIR, "user", override=False)
+    from . import home
+    for directory in home.global_dirs("agents"):
+        add_md(directory, "user", override=False)
     if workspace_root is not None:
         add_md(workspace_root / ".glossx" / "agents", "project", override=True)
     for manifest in _v2_manifests("agent"):

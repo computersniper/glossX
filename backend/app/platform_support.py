@@ -325,7 +325,6 @@ def git_environment(
         GIT_EDITOR="true",
         GIT_MERGE_AUTOEDIT="no",
         GIT_OPTIONAL_LOCKS="0",
-        GIT_LITERAL_PATHSPECS="1",
         LC_ALL="C",
         LANGUAGE="C",
     )

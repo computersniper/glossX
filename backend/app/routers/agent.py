@@ -199,8 +199,8 @@ def _project_detail(project_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/projects")
-async def list_projects():
-    return projects.list_projects()
+async def list_projects(paper_id: str | None = None):
+    return projects.list_projects(paper_id)
 
 
 @router.post("/projects")
@@ -274,3 +274,23 @@ async def connections_status():
             for agent in ("claude", "codex")
         },
     }
+
+
+class ProjectPaperBody(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/projects/{project_id}/papers")
+async def link_project_paper(project_id: str, body: ProjectPaperBody):
+    try:
+        return projects.link_paper(project_id, body.paper_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@router.delete("/projects/{project_id}/papers/{paper_id}")
+async def unlink_project_paper(project_id: str, paper_id: str):
+    try:
+        return projects.unlink_paper(project_id, paper_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error

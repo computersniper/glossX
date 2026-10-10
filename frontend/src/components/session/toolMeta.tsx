@@ -1,6 +1,7 @@
 // Tool families: icon, human label and the one-line argument summary on a tool card.
 import {
-  BadgeCheck, BookOpen, Bot, Brain, FilePen, FileSearch, FileText, FolderTree, Globe, Library, ListTodo, Map as MapIcon,
+  BadgeCheck, BookOpen, Bot, Brain, FilePen, FileSearch, FileText, FolderTree, GitBranch, GitBranchPlus, GitCommitHorizontal, GitCompareArrows,
+  GitMerge, Globe, History, Library, ListTodo, Map as MapIcon,
   MessageCircleQuestion, Play, Plug, Search, Server, Sparkles, Terminal, Telescope, Workflow, Wrench, type LucideIcon,
 } from "lucide-react";
 import type { SpanRef, ToolCallMessage } from "../../api/harness";
@@ -38,6 +39,13 @@ const EXACT: Record<string, { icon: LucideIcon; family: ToolFamily; en: string; 
   memory_recall: { icon: Brain, family: "agent", en: "Recall memory", zh: "回忆记忆" },
   memory_note: { icon: Brain, family: "agent", en: "Save memory", zh: "写入记忆" },
   result_read: { icon: FileText, family: "agent", en: "Re-read result", zh: "重读结果" },
+  vcs_status: { icon: GitCompareArrows, family: "read", en: "Check changes", zh: "查看修改状态" },
+  vcs_log: { icon: History, family: "read", en: "Read history", zh: "查看提交历史" },
+  vcs_diff: { icon: GitCompareArrows, family: "read", en: "Compare versions", zh: "比较版本" },
+  vcs_commit: { icon: GitCommitHorizontal, family: "edit", en: "Commit", zh: "提交" },
+  vcs_branch: { icon: GitBranchPlus, family: "edit", en: "Create branch", zh: "新建分支" },
+  vcs_checkout: { icon: GitBranch, family: "edit", en: "Switch branch", zh: "切换分支" },
+  vcs_merge: { icon: GitMerge, family: "edit", en: "Merge branch", zh: "合并分支" },
 };
 
 export function toolMeta(tool: string, zh: boolean): { icon: LucideIcon; family: ToolFamily; label: string } {
@@ -72,6 +80,7 @@ export function argSummary(call: Pick<ToolCallMessage, "tool" | "args">): string
   }
   if (call.tool === "todo_write" && Array.isArray(args.todos)) return zh ? `${args.todos.length} 项` : `${args.todos.length} item${args.todos.length === 1 ? "" : "s"}`;
   if (call.tool === "task" && args.subagent_type) parts.push(String(args.subagent_type));
+  if (call.tool.startsWith("vcs_")) return vcsSummary(call.tool, args, zh);
   if (call.tool === "plan_submit" && typeof args.plan === "string") {
     return clip((args.plan.split("\n").find((l: string) => l.trim()) || "").replace(/^[#>\s]+/, "").replace(/[*_`]+/g, ""), 80);
   }
@@ -89,6 +98,45 @@ export function argSummary(call: Pick<ToolCallMessage, "tool" | "args">): string
   if (typeof args.section === "string" && args.section) parts.push(`§ ${clip(args.section, 40)}`);
   if (args.pages != null && args.pages !== "") parts.push(`p. ${args.pages}`);
   return parts.join(" · ");
+}
+
+const short = (rev: unknown) => (/^[0-9a-f]{12,40}$/i.test(String(rev)) ? String(rev).slice(0, 7) : String(rev));
+
+/** What a version-control call does, in the words a reader would use. */
+function vcsSummary(tool: string, args: Record<string, any>, zh: boolean): string {
+  const str = (k: string) => (typeof args[k] === "string" && args[k].trim() ? String(args[k]).trim() : "");
+  const branch = str("branch") || str("name");
+  switch (tool) {
+    case "vcs_commit": {
+      const n = Array.isArray(args.paths) ? args.paths.length : 0;
+      return [clip(str("message").split("\n")[0], 90), n ? (zh ? `${n} 个文件` : `${n} file${n === 1 ? "" : "s"}`) : ""].filter(Boolean).join(" · ");
+    }
+    case "vcs_branch":
+      return [branch, str("from") ? (zh ? `基于 ${short(str("from"))}` : `from ${short(str("from"))}`) : ""].filter(Boolean).join(" · ");
+    case "vcs_checkout":
+      return [branch, args.stash ? (zh ? "暂存修改" : "stash changes") : args.discard ? (zh ? "丢弃修改" : "discard changes") : ""].filter(Boolean).join(" · ");
+    case "vcs_merge":
+      return branch ? (zh ? `${branch} → 当前分支` : `${branch} → current branch`) : "";
+    case "vcs_diff": {
+      const from = str("from");
+      const to = str("to");
+      const range = from || to ? `${from ? short(from) : "HEAD"} → ${to ? short(to) : zh ? "工作区" : "working tree"}` : zh ? "未提交的修改" : "uncommitted changes";
+      return [str("path"), range].filter(Boolean).join(" · ");
+    }
+    case "vcs_log":
+      return [str("path"), branch, args.limit ? (zh ? `最近 ${args.limit} 次` : `last ${args.limit}`) : ""].filter(Boolean).join(" · ");
+    default:
+      return str("path");
+  }
+}
+
+/** The commit a `vcs_commit` call produced: structured when the server sends it, else read off the result text. */
+export function callCommit(call: ToolCallMessage): string | null {
+  if (call.tool !== "vcs_commit" || call.status !== "done") return null;
+  const c = (call as any).commit;
+  if (c) return String(typeof c === "string" ? c : c.short || c.id || "").slice(0, 10) || null;
+  const m = /\b([0-9a-f]{7,40})\b/.exec(call.result_preview || "");
+  return m ? m[1].slice(0, 7) : null;
 }
 
 const SPAN_MARK = /\[S:([^\]\s]+#\d+)\]/g;

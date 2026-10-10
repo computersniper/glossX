@@ -227,8 +227,7 @@ def _migrate_checkpoints(key: str, target: Path) -> None:
             new = target / old.name
             if not new.exists():
                 shutil.copy2(old, new)
-        marker.write_text("checkpoints copied from the data directory
-", encoding="utf-8")
+        marker.write_text("checkpoints copied from the data directory", encoding="utf-8")
     except OSError:
         logger.warning("could not migrate the checkpoints of workspace %s", key, exc_info=True)
 

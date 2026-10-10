@@ -1,8 +1,8 @@
 // Side bar: file tree of the active project's workspace + its checkpoints.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ChevronRight, File, FileCode, FileJson, FilePlus, FileText, Folder, FolderOpen, FolderTree, History, Image,
-  RefreshCw, Undo2, type LucideIcon,
+  ChevronRight, File, FileCode, FileJson, FilePlus, FileText, Folder, FolderCog, FolderOpen, FolderTree, History, Image,
+  NotebookText, RefreshCw, Undo2, type LucideIcon,
 } from "lucide-react";
 import { isMissing, workspaceApi, type Checkpoint, type TreeEntry } from "../../api/harness";
 import { useStore } from "../../store";
@@ -11,6 +11,33 @@ import { revertCheckpoint, useCheckpointMarks } from "../session/DiffView";
 import { relativeTime } from "../session/toolMeta";
 
 type Node = { name: string; path: string; type: "dir" | "file"; children: Node[] };
+
+/** The agent's own folder in a workspace (settings, commands, subagents, memory) — like `.claude`. */
+const AGENT_DIR = ".glossx";
+export const INSTRUCTIONS_FILE = "GLOSSX.md";
+
+/** Open the project's instructions for the agent, creating the file when the workspace has none yet. */
+export async function openInstructions(projectId: string | null | undefined = useStore.getState().agentProjectId) {
+  const st = useStore.getState();
+  const project = projectId || "default";
+  const zh = st.uiLang === "zh";
+  try {
+    await workspaceApi.read(project, INSTRUCTIONS_FILE);
+  } catch (e: any) {
+    if (isMissing(e) || e?.status === 0) return st.notify(zh ? "工作区服务不可用" : "The workspace service is unavailable");
+    const name = st.projects.find((p) => p.id === projectId)?.name || (zh ? "默认工作区" : "Default workspace");
+    const body = zh
+      ? `# ${name}\n\n写给智能体的项目说明：它在这个工作区里的每个对话开始时都会读到这份文件。\n\n## 目标\n\n- \n\n## 约定\n\n- 笔记放在 \`notes/\`\n`
+      : `# ${name}\n\nInstructions for the agent: it reads this file at the start of every thread in this workspace.\n\n## Goals\n\n- \n\n## Conventions\n\n- Notes go in \`notes/\`\n`;
+    try {
+      await workspaceApi.write(project, INSTRUCTIONS_FILE, body);
+      window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
+    } catch (err: any) {
+      return st.notify(String(err?.message || err));
+    }
+  }
+  st.openFileTab(project, INSTRUCTIONS_FILE);
+}
 
 function buildTree(entries: TreeEntry[]): Node[] {
   const root: Node = { name: "", path: "", type: "dir", children: [] };
@@ -51,13 +78,16 @@ function fileIcon(name: string): LucideIcon {
 }
 
 function TreeRows({ nodes, depth, open, toggle, project }: { nodes: Node[]; depth: number; open: Set<string>; toggle: (p: string) => void; project: string }) {
+  const zh = useStore((s) => s.uiLang) === "zh";
   const openFileTab = useStore((s) => s.openFileTab);
   const activeTabKey = useStore((s) => s.activeTabKey);
   return (
     <>
       {nodes.map((n) => {
         const isOpen = open.has(n.path);
-        const I = n.type === "dir" ? (isOpen ? FolderOpen : Folder) : fileIcon(n.name);
+        const agentDir = n.type === "dir" && n.path === AGENT_DIR;
+        const instructions = n.type === "file" && n.path === INSTRUCTIONS_FILE;
+        const I = agentDir ? FolderCog : n.type === "dir" ? (isOpen ? FolderOpen : Folder) : instructions ? NotebookText : fileIcon(n.name);
         const active = n.type === "file" && activeTabKey === `file:${project}|${n.path}`;
         return (
           <div key={n.path} role="none">
@@ -65,14 +95,17 @@ function TreeRows({ nodes, depth, open, toggle, project }: { nodes: Node[]; dept
               type="button"
               role="treeitem"
               aria-expanded={n.type === "dir" ? isOpen : undefined}
-              className={`gx-tree-row ${n.type}${active ? " active" : ""}`}
+              className={`gx-tree-row ${n.type}${active ? " active" : ""}${agentDir ? " agent" : ""}${instructions ? " instructions" : ""}`}
               style={{ paddingLeft: 8 + depth * 14 }}
-              title={n.path}
+              title={agentDir
+                ? (zh ? "智能体配置：这个项目的设置、命令、子智能体和记忆" : "Agent config: this project’s settings, commands, subagents and memory")
+                : instructions ? (zh ? "项目说明：智能体在每个对话开始时读取" : "Project instructions: the agent reads this at the start of every thread") : n.path}
               onClick={() => (n.type === "dir" ? toggle(n.path) : openFileTab(project, n.path))}
             >
               <ChevronRight size={12} className={`gx-tree-caret${isOpen ? " open" : ""}${n.type === "file" ? " none" : ""}`} />
               <I size={14} strokeWidth={1.6} className="gx-tree-icon" />
               <span>{n.name}</span>
+              {agentDir && <em className="gx-tree-tag">{zh ? "智能体配置" : "agent config"}</em>}
             </button>
             {n.type === "dir" && isOpen && <TreeRows nodes={n.children} depth={depth + 1} open={open} toggle={toggle} project={project} />}
           </div>
@@ -215,8 +248,8 @@ export function WorkspaceView() {
   }
 
   const T = zh
-    ? { files: "文件", cps: "检查点", newFile: "新建文件", refresh: "刷新", ph: "notes/idea.md", emptyT: "工作区还是空的", emptyH: "智能体会把笔记、代码和实验结果写到这里。你也可以自己新建文件。", missT: "工作区服务不可用", missH: "当前后端尚未提供 /api/workspace。", scope: "默认工作区", pick: "切换项目", trunc: "文件过多，仅显示一部分。" }
-    : { files: "Files", cps: "Checkpoints", newFile: "New file", refresh: "Refresh", ph: "notes/idea.md", emptyT: "The workspace is empty", emptyH: "The agent writes notes, code and results here. You can create files yourself, too.", missT: "Workspace service unavailable", missH: "This backend does not expose /api/workspace yet.", scope: "Default workspace", pick: "Switch project", trunc: "Too many files — showing a part of them." };
+    ? { files: "文件", cps: "检查点", newFile: "新建文件", refresh: "刷新", ph: "notes/idea.md", emptyT: "工作区还是空的", emptyH: "智能体会把笔记、代码和实验结果写到这里。你也可以自己新建文件。", missT: "工作区服务不可用", missH: "当前后端尚未提供 /api/workspace。", scope: "默认工作区", pick: "切换项目", trunc: "文件过多，仅显示一部分。", inst: "打开 GLOSSX.md（给智能体的项目说明）" }
+    : { files: "Files", cps: "Checkpoints", newFile: "New file", refresh: "Refresh", ph: "notes/idea.md", emptyT: "The workspace is empty", emptyH: "The agent writes notes, code and results here. You can create files yourself, too.", missT: "Workspace service unavailable", missH: "This backend does not expose /api/workspace yet.", scope: "Default workspace", pick: "Switch project", trunc: "Too many files — showing a part of them.", inst: "Open GLOSSX.md (project instructions for the agent)" };
 
   return (
     <div className="wb-side-body gx-ws">
@@ -226,6 +259,7 @@ export function WorkspaceView() {
           <span>{projectName || T.scope}</span>
         </button>
         <span className="spacer" />
+        <button type="button" className="gx-icon-btn" title={T.inst} disabled={state !== "ok"} onClick={() => void openInstructions(projectId)}><NotebookText size={14} /></button>
         <button type="button" className="gx-icon-btn" title={T.newFile} disabled={state !== "ok"} onClick={() => { setTab("files"); setCreating(""); }}><FilePlus size={14} /></button>
         <button type="button" className="gx-icon-btn" title={T.refresh} onClick={() => void refresh()}><RefreshCw size={13} /></button>
       </div>
