@@ -1,4 +1,4 @@
-"""Rewinding a thread in place to an earlier message (optionally restoring files)."""
+"""Thread controls: rewinding in place, per-thread reasoning effort, model suggestions."""
 from __future__ import annotations
 
 import asyncio
@@ -77,3 +77,39 @@ def test_rewind_endpoint(client):
     assert response.status_code == 200, response.text
     assert response.json()["removed"] == 2
     assert client.post(f"/api/sessions/{created['id']}/rewind", json={"message_id": "zz"}).status_code == 404
+
+
+def test_thread_reasoning_effort_is_saved_validated_and_passed_on(client, monkeypatch):
+    from app.providers import registry
+    created = client.post("/api/sessions", json={"mode": "ask", "effort": "high"}).json()
+    assert created["model"].get("effort") == "high"
+    patched = client.patch(f"/api/sessions/{created['id']}", json={"model": {"effort": "low"}})
+    assert patched.status_code == 200 and patched.json()["model"]["effort"] == "low"
+    assert client.patch(f"/api/sessions/{created['id']}", json={"model": {"effort": "turbo"}}).status_code == 400
+    cleared = client.patch(f"/api/sessions/{created['id']}", json={"model": {"effort": None}}).json()
+    assert "effort" not in cleared["model"]
+
+    seen = {}
+
+    class Fake:
+        async def stream(self, system, messages, model):
+            from app.providers.base import runtime_option
+            seen["effort"] = runtime_option("effort")
+            yield "ok"
+
+    monkeypatch.setitem(registry._PROVIDERS, "effort_contract", Fake())
+
+    async def run():
+        async for _ in registry.stream("sys", [{"role": "user", "content": "hi"}], provider="effort_contract", effort="max"):
+            pass
+    asyncio.run(run())
+    assert seen["effort"] == "max"
+
+
+def test_model_catalog_lists_claude_and_custom_models(client):
+    client.post("/api/settings", json={"providers": {"local_claude": {"models": ["my-claude-id"]}}})
+    models = client.get("/api/settings/models").json()["models"]
+    ids = [m["id"] for m in models["local_claude"]]
+    assert "opus" in ids and "my-claude-id" in ids
+    assert any(m["id"] == "claude-sonnet-5-5" for m in models["anthropic"])
+    client.post("/api/settings", json={"providers": {"local_claude": {"models": []}}})

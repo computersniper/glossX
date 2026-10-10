@@ -16,6 +16,8 @@ from ..providers import registry as providers
 from . import context as ctx_mod
 from . import engine, extensions, vcs, workspace
 from . import settings as settings_mod
+
+REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
 from .session import (
     TERMINAL_TOOL,
     Runtime,
@@ -94,6 +96,13 @@ class SessionManager:
         if model and len(model) > 120:
             raise ValueError("model is too long")
         return provider, model
+
+    @staticmethod
+    def _check_effort(effort: Any) -> str | None:
+        effort = (str(effort).strip().lower() or None) if effort is not None else None
+        if effort and effort not in REASONING_EFFORTS:
+            raise ValueError(f"unknown reasoning effort: {effort}")
+        return effort
 
     @staticmethod
     def _check_project(project_id: Any) -> str | None:
@@ -225,7 +234,7 @@ class SessionManager:
     def create(self, *, title: str | None = None, project_id: str | None = None,
                mode: str | None = None, provider: str | None = None,
                model: str | None = None, branch: str | None = None,
-               paper_id: str | None = None) -> dict[str, Any]:
+               paper_id: str | None = None, effort: str | None = None) -> dict[str, Any]:
         """``branch`` must already be checked out (see ``prepare_branch``);
         ``paper_id`` puts that paper in the session's scope."""
         if not self._accepting:
@@ -238,6 +247,9 @@ class SessionManager:
         session = new_session(title=title, project_id=project_id, mode=mode,
                               provider=provider, model=model,
                               context_limit=int(settings["context_limit"]))
+        effort = self._check_effort(effort)
+        if effort:
+            session["model"]["effort"] = effort
         scope: list[str] = []
         if project_id:
             try:
@@ -302,7 +314,7 @@ class SessionManager:
             current = dict(session["model"])
             value = fields.get("model")
             if isinstance(value, dict):
-                for key in ("provider", "model"):
+                for key in ("provider", "model", "effort"):
                     if key in value:
                         current[key] = value[key]
             elif "model" in fields:
@@ -310,7 +322,8 @@ class SessionManager:
             if "provider" in fields:
                 current["provider"] = fields["provider"]
             provider, model = self._check_model(current.get("provider"), current.get("model"))
-            session["model"] = {"provider": provider, "model": model}
+            effort = self._check_effort(current.get("effort"))
+            session["model"] = {"provider": provider, "model": model, **({"effort": effort} if effort else {})}
         if fields.get("mode") is not None:
             if rt.parent is not None:
                 raise ValueError("subagent sessions cannot be reconfigured")
@@ -568,7 +581,8 @@ class SessionManager:
                 provider, model = self._check_model(head, tail or None)
             else:
                 provider, model = self._check_model(session["model"].get("provider"), arguments.strip())
-            session["model"] = {"provider": provider, "model": model}
+            session["model"] = {"provider": provider, "model": model,
+                                **({"effort": session["model"]["effort"]} if session["model"].get("effort") else {})}
             rt.emit("session.updated", rt.public())
             return note(f"Model set to {provider or '(default provider)'}{':' + model if model else ''}.")
         if name == "clear":

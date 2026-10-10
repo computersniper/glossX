@@ -625,7 +625,8 @@ async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
     try:
         with providers.harness_session(session, lambda reason: add_note(rt, "cache_reset", f"Prompt cache reset: {reason}.", reason=reason)):
             async for chunk in providers.stream(system, messages, provider=model.get("provider") or None,
-                                                model=model.get("model") or None):
+                                                model=model.get("model") or None,
+                                                effort=model.get("effort") or None):
                 if not chunk:
                     continue
                 raw += chunk

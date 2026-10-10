@@ -388,7 +388,7 @@ function RecentMenu({ zh, close }: { zh: boolean; close: () => void }) {
           type="button"
           onClick={() => {
             close();
-            useStore.getState().setLayout({ activity: "threads", sideOpen: true });
+            useStore.getState().setLayout({ aiOpen: true, aiMode: "threads" });
             useSessions.getState().setSideView("threads");
           }}
         >
@@ -521,7 +521,7 @@ function SessionBar({ zh }: { zh: boolean }) {
         className="gx-icon-btn gx-bell-btn"
         title={zh ? `全部对话（${count}）${unread ? ` · ${unread} 个未读` : ""}` : `All threads (${count})${unread ? ` · ${unread} unread` : ""}`}
         onClick={() => {
-          useStore.getState().setLayout({ activity: "threads", sideOpen: true });
+          useStore.getState().setLayout({ aiOpen: true, aiMode: "threads" });
           useSessions.getState().setSideView(unread ? "inbox" : "threads");
         }}
       >

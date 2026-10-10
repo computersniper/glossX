@@ -21,6 +21,7 @@ class ModelBody(BaseModel):
 
     provider: str | None = Field(default=None, max_length=64)
     model: str | None = Field(default=None, max_length=120)
+    effort: str | None = Field(default=None, max_length=16)
 
 
 class SessionCreateBody(BaseModel):
@@ -29,6 +30,7 @@ class SessionCreateBody(BaseModel):
     mode: Mode | None = None
     provider: str | None = Field(default=None, max_length=64)
     model: str | None = Field(default=None, max_length=120)
+    effort: str | None = Field(default=None, max_length=16)
     # work on this workspace branch (created from the current commit when new)
     branch: str | None = Field(default=None, max_length=100)
     # the paper in the active tab: scopes the session to it and, without a
@@ -129,7 +131,7 @@ async def create_session(request: Request, body: SessionCreateBody | None = None
         branch = await manager.prepare_branch(project_id, body.branch)
         return manager.create(title=body.title, project_id=project_id,
                               mode=body.mode, provider=body.provider, model=body.model,
-                              branch=branch, paper_id=paper_id)
+                              effort=body.effort, branch=branch, paper_id=paper_id)
     except vcs.VcsError as error:
         return JSONResponse({"detail": str(error), "code": error.code, **error.extra},
                             status_code=409)

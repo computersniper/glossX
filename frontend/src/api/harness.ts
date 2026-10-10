@@ -224,10 +224,10 @@ export const sessionsApi = {
   /** Mark a thread as seen: clears `unread` and a non-blocking `attention`. */
   read: (id: string) => request<SessionSummary | undefined>(`${S(id)}/read`, { method: "POST", json: {} }),
   inboxSummary: () => request<any>("/api/sessions/inbox/summary").then(normalizeInbox),
-  create: (body: { title?: string; project_id?: string | null; mode?: SessionMode; provider?: string | null; model?: string | null; branch?: string | null }) =>
+  create: (body: { title?: string; project_id?: string | null; mode?: SessionMode; provider?: string | null; model?: string | null; effort?: string | null; branch?: string | null }) =>
     request<SessionSummary>("/api/sessions", { method: "POST", json: clean(body) }),
   get: (id: string) => request<SessionSummary & { messages?: SessionMessage[]; todos?: unknown[] }>(S(id)),
-  patch: (id: string, body: { title?: string; mode?: SessionMode; model?: string | { provider?: string | null; model?: string | null } }) =>
+  patch: (id: string, body: { title?: string; mode?: SessionMode; model?: string | { provider?: string | null; model?: string | null; effort?: string | null } }) =>
     request<SessionSummary>(S(id), { method: "PATCH", json: body }),
   remove: (id: string) => request<unknown>(S(id), { method: "DELETE" }),
   /** Copy the session up to and including `messageId` (the whole session when omitted). */

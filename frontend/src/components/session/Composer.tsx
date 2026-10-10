@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, AtSign, BookOpen, Compass, CornerDownLeft, Eye, FileCode, FileText, Map, Quote, ScrollText, Slash,
+  ArrowUp, AtSign, BookOpen, Brain, Compass, CornerDownLeft, Eye, FileCode, FileText, Map, Quote, ScrollText, Slash,
   Sparkles, Square, TextSelect, X, Zap, type LucideIcon,
 } from "lucide-react";
 import { harnessApi, type Attachment, type HarnessCommand, type Mention, type SessionMode } from "../../api/harness";
@@ -9,7 +9,7 @@ import { useActiveSession, useSessions } from "../../sessionStore";
 import { MenuButton, MenuItem, MenuLabel, MenuSep, Popover, Spinner } from "../ui";
 import { formatTokens } from "./toolMeta";
 import { CacheIndicator } from "./CacheUsage";
-import { useModelCatalog } from "../../modelCatalog";
+import { effortsFor, useModelCatalog } from "../../modelCatalog";
 
 export const MODES: { id: SessionMode; icon: LucideIcon; en: string; zh: string; hintEn: string; hintZh: string }[] = [
   { id: "ask", icon: Eye, en: "Ask", zh: "问答", hintEn: "Read-only: answers from papers and files", hintZh: "只读：基于论文与文件回答" },
@@ -92,56 +92,90 @@ function ContextMeter({ zh }: { zh: boolean }) {
   );
 }
 
-function ModelPicker({ zh }: { zh: boolean }) {
-  const catalog = useModelCatalog();
-  const providers = useStore((s) => s.providers);
-  const providerModels = useStore((s) => s.providerModels);
+/** The model list follows the channel picked in the bottom-left corner (or the
+ *  thread's own channel when it was started on another one). */
+function useChannel() {
   const defaultProvider = useStore((s) => s.provider);
   const model = useSessions((s) => s.draft.model);
+  return { provider: model.provider || defaultProvider, model };
+}
+
+function ModelPicker({ zh }: { zh: boolean }) {
+  const catalog = useModelCatalog();
+  const providerModels = useStore((s) => s.providerModels);
   const setModel = useSessions((s) => s.setModel);
-  const name = (p: string) => PROVIDER_LABEL[p] || p;
-  const current = model.provider ? name(model.provider) : name(defaultProvider);
-  const sub = model.model || providerModels[model.provider || defaultProvider] || "";
+  const { provider, model } = useChannel();
+  const fallback = providerModels[provider] || "";
+  const models = catalog.models[provider] || [];
+  const labelOf = (id: string) => models.find((m) => m.id === id)?.label || id;
+  const shown = model.model ? labelOf(model.model) : fallback ? labelOf(fallback) : zh ? "默认模型" : "Default model";
+  const pick = (id: string | null) => {
+    const efforts = effortsFor(catalog, provider, id || fallback);
+    void setModel({ provider: model.provider, model: id, effort: model.effort && efforts.includes(model.effort) ? model.effort : null });
+  };
   return (
     <MenuButton
       className="gx-pill quiet"
       placement="top-start"
-      width={250}
-      title={zh ? "模型" : "Model"}
-      label={<span className="gx-pill-text">{current}{sub && <em>{sub}</em>}</span>}
+      width={260}
+      title={zh ? `模型（渠道：${PROVIDER_LABEL[provider] || provider}，在左下角切换）` : `Model (channel: ${PROVIDER_LABEL[provider] || provider}; switch it in the bottom-left corner)`}
+      label={<span className="gx-pill-text">{shown}</span>}
     >
       {(close) => (
         <>
-          <MenuLabel>{zh ? "模型" : "Model"}</MenuLabel>
+          <MenuLabel>{zh ? `${PROVIDER_LABEL[provider] || provider} 的模型` : `${PROVIDER_LABEL[provider] || provider} models`}</MenuLabel>
           <MenuItem
-            label={zh ? "跟随默认" : "Default"}
-            detail={`${name(defaultProvider)}${providerModels[defaultProvider] ? ` · ${providerModels[defaultProvider]}` : ""}`}
-            selected={!model.provider}
-            onSelect={() => {
-              close();
-              void setModel({ provider: null, model: null });
-            }}
+            label={zh ? "默认模型" : "Default model"}
+            detail={fallback || (zh ? "由渠道决定" : "Chosen by the channel")}
+            selected={!model.model}
+            onSelect={() => { close(); pick(null); }}
           />
+          {models.length > 0 && <MenuSep />}
+          {models.map((m) => <MenuItem key={m.id} label={m.label || m.id} detail={m.id !== (m.label || m.id) ? m.id : m.custom ? (zh ? "自定义" : "Custom") : undefined} selected={model.model === m.id} onSelect={() => { close(); pick(m.id); }} />)}
           <MenuSep />
-          {(providers.length ? providers : [defaultProvider]).map((p) => (
-            <MenuItem
-              key={p}
-              label={name(p)}
-              detail={providerModels[p] || p}
-              selected={model.provider === p}
-              onSelect={() => {
-                close();
-                void setModel({ provider: p, model: providerModels[p] || null });
-              }}
-            />
-          ))}
-          <MenuSep />
-          {(catalog.models[model.provider || defaultProvider] || []).map((m) => <MenuItem key={m.id} label={m.label || m.id} detail={m.id} selected={model.model === m.id} onSelect={() => { close(); void setModel({ provider: model.provider || defaultProvider, model: m.id }); }} />)}
-          <MenuItem label={zh ? "自定义模型…" : "Custom model…"} onSelect={() => { close(); const value = prompt(zh ? "模型ID（留空使用默认）" : "Model id (blank uses the default)", model.model || ""); if (value !== null) void setModel({ provider: model.provider || defaultProvider, model: value.trim() || null }); }} />
+          <MenuItem label={zh ? "自定义模型…" : "Custom model…"} onSelect={() => { close(); const value = prompt(zh ? "模型ID（留空使用默认）" : "Model id (blank uses the default)", model.model || ""); if (value !== null) pick(value.trim() || null); }} />
+          <MenuItem label={zh ? "管理模型…" : "Manage models…"} detail={zh ? "设置 › 模型" : "Settings › Models"} onSelect={() => { close(); openModelSettings(); }} />
         </>
       )}
     </MenuButton>
   );
+}
+
+const EFFORT_LABEL: Record<string, [string, string]> = {
+  minimal: ["Minimal", "极低"], low: ["Low", "低"], medium: ["Medium", "中"], high: ["High", "高"], xhigh: ["Extra high", "超高"], max: ["Max", "最高"],
+};
+
+function EffortPicker({ zh }: { zh: boolean }) {
+  const catalog = useModelCatalog();
+  const providerModels = useStore((s) => s.providerModels);
+  const setModel = useSessions((s) => s.setModel);
+  const { provider, model } = useChannel();
+  const efforts = effortsFor(catalog, provider, model.model || providerModels[provider]);
+  if (!efforts.length) return null;
+  const name = (e: string) => EFFORT_LABEL[e]?.[zh ? 1 : 0] || e;
+  return (
+    <MenuButton
+      className="gx-pill quiet"
+      placement="top-start"
+      width={200}
+      title={zh ? "推理强度" : "Reasoning effort"}
+      label={<span className="gx-pill-text"><Brain size={12} />{model.effort ? name(model.effort) : zh ? "默认" : "Default"}</span>}
+    >
+      {(close) => (
+        <>
+          <MenuLabel>{zh ? "推理强度" : "Reasoning effort"}</MenuLabel>
+          <MenuItem label={zh ? "默认" : "Default"} detail={zh ? "使用设置里的默认值" : "Use the default from Settings"} selected={!model.effort} onSelect={() => { close(); void setModel({ ...model, effort: null }); }} />
+          <MenuSep />
+          {efforts.map((e) => <MenuItem key={e} label={name(e)} detail={e} selected={model.effort === e} onSelect={() => { close(); void setModel({ ...model, effort: e }); }} />)}
+        </>
+      )}
+    </MenuButton>
+  );
+}
+
+function openModelSettings() {
+  useStore.getState().setLayout({ activity: "settings", sideOpen: true });
+  setTimeout(() => document.getElementById("settings-models")?.scrollIntoView({ block: "start", behavior: "smooth" }), 80);
 }
 
 function ModePicker({ zh }: { zh: boolean }) {
@@ -499,6 +533,7 @@ export function Composer({ disabled }: { disabled?: boolean }) {
       <div className="gx-composer-bar">
         <ModePicker zh={zh} />
         <ModelPicker zh={zh} />
+        <EffortPicker zh={zh} />
         <button
           type="button"
           className="gx-icon-btn"

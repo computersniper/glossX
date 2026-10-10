@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type AiUsageSummary } from "../api/client";
 import { useStore } from "../store";
-import { ModelOptions, useModelCatalog } from "../modelCatalog";
+import { PROVIDER_EFFORTS, effortsFor, refreshModelCatalog, useModelCatalog } from "../modelCatalog";
 import { ThemePicker } from "./ThemePicker";
 import { PdfModeToggle } from "./PdfModeToggle";
 import { FeatureSettingsEditor } from "./FeatureSettingsEditor";
@@ -17,10 +17,6 @@ const LANGS = [
   "Español",
 ];
 
-// reasoning-depth options per local CLI (controlled via the standard CLI flags)
-const CLAUDE_EFFORT = ["", "low", "medium", "high", "xhigh", "max"];
-const CODEX_EFFORT = ["", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
-const CLAUDE_MODELS = ["sonnet", "opus", "haiku"];
 // [English name, Chinese name, English hint, Chinese hint]
 const PROVIDER_NAMES: Record<string, [string, string, string, string]> = {
   local_claude: ["Claude Code (local CLI)", "Claude Code（本机 CLI）", "Uses your local claude login; no API key", "使用本机 claude 的登录，无需 API key"],
@@ -30,7 +26,6 @@ const PROVIDER_NAMES: Record<string, [string, string, string, string]> = {
 };
 
 export function SettingsPanel() {
-  const catalog = useModelCatalog();
   const loadSettings = useStore((s) => s.loadSettings);
   const notify = useStore((s) => s.notify);
   const uiLang = useStore((s) => s.uiLang);
@@ -106,6 +101,7 @@ export function SettingsPanel() {
         paper_workspace_root: cfg.paper_workspace_root || "",
       });
       await loadSettings();
+      void refreshModelCatalog();
       if (checkConnection) await checkProvider(cfg.provider);
       notify("Settings saved");
     } finally {
@@ -235,6 +231,8 @@ export function SettingsPanel() {
         )}
       </div>
 
+      <ModelsSection cfg={cfg} providers={allProviders.filter((p) => cfg.providers?.[p]?.enabled !== false)} setProv={setProv} zh={uiLang === "zh"} />
+
       <label>Answer language (summary / explain / chat)</label>
       <select
         value={cfg.output_language}
@@ -296,45 +294,13 @@ export function SettingsPanel() {
 
       <ConnectionsSection />
 
-      <div className="adv-head">Advanced — local CLI models &amp; thinking depth</div>
-
-      <fieldset>
-        <legend>local_claude — subscription (no key)</legend>
-        <label>model</label>
-        <input list="claude-models" value={cfg.providers.local_claude.model}
-          onChange={(e) => setProv("local_claude", "model", e.target.value)} />
-        <datalist id="claude-models">
-          {CLAUDE_MODELS.map((m) => <option key={m} value={m} />)}
-        </datalist>
-        <label>thinking depth (--effort)</label>
-        <select value={cfg.providers.local_claude.effort || ""}
-          onChange={(e) => setProv("local_claude", "effort", e.target.value)}>
-          {CLAUDE_EFFORT.map((v) => <option key={v} value={v}>{v || "(default)"}</option>)}
-        </select>
-      </fieldset>
-
-      <fieldset>
-        <legend>local_codex — ChatGPT subscription (no key)</legend>
-        <label>model (blank = codex default)</label>
-        <input list="codex-model-suggestions" value={cfg.providers.local_codex?.model || ""}
-          onChange={(e) => setProv("local_codex", "model", e.target.value)} />
-        <ModelOptions id="codex-model-suggestions" provider="local_codex" />
-        <p className="usage-note">{uiLang === "zh" ? "模型是否可用取决于账号和接入端点。可选择建议、输入自定义ID或留空；使用上方连接测试核实。" : "Availability depends on your account and endpoint. Pick a suggestion, enter a custom id, or leave blank. Verify with the connection test above."}</p>
-        <label>reasoning effort (model_reasoning_effort)</label>
-        <select value={cfg.providers.local_codex?.effort || ""}
-          onChange={(e) => setProv("local_codex", "effort", e.target.value)}>
-          {[...new Set(["", ...(catalog.models.local_codex?.find((m) => m.id === cfg.providers.local_codex?.model)?.reasoning_efforts || CODEX_EFFORT), cfg.providers.local_codex?.effort || ""])].map((v) => <option key={v} value={v}>{v || "(default)"}</option>)}
-        </select>
-      </fieldset>
+      <div className="adv-head">{uiLang === "zh" ? "API 连接" : "API connections"}</div>
 
       <fieldset>
         <legend>anthropic API</legend>
         <label>base_url</label>
         <input value={cfg.providers.anthropic.base_url || ""} placeholder="https://api.anthropic.com"
           onChange={(e) => setProv("anthropic", "base_url", e.target.value)} />
-        <label>model</label>
-        <input value={cfg.providers.anthropic.model}
-          onChange={(e) => setProv("anthropic", "model", e.target.value)} />
         <label>api key</label>
         <input type="password" placeholder={cfg.providers.anthropic.api_key === "set" ? "•••• saved" : "sk-ant-…"}
           onChange={(e) => setProv("anthropic", "api_key", e.target.value)} />
@@ -345,10 +311,6 @@ export function SettingsPanel() {
         <label>base_url</label>
         <input value={cfg.providers.openai.base_url}
           onChange={(e) => setProv("openai", "base_url", e.target.value)} />
-        <label>model</label>
-        <input list="openai-model-suggestions" value={cfg.providers.openai.model}
-          onChange={(e) => setProv("openai", "model", e.target.value)} />
-        <ModelOptions id="openai-model-suggestions" provider="openai" />
         <label>api key</label>
         <input type="password" placeholder={cfg.providers.openai.api_key === "set" ? "•••• saved" : "sk-…"}
           onChange={(e) => setProv("openai", "api_key", e.target.value)} />
@@ -358,5 +320,57 @@ export function SettingsPanel() {
         {saving ? "Saving…" : "Save settings"}
       </button>
     </div>
+  );
+}
+
+/** Settings › Models: per channel, the default model, the default reasoning
+ *  effort, and extra model ids that show up in the composer's model list. */
+function ModelsSection({ cfg, providers, setProv, zh }: { cfg: any; providers: string[]; setProv: (name: string, field: string, val: any) => void; zh: boolean }) {
+  const catalog = useModelCatalog();
+  const [adding, setAdding] = useState<Record<string, string>>({});
+  return (
+    <section className="settings-models" id="settings-models" aria-label={zh ? "模型设置" : "Models"}>
+      <div className="adv-head">{zh ? "模型设置" : "Models"}</div>
+      <p className="usage-note">{zh ? "在左下角切换渠道后，输入框的模型列表会换成该渠道的模型。这里设置每个渠道的默认模型、默认推理强度，以及额外的自定义模型。" : "Switching the channel in the bottom-left corner swaps the composer's model list. Set each channel's default model, default reasoning effort and extra custom models here."}</p>
+      {providers.map((p) => {
+        const pc = cfg.providers?.[p] || {};
+        const custom: string[] = Array.isArray(pc.models) ? pc.models : [];
+        const suggested = (catalog.models[p] || []).filter((m) => !m.custom);
+        const ids = [...new Set([...suggested.map((m) => m.id), ...custom, pc.model || ""].filter(Boolean))];
+        const efforts = effortsFor(catalog, p, pc.model);
+        const add = () => {
+          const id = (adding[p] || "").trim();
+          if (!id || custom.includes(id)) return;
+          setProv(p, "models", [...custom, id]);
+          setAdding((a) => ({ ...a, [p]: "" }));
+        };
+        return (
+          <fieldset key={p}>
+            <legend>{PROVIDER_NAMES[p]?.[zh ? 1 : 0] || p}</legend>
+            <label>{zh ? "默认模型" : "Default model"}</label>
+            <select value={pc.model || ""} onChange={(e) => setProv(p, "model", e.target.value)}>
+              <option value="">{zh ? "（渠道默认）" : "(channel default)"}</option>
+              {ids.map((id) => <option key={id} value={id}>{suggested.find((m) => m.id === id)?.label || id}</option>)}
+            </select>
+            {PROVIDER_EFFORTS[p] && (
+              <>
+                <label>{zh ? "默认推理强度" : "Default reasoning effort"}</label>
+                <select value={pc.effort || ""} onChange={(e) => setProv(p, "effort", e.target.value)}>
+                  {[...new Set(["", ...efforts, pc.effort || ""])].map((v) => <option key={v} value={v}>{v || (zh ? "（CLI 默认）" : "(CLI default)")}</option>)}
+                </select>
+              </>
+            )}
+            <label>{zh ? "自定义模型" : "Custom models"}</label>
+            <div className="settings-model-chips">
+              {custom.map((id) => (
+                <span key={id} className="settings-model-chip">{id}<button type="button" title={zh ? "移除" : "Remove"} onClick={() => setProv(p, "models", custom.filter((x) => x !== id))}>×</button></span>
+              ))}
+              <input value={adding[p] || ""} placeholder={zh ? "输入模型 ID，回车添加" : "Model id, Enter to add"} onChange={(e) => setAdding((a) => ({ ...a, [p]: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} />
+            </div>
+          </fieldset>
+        );
+      })}
+      <p className="usage-note">{zh ? "模型是否可用取决于账号和接入端点，保存后可用上方的连通性测试核实。" : "Availability depends on your account and endpoint; verify with the connection test above after saving."}</p>
+    </section>
   );
 }
