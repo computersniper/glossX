@@ -182,7 +182,13 @@ export function HarnessSettings() {
   async function load() {
     setState("loading");
     try {
-      const s = await harnessApi.getSettings(useStore.getState().agentProjectId);
+      // The editor saves global settings; project values are read only for paths.
+      const s = await harnessApi.getSettings();
+      const scoped = useStore.getState().agentProjectId;
+      if (scoped) {
+        const effective = await harnessApi.getSettings(scoped).catch(() => null);
+        if (effective?.paths) s.paths = effective.paths;
+      }
       setSaved(s);
       setCfg(s);
       setState("ok");
@@ -204,7 +210,10 @@ export function HarnessSettings() {
   const vcsPhase = useVcsEntry(projectId).phase;
   // the project config location follows the active project
   useEffect(() => {
-    if (state === "ok" && !dirty) void harnessApi.getSettings(projectId).then((s) => { setSaved(s); setCfg(s); }).catch(() => {});
+    if (state === "ok") void harnessApi.getSettings(projectId).then((s) => {
+      setSaved((prev) => prev ? { ...prev, paths: s.paths } : prev);
+      setCfg((prev) => prev ? { ...prev, paths: s.paths } : prev);
+    }).catch(() => {});
   }, [projectId]);
 
   const dirty = useMemo(() => !!cfg && !!saved && JSON.stringify(cfg) !== JSON.stringify(saved), [cfg, saved]);
@@ -223,8 +232,9 @@ export function HarnessSettings() {
       };
       if (cfg.vcs) clean.vcs = cfg.vcs;
       const next = await harnessApi.putSettings(clean);
-      setSaved(next);
-      setCfg(next);
+      const displayed = { ...next, paths: cfg.paths };
+      setSaved(displayed);
+      setCfg(displayed);
       notify(zh ? "智能体设置已保存" : "Harness settings saved");
       void harnessApi.tools(undefined, { projectId: useStore.getState().agentProjectId }).then(setTools).catch(() => {});
     } catch (e: any) {
@@ -255,6 +265,7 @@ export function HarnessSettings() {
 
   return (
     <div className="gx-settings">
+      <p className="gx-set-scope">{zh ? "这里编辑全局设置。项目 .glossx/settings.json 中的覆盖设置仍会优先应用。" : "Edit global settings here. Overrides in a project’s .glossx/settings.json still take precedence."}</p>
       <section className="gx-set">
         <h4>{zh ? "默认模式" : "Default mode"}</h4>
         <p>{zh ? "新对话开始时使用的模式。" : "The mode a new chat starts in."}</p>

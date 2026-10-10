@@ -86,6 +86,11 @@ def main() -> None:
             for approval in snapshot.get("pending_approvals", []):
                 call_id = approval["tool_call_id"]
                 if call_id not in approved:
+                    summary = api("GET", "/api/sessions/inbox/summary")
+                    check("pending approval is counted in the live inbox", summary["blocking"] >= 1)
+                    api("POST", f"/api/sessions/{sid}/read", json={})
+                    check("reading keeps an unresolved approval visible",
+                          api("GET", f"/api/sessions/{sid}")["attention"] == "approval")
                     api("POST", f"/api/sessions/{sid}/approvals/{call_id}", json={"decision": "once"})
                     approved.add(call_id)
                     print("Approved", approval.get("tool"), flush=True)
@@ -95,10 +100,16 @@ def main() -> None:
         else:
             raise TimeoutError("real Codex turn exceeded 900 seconds")
         messages = snapshot.get("messages", [])
+        errors = [m.get("error") for m in messages if m.get("type") == "assistant" and m.get("error")]
+        if errors:
+            raise AssertionError("real Codex model call failed: " + "; ".join(errors))
+        check("real Codex completed without model errors", snapshot.get("attention") == "done")
         report["tools"] = [{"tool": m["tool"], "status": m["status"], "error": m.get("error")}
                            for m in messages if m.get("type") == "tool_call"]
         check("real Codex tools completed successfully", report["tools"] and
               all(m["status"] == "done" for m in report["tools"]))
+        check("real Codex used write, read and version-control tools",
+              {m["tool"] for m in report["tools"]} >= {"fs_write", "fs_read", "vcs_status"})
         check("real Codex wrote and read the requested note",
               api("GET", workspace + "/file", params={"path": "notes/verified.txt"})["content"]
               == "real codex verified\n")
@@ -109,6 +120,21 @@ def main() -> None:
         report["auto_commit"] = turn_commit["id"]
         check("workspace is clean after the turn", api("GET", vcs + "/status")["clean"])
         check("completed thread is unread in the inbox", snapshot["unread"] and snapshot["attention"] == "done")
+        with client.stream("GET", "/api/sessions/inbox/events", timeout=10) as stream:
+            stream.raise_for_status()
+            event = None
+            for line in stream.iter_lines():
+                if line.startswith("event:"):
+                    event = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    streamed = json.loads(line.split(":", 1)[1])
+                    check("inbox SSE replays its current summary",
+                          event == "inbox.updated" and streamed["unread"] >= 1)
+                    break
+            else:
+                raise AssertionError("inbox SSE ended before its summary")
+        check("opening inbox SSE does not mark the thread read",
+              api("GET", f"/api/sessions/{sid}")["unread"])
         inbox = api("GET", "/api/sessions", params={"view": "inbox"})
         check("inbox contains the completed thread", any(item["id"] == sid for item in inbox))
         api("POST", f"/api/sessions/{sid}/read", json={})

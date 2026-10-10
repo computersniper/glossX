@@ -13,8 +13,6 @@ import { EmptyState, Spinner } from "../ui";
 import { BranchChip } from "./ThreadsView";
 import { NoGit, StatusLetter, commitCache } from "./ScmView";
 
-/** git's empty tree: diffing against it shows a root commit as "everything added". */
-
 type Section = { path: string; oldPath: string; status: string; binary: boolean; text: string; rows: DiffRow[]; added: number; removed: number };
 
 function sectionsOf(diff: string): Section[] {

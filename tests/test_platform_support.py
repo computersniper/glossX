@@ -237,8 +237,13 @@ def test_provider_process_termination_reaps_process_tree(tmp_path: Path, platfor
     async def exercise() -> None:
         pid_file = tmp_path / "child.pid"
         alive_file = tmp_path / "child-survived.txt"
+        release_file = tmp_path / "release-child"
+        ready_file = tmp_path / "child-ready"
         child_code = (
-            "import pathlib,time; time.sleep(1); "
+            "import pathlib,time; "
+            f"pathlib.Path({str(ready_file)!r}).write_text('ready'); "
+            f"release=pathlib.Path({str(release_file)!r}); "
+            "exec('while not release.exists(): time.sleep(0.01)'); "
             f"pathlib.Path({str(alive_file)!r}).write_text('alive')"
         )
         parent_code = (
@@ -256,13 +261,14 @@ def test_provider_process_termination_reaps_process_tree(tmp_path: Path, platfor
             **platform_support.subprocess_group_options(),
         )
         for _ in range(50):
-            if pid_file.exists():
+            if pid_file.exists() and ready_file.exists():
                 break
             await asyncio.sleep(0.02)
-        assert pid_file.exists(), "parent did not start its child"
+        assert pid_file.exists() and ready_file.exists(), "parent and child handshake failed"
         await platform_support.terminate_process_tree(process)
         assert process.returncode is not None
-        await asyncio.sleep(1.2)
+        release_file.write_text("release", encoding="utf-8")
+        await asyncio.sleep(0.5)
         assert not alive_file.exists(), "provider descendant survived timeout cleanup"
 
     asyncio.run(exercise())

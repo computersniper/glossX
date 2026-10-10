@@ -289,7 +289,7 @@ def nested_authorizer(ctx: HarnessContext):
         spec = rt.turn_tools.get(tool)
         reason = str(approval.get("reason") or "")
         if spec is not None:
-            decision, why = permissions.decide(spec, args, rt.session["mode"], settings_mod.load(),
+            decision, why = permissions.decide(spec, args, rt.session["mode"], settings_mod.load(_workspace(rt)[1]),
                                                conn_mod.auto_approve())
             if decision == "allow":
                 return True, ""
@@ -469,6 +469,13 @@ async def _run_call(rt: Runtime, table: dict[str, ToolSpec], call: dict[str, Any
         _finish_call(rt, call, "error", f"invalid arguments: {problem}. Expected: "
                      + json.dumps(spec.parameters.get("properties") or {}, ensure_ascii=False)[:1500])
         return
+    key, root = _workspace(rt)
+    if spec.workspace_write and spec.primary_arg == "path":
+        try:
+            args["path"] = workspace.relpath(root, workspace.resolve(root, args.get("path")))
+        except workspace.WorkspaceError as error:
+            _finish_call(rt, call, "error", str(error))
+            return
     call["args"] = args
     decision, reason = permissions.decide(spec, args, mode, settings, conn_mod.auto_approve())
     if decision == "unavailable":
@@ -491,7 +498,7 @@ async def _run_call(rt: Runtime, table: dict[str, ToolSpec], call: dict[str, Any
             return
     if decision == "ask":
         preview = _edit_preview(spec, args, root)
-        suggested = None if spec.category == "plan" else permissions.suggest_rule(spec.name, primary)
+        suggested = None if spec.category == "plan" or permissions.protects_config(spec, primary) else permissions.suggest_rule(spec.name, primary)
         update_call(rt, call, status="awaiting_approval", approval_reason=reason,
                     **({"preview": preview} if preview else {}))
         verdict, feedback = await await_approval(
@@ -644,7 +651,7 @@ async def run_turn(rt: Runtime, *, agent: dict[str, Any] | None = None,
     info: dict[str, Any] = {"stop_reason": "completed", "rounds": 0, "message_id": None,
                             "cancelled": False}
     last_assistant: dict[str, Any] | None = None
-    settings = settings_mod.load()
+    settings = settings_mod.load(_workspace(rt)[1])
     try:
         with providers.call_meter(meter), providers.usage_context("agent"):
             session["context"]["limit"] = int(settings.get("context_limit") or 120_000)
@@ -658,7 +665,7 @@ async def run_turn(rt: Runtime, *, agent: dict[str, Any] | None = None,
             budget = int(max_rounds or settings.get("max_tool_rounds") or 25)
             compacted_at = -1
             while True:
-                settings = settings_mod.load()
+                settings = settings_mod.load(_workspace(rt)[1])
                 table = build_table(
                     registry, mode=session["mode"], has_project=bool(session.get("project_id")),
                     allowlist=None if agent is None or "*" in (agent.get("tools") or ["*"])
@@ -749,7 +756,7 @@ def finish_turn(rt: Runtime, info: dict[str, Any]) -> None:
     rt.emit("turn.completed", {
         "session_id": rt.id, "stop_reason": info.get("stop_reason"),
         "rounds": info.get("rounds", 0), "message_id": info.get("message_id"),
-        "error": info.get("error"), "status": rt.session["status"],
+        "error": info.get("error"), "status": rt.session["status"], "commit": info.get("commit"),
         "usage": dict(rt.session["usage"]), "context": dict(rt.session["context"]),
     })
     rt.persist()
@@ -759,6 +766,8 @@ async def drive_turn(rt: Runtime) -> dict[str, Any]:
     """Task body of a root session turn (never raises)."""
     info: dict[str, Any] = {"stop_reason": "error", "rounds": 0}
     try:
+        from . import vcs
+        await asyncio.to_thread(vcs.ensure_repo_quietly, _workspace(rt)[0])
         info = await run_turn(rt)
     except asyncio.CancelledError:  # cancelled before run_turn's own handler was armed
         info = {"stop_reason": "interrupted", "rounds": 0, "cancelled": True}
@@ -768,6 +777,27 @@ async def drive_turn(rt: Runtime) -> dict[str, Any]:
         info = {"stop_reason": "error", "rounds": 0, "error": err(error)}
         rt.emit("error", {"message": err(error), "session_id": rt.id, "message_id": None})
     finally:
+        try:
+            from . import vcs
+            key, root = _workspace(rt)
+            if settings_mod.load(root).get("vcs", {}).get("auto_commit", True):
+                users = [m for m in rt.session["messages"] if m.get("type") == "user"]
+                message = vcs.turn_message(rt.session["title"], (users[-1] if users else {}).get("text", ""), rt.id, len(users))
+                committing = asyncio.create_task(asyncio.to_thread(vcs.auto_commit, key, message))
+                # Cancelling the await cannot stop a git subprocess in its worker
+                # thread. Keep the workspace busy until that worker finishes.
+                while not committing.done():
+                    try:
+                        await asyncio.shield(committing)
+                    except asyncio.CancelledError:
+                        info.update(stop_reason="interrupted", cancelled=True)
+                made = committing.result()
+                if made:
+                    info["commit"] = made
+                    add_note(rt, "commit", f"Committed {made['short']}", commit=made)
+            rt.session["branch"] = vcs.head_branch(root) or rt.session.get("branch")
+        except Exception:
+            logger.exception("auto-commit failed in session %s", rt.id)
         finish_turn(rt, info)
     return info
 

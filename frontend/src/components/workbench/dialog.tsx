@@ -41,6 +41,12 @@ export function DialogHost() {
     const target = box.current?.querySelector<HTMLElement>("[data-autofocus]") || box.current?.querySelector<HTMLElement>("button");
     target?.focus();
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Tab") {
+        const controls = [...(box.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex='0']") || [])];
+        const first = controls[0], last = controls[controls.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();

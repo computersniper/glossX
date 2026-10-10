@@ -84,7 +84,6 @@ def new_session(
         "subagent_type": subagent_type,
         "created_at": ts,
         "updated_at": ts,
-        "last_activity_at": ts, "last_viewed_at": ts, "unread": False, "attention": None, "branch": None,
         "mode": mode,
         "model": {"provider": provider or None, "model": model or None},
         "messages": [],
@@ -141,15 +140,6 @@ def recover(data: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("mode", "agent")
     data.setdefault("title", "New chat")
     data.setdefault("parent_id", None)
-    data.setdefault("last_activity_at", data.get("updated_at", now()))
-    data.setdefault("last_viewed_at", data.get("updated_at", now()))
-    data.setdefault("unread", False)
-    data.setdefault("attention", None)
-    data.setdefault("branch", None)
-    if data["attention"] in {"approval", "input"}:
-        data["attention"] = "error"
-        data["unread"] = True
-    # sessions saved before the inbox existed count as seen
     stamp = data.get("updated_at") or data.get("created_at") or now()
     data.setdefault("created_at", stamp)
     data.setdefault("updated_at", stamp)
@@ -254,12 +244,6 @@ def summary(session: dict[str, Any]) -> dict[str, Any]:
         "context": dict(session["context"]),
         "last_message": (last or {}).get("text", "")[:200],
         "forked_from": session.get("forked_from"),
-        "last_activity_at": session.get("last_activity_at", session["updated_at"]),
-        "last_viewed_at": session.get("last_viewed_at"),
-        "unread": session.get("unread", False), "attention": session.get("attention"),
-        "branch": session.get("branch"),
-        "preview": next((m.get("text", "")[:160] for m in reversed(session["messages"])
-                         if m.get("type") == "assistant" and m.get("text")), ""),
     }
 
 
@@ -310,22 +294,6 @@ class Runtime:
     # -- events -------------------------------------------------------------------
     def emit(self, name: str, payload: dict[str, Any]) -> None:
         changed = self._track(name, payload) if self.parent is None else False
-        activity = {"message.added", "message.completed", "tool.updated", "approval.requested", "input.requested", "turn.completed", "error"}
-        if name in activity:
-            self.session["last_activity_at"] = now()
-            if name == "approval.requested":
-                self.session["attention"] = "approval"
-            elif name == "input.requested":
-                self.session["attention"] = "input"
-            elif name == "error" or (name == "turn.completed" and payload.get("stop_reason") == "error"):
-                self.session["attention"] = "error"
-            elif name == "turn.completed":
-                self.session["attention"] = "done" if payload.get("stop_reason") == "completed" else None
-            if name != "message.added" or payload.get("type") != "user":
-                self.session["unread"] = True
-            save(self.session)
-            if hasattr(self.manager, "notify_inbox"):
-                self.manager.notify_inbox()
         self.seq += 1
         for q in list(self.subscribers):
             q.put_nowait((name, payload, self.seq))
@@ -365,6 +333,8 @@ class Runtime:
             # the user wrote here: they have seen everything up to now
             session.update(unread=False, attention=None, last_viewed_at=stamp)
         elif name in {"approval.requested", "input.requested"}:
+            session["unread"] = True
+        elif name in {"message.created", "message.completed", "tool.updated"}:
             session["unread"] = True
         elif name == "error":
             session.update(unread=True, attention="error")
@@ -452,10 +422,6 @@ class Runtime:
             status = "running"
         if status != self.session["status"]:
             self.session["status"] = status
-            if self.session.get("attention") in {"approval", "input"}:
-                self.session["attention"] = {"awaiting_approval": "approval", "awaiting_input": "input"}.get(status)
-                if hasattr(self.manager, "notify_inbox"):
-                    self.manager.notify_inbox()
             self.emit("session.updated", self.public())
         if self.parent is not None:
             self.parent.refresh_status()

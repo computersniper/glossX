@@ -152,6 +152,7 @@ def migrate(force: bool = False) -> dict[str, Any]:
             if legacy.is_file() and not config.GLOBAL_INSTRUCTIONS.exists():
                 shutil.copy2(legacy, config.GLOBAL_INSTRUCTIONS)
                 report["copied"].append("GLOSSX.md")
+            write_if_missing(config.GLOBAL_INSTRUCTIONS, "# Global GlossX instructions\n\nAdd personal instructions for every workspace here.\n")
             for name, src, dst in (("commands", config.LEGACY_COMMANDS_DIR, config.COMMANDS_DIR),
                                    ("agents", config.LEGACY_AGENTS_DIR, config.AGENTS_DIR)):
                 if src.resolve() != dst.resolve() and _copy_missing(src, dst):
@@ -161,6 +162,8 @@ def migrate(force: bool = False) -> dict[str, Any]:
                 if isinstance(raw, dict) and raw:
                     write_json_atomic(config.HARNESS_SETTINGS_PATH, raw)
                     report["copied"].append("settings.json")
+                else:
+                    write_json_atomic(config.HARNESS_SETTINGS_PATH, {})
         except Exception:  # a read-only home must not stop the server
             logger.exception("could not prepare the GlossX home %s", config.GLOSSX_HOME)
     return report

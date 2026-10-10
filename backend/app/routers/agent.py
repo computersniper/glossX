@@ -209,7 +209,7 @@ async def create_project(body: ProjectCreateBody):
         project = projects.create(body.name, body.description or "")
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
-    return {**project, "runs": []}
+    return {**projects.workspace_detail(project), "runs": []}
 
 
 @router.get("/projects/{project_id}")
@@ -284,13 +284,17 @@ class ProjectPaperBody(BaseModel):
 async def link_project_paper(project_id: str, body: ProjectPaperBody):
     try:
         return projects.link_paper(project_id, body.paper_id)
-    except LookupError as error:
+    except (LookupError, KeyError) as error:
         raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
 
 
 @router.delete("/projects/{project_id}/papers/{paper_id}")
 async def unlink_project_paper(project_id: str, paper_id: str):
     try:
         return projects.unlink_paper(project_id, paper_id)
-    except LookupError as error:
+    except (LookupError, KeyError) as error:
         raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error

@@ -578,6 +578,37 @@ async def _paper_read(args: dict[str, Any], ctx: HarnessContext) -> Any:
             "truncated": len(text) > max_chars}
 
 
+# -- version control -----------------------------------------------------------------
+def _vcs_handler(operation: str):
+    async def run(args: dict[str, Any], ctx: HarnessContext) -> Any:
+        from . import vcs
+        if ctx.runtime is not None and (operation in {"checkout", "merge"} or (operation == "branch" and args.get("checkout"))):
+            manager = ctx.runtime.manager
+            busy = [r for r in manager.busy_sessions(ctx.project_id) if r["id"] != ctx.runtime.root.id]
+            if busy:
+                raise vcs.VcsError("Another thread is working in this workspace; wait before changing its tree", "busy")
+        key = ctx.workspace_key
+        if operation == "status":
+            return await asyncio.to_thread(vcs.status, key)
+        if operation == "log":
+            return await asyncio.to_thread(vcs.log, key, branch=args.get("branch"), limit=_clamp(args.get("limit"), 50, 1, 500), path=args.get("path"))
+        if operation == "diff":
+            return await asyncio.to_thread(vcs.diff, key, from_rev=args.get("from"), to_rev=args.get("to"), path=args.get("path"))
+        if operation == "commit":
+            return await asyncio.to_thread(vcs.commit, key, _s(args, "message", limit=5000), args.get("paths"))
+        if operation == "branch":
+            result = await asyncio.to_thread(vcs.create_branch, key, _s(args, "name"), args.get("from"), checkout=bool(args.get("checkout")))
+        elif operation == "checkout":
+            result = await asyncio.to_thread(vcs.checkout, key, _s(args, "branch"), stash=bool(args.get("stash")), discard=bool(args.get("discard")))
+        else:
+            result = await asyncio.to_thread(vcs.merge, key, _s(args, "branch"))
+        if ctx.runtime:
+            ctx.runtime.session["branch"] = vcs.head_branch(ctx.workspace_root)
+            ctx.runtime.manager.workspace_changed(ctx.project_id)
+        return result
+    return run
+
+
 # -- registration ---------------------------------------------------------------------
 def _p(kind: str, desc: str, **extra: Any) -> dict[str, Any]:
     return {"type": kind, "description": desc, **extra}
@@ -601,7 +632,21 @@ def _cap(name: str, description: str, handler, category: str, props: dict[str, A
 
 def harness_capabilities() -> list[Capability]:
     path = _p("string", "path relative to the workspace root")
-    return [
+    vcs_caps = []
+    schemas = {
+        "status": ({}, []),
+        "log": ({"branch": _p("string", "branch or '*' for all branches"), "limit": _p("integer", "max commits"), "path": path}, []),
+        "diff": ({"from": _p("string", "base revision"), "to": _p("string", "target revision, omitted for working tree"), "path": path}, []),
+        "commit": ({"message": _p("string", "commit message"), "paths": _p("array", "paths to commit", items={"type": "string"})}, ["message"]),
+        "branch": ({"name": _p("string", "new branch name"), "from": _p("string", "base revision"), "checkout": _p("boolean", "also switch to new branch")}, ["name"]),
+        "checkout": ({"branch": _p("string", "existing branch"), "stash": _p("boolean", "stash changes before switching"), "discard": _p("boolean", "discard changes before switching")}, ["branch"]),
+        "merge": ({"branch": _p("string", "branch to merge into current")}, ["branch"]),
+    }
+    for name, (props, required) in schemas.items():
+        read = name in {"status", "log", "diff"}
+        vcs_caps.append(_cap("vcs_" + name, "Workspace git: " + name + ".", _vcs_handler(name), "read" if read else "exec", props, required,
+                             permissions=["workspace:read" if read else "code:execute"], always_ask=not read, parallel_safe=read))
+    return vcs_caps + [
         _cap("paper_read", "Read a library paper: metadata/outline/opening text, or a section by title, or pages (e.g. '3-5').",
              _paper_read, "read",
              {"paper_id": _p("string", "library paper id"),

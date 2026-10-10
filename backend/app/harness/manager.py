@@ -60,8 +60,6 @@ class SessionManager:
         self._streams_open = True
         self._inbox_subscribers: list[asyncio.Queue] = []
         self._inbox_seq = 0
-        self._inbox_subscribers: list[asyncio.Queue] = []
-        self._inbox_seq = 0
         self._inbox_scheduled = False
         for data in load_all():
             self._sessions[data["id"]] = Runtime(data, self)
@@ -79,59 +77,6 @@ class SessionManager:
     def session_data(self, session_id: Any) -> dict[str, Any] | None:
         rt = self._sessions.get(session_id) if isinstance(session_id, str) else None
         return rt.session if rt is not None else None
-
-    def require_workspace_idle(self, project_id: str | None, *, except_id: str | None = None) -> None:
-        key = workspace.key_for(project_id)
-        if any(rt.id != except_id and workspace.key_for(rt.session.get("project_id")) == key and rt.busy()
-               for rt in self._sessions.values()):
-            raise SessionBusyError("a session is running in this workspace; interrupt it before switching branches")
-
-    def inbox_summary(self) -> dict[str, Any]:
-        rows = self.list(view="inbox")
-        return {"unread": sum(bool(s["unread"]) for s in rows),
-                "blocking": sum(s["attention"] in {"approval", "input"} for s in rows),
-                "items": [{"session_id": s["id"], **{k: s.get(k) for k in
-                           ("title", "project", "attention", "last_activity_at", "preview")}} for s in rows[:20]]}
-
-    def notify_inbox(self) -> None:
-        self._inbox_seq += 1
-        if self._inbox_subscribers:
-            payload = self.inbox_summary()
-            for queue in self._inbox_subscribers:
-                queue.put_nowait(("inbox.updated", payload, self._inbox_seq))
-
-    def mark_read(self, session_id: str) -> dict[str, Any]:
-        rt = self._rt(session_id)
-        rt.session["last_viewed_at"] = now()
-        rt.session["unread"] = False
-        if rt.session.get("attention") not in {"approval", "input"}:
-            rt.session["attention"] = None
-        rt.persist()
-        self.notify_inbox()
-        rt.emit("session.updated", rt.public())
-        return rt.public()
-
-    def mark_all_read(self) -> dict[str, Any]:
-        for rt in self._sessions.values():
-            self.mark_read(rt.id)
-        return self.inbox_summary()
-
-    async def subscribe_inbox(self) -> AsyncIterator[tuple[str | None, Any, int]]:
-        queue: asyncio.Queue = asyncio.Queue()
-        self._inbox_subscribers.append(queue)
-        try:
-            yield "inbox.updated", self.inbox_summary(), self._inbox_seq
-            while self._streams_open:
-                try:
-                    item = await asyncio.wait_for(queue.get(), KEEPALIVE_SECONDS)
-                except (asyncio.TimeoutError, TimeoutError):
-                    yield None, None, 0
-                    continue
-                if item is None:
-                    return
-                yield item
-        finally:
-            self._inbox_subscribers.remove(queue)
 
     # -- validation -----------------------------------------------------------------------
     @staticmethod
@@ -275,9 +220,6 @@ class SessionManager:
             out.append(rt.public())
         if view == "inbox":
             return sorted(out, key=self._inbox_rank)
-        if view == "inbox":
-            return sorted(out, key=lambda s: (s.get("attention") not in {"approval", "input"},
-                                              not s.get("unread"), -s["last_activity_at"]))
         return sorted(out, key=lambda s: ((s.get("project") or {}).get("name", "").casefold(), -s["last_activity_at"]))
 
     def create(self, *, title: str | None = None, project_id: str | None = None,
@@ -306,6 +248,7 @@ class SessionManager:
             scope.insert(0, paper_id)
         session["scope_papers"] = scope[:30]
         session["branch"] = branch or vcs.head_branch(root)
+        vcs.ensure_repo_in_background(workspace.key_for(project_id))
         rt = Runtime(session, self)
         self._sessions[rt.id] = rt
         rt.persist()
@@ -384,7 +327,6 @@ class SessionManager:
             item.close_subscribers()
             self._sessions.pop(item.id, None)
             delete_files(item.id)
-        self.notify_inbox()
         self.inbox_changed()
 
     def fork(self, session_id: str, message_id: str | None) -> dict[str, Any]:
@@ -684,8 +626,6 @@ class SessionManager:
         """End every SSE stream (the server is about to stop: open event streams
         would otherwise keep it waiting for connections to close)."""
         self._streams_open = False
-        for queue in self._inbox_subscribers:
-            queue.put_nowait(None)
         for rt in list(self._sessions.values()):
             rt.close_subscribers()
         for q in list(self._inbox_subscribers):

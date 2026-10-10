@@ -158,9 +158,11 @@ export type Checkpoint = {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -184,13 +186,15 @@ async function request<T>(url: string, init?: RequestInit & { json?: unknown }):
   const text = await r.text();
   if (!r.ok) {
     let detail = text;
+    let code: string | undefined;
     try {
       const body = JSON.parse(text);
+      code = body?.detail?.code || body?.code;
       detail = typeof body?.detail === "string" ? body.detail : body?.detail ? JSON.stringify(body.detail) : text;
     } catch {
       /* plain text error */
     }
-    throw new ApiError(r.status, (detail || r.statusText).slice(0, 400));
+    throw new ApiError(r.status, (detail || r.statusText).slice(0, 400), code);
   }
   if (!text) return undefined as T;
   // an SPA fallback answers unknown routes with index.html: treat as "endpoint missing"

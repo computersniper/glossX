@@ -1,0 +1,50 @@
+{
+  "base": "http://127.0.0.1:8793",
+  "checks": [
+    "server uses the requested disposable data directory",
+    "agent home is isolated with the data directory",
+    "uploaded paper has its own project",
+    "paper project creation is idempotent",
+    "paper workspace has a clean main git repository",
+    "seed file GLOSSX.md",
+    "seed file notes/README.md",
+    "seed file .glossx/settings.json",
+    "pending approval is counted in the live inbox",
+    "reading keeps an unresolved approval visible",
+    "real Codex tools completed successfully",
+    "real Codex wrote and read the requested note",
+    "turn automatically committed with session and turn trailers",
+    "workspace is clean after the turn",
+    "completed thread is unread in the inbox",
+    "inbox SSE replays its current summary",
+    "opening inbox SSE does not mark the thread read",
+    "inbox contains the completed thread",
+    "viewing clears unread and completed attention",
+    "branch switches and fast-forward merge work",
+    "merged content survives read-back",
+    "restoring creates durable history and removes later files",
+    "internal checkpoints stay out of the explorer"
+  ],
+  "tools": [
+    {
+      "tool": "fs_write",
+      "status": "done",
+      "error": null
+    },
+    {
+      "tool": "fs_read",
+      "status": "done",
+      "error": null
+    },
+    {
+      "tool": "vcs_status",
+      "status": "done",
+      "error": null
+    }
+  ],
+  "paper_id": "861142210888",
+  "project_id": "d5aaf1ea609f4310",
+  "session_id": "273a9c43c29a48df",
+  "auto_commit": "0d0b1fe0e70d46ad55fdebfa2dab61d5ad9cc008",
+  "branch_commit": "d9409d1dd8905949d0605cafa3ec07490481b325"
+}

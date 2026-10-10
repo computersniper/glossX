@@ -108,3 +108,23 @@
 ## 更新记录
 
 - 第 1 次：建立日志，记录步骤 1–9（API 层、store、vcs store、对话框、纯函数与测试、对话视图、源代码管理视图）。尚未编译。
+
+## 恢复工作记录（2026-10-10，5ff29e3 基线之后）
+
+- 以最新目录恢复，保留所有旧 Claude 成果。会话/收件箱、论文项目、VCS标签页、分支、工具卡、命令面板、.glossx 已有功能代码。
+- 修设置作用域：编辑值来自全局GET；项目有效设置只取paths；全局PUT保存不会带入项目覆盖。界面明确说明全局与覆盖关系。
+- GLOSSX.md仅文件404时创建模板，其他错误直接显示。
+- 补齐新组件CSS：会话/收件箱、徽标、修改列表/提交图、分支与项目切换、提交diff页、确认框、项目论文、配置路径，使用现有主题令牌。
+- tsc通过，npm test 27/27通过。下一步build与真实后端+假provider深浅截图。
+
+## 最终前端验证（2026-10-10）
+
+此前第3/4/8节的“尚未完成”描述为首次中断时历史记录；当前清单已全部实现并接线。经典Gloss、所有新视图、设置、命令面板、VCS工具卡都已可构建。
+
+- 类型检查：npx tsc --noEmit -p . 通过。单元测试：npm test 27/27通过。Vite build通过。
+- 实际后端：端口8797，独立GLOSSX_HOME和数据目录 C:/Users/caijiechao/AppData/Local/Temp/glossx-frontend-20261010，复用旧live_server.py的假流式provider。没有接口mock，PDF通过上传接口建立论文项目。
+- Playwright真实点击并后端读回：手动提交及log、新建ui/browser分支、切main、dirty分支切换确认/取消保持分支、discard确认/取消保留文件、根提交diff、restore确认/取消、论文打开后激活独立论文项目、会话打开read清未读、设置全局作用域及本项目paths展示。页面错误0。
+- 深浅各9张截图：threads/inbox/changes/diff/commit/branches/palette/workspace/classic。截图在上述临时目录的shots2/。另有actions-diff/dirty-confirm/restore-confirm/paper-workspace/settings图。审图后修提交标记居中/无间距，修提交图宽度，补新会话分支选择器/最近会话页脚样式；重拍时明确等待正文加载完成并为changes添加真实dirty文件。
+- 补ApiError.code，后端busy409不会作为dirty409显示stash/discard；真实dirty或刷新确实有修改才显示选择。确认框添加Tab焦点循环。
+- 真实Codex验证由主agent负责；浏览器没有执行真实模型。浏览器restore只确认取消，不实际还原；主agent已从真实后端验证实际restore。浏览器merge/delete未点击，后端主agent已验证API。
+- 测试脚本位于临时目录的ui.cjs/actions.cjs/seed.py；fake provider全局QUEUE不是多会话隔离，并发模型任务会争用，截图及动作脚本只读模型已有记录。不要用于生产。

@@ -84,8 +84,7 @@ def _write(project: dict[str, Any]) -> None:
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(project, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, path)
-    from ..harness import home, workspace
-    home.write_memory(workspace.root_for(project["id"]), project.get("memory", []))
+    mirror_memory(project)
 
 
 def exists(project_id: str | None) -> bool:
@@ -127,11 +126,13 @@ def create(name: str, description: str = "", *, kind: str = "research",
         "source_paper_id": source_paper_id,
         "memory": [],
         "run_ids": [],
-        "kind": kind,
-        "paper_ids": list(dict.fromkeys(paper_ids or [])),
     }
     with _lock:
         _write(project)
+    workspace_detail(project)
+    if kind != "paper":
+        from ..harness import vcs
+        vcs.ensure_repo_in_background(project["id"])
     return project
 
 
@@ -166,6 +167,9 @@ def for_paper(paper_id: str) -> list[dict[str, Any]]:
 
 def link_paper(project_id: str, paper_id: str) -> dict[str, Any]:
     paper_id = _paper_list([paper_id])[0]
+    from ..library import store
+    if not store.get_paper(paper_id):
+        raise LookupError(f"paper not found: {paper_id}")
     with _lock:
         project = _read(project_id)
         if paper_id not in project["paper_ids"]:
@@ -173,7 +177,7 @@ def link_paper(project_id: str, paper_id: str) -> dict[str, Any]:
                 raise ValueError(f"a project holds at most {MAX_PAPERS} papers")
             project["paper_ids"].append(paper_id)
             _write(project)
-    return project
+    return workspace_detail(project)
 
 
 def unlink_paper(project_id: str, paper_id: str) -> dict[str, Any]:
@@ -184,7 +188,7 @@ def unlink_paper(project_id: str, paper_id: str) -> dict[str, Any]:
             raise KeyError(paper_id)
         project["paper_ids"] = [p for p in project["paper_ids"] if p != paper_id]
         _write(project)
-    return project
+    return workspace_detail(project)
 
 
 def forget_paper(paper_id: str) -> int:
@@ -421,61 +425,3 @@ def workspace_detail(project: dict[str, Any]) -> dict[str, Any]:
     root = workspace.root_for(key)
     project["workspace"] = {"key": key, "path": str(root), "vcs": vcs.brief(key)}
     return project
-
-
-def ensure_paper_project(paper_id: str) -> dict[str, Any]:
-    """Create exactly one dedicated workspace per paper, including legacy papers."""
-    from ..library import store
-    from ..harness import workspace, vcs
-    paper = store.get_paper(paper_id)
-    if not paper:
-        raise LookupError(f"paper not found: {paper_id}")
-    with _lock:
-        for path in _dir().glob("*.json"):
-            try:
-                p = _read(path.stem)
-            except ProjectNotFoundError:
-                continue
-            if p.get("source_paper_id") == paper_id:
-                return workspace_detail(p)
-        # Do not initialize until the seed files are written.
-        p = {"id": uuid.uuid4().hex[:16], "name": str(paper.get("title") or paper_id)[:120],
-             "description": "", "kind": "paper", "paper_ids": [paper_id],
-             "source_paper_id": paper_id, "created_at": time.time(), "memory": [], "run_ids": []}
-        _write(p)
-        root = workspace.root_for(p["id"])
-        instructions = root / "GLOSSX.md"
-        if not instructions.exists():
-            instructions.write_text(f"# {p['name']}\n\nAuthors: {paper.get('authors') or []}\nYear: {paper.get('year') or ''}\nPaper ID: {paper_id}\n\nUse paper_read and evidence search. Cite exact evidence span IDs, never invent citations. Save reading notes in notes/.\n", encoding="utf-8")
-        notes = root / "notes"
-        notes.mkdir(exist_ok=True)
-        if not (notes / "README.md").exists():
-            (notes / "README.md").write_text(f"# Reading notes\n\nNotes for {p['name']}.\n", encoding="utf-8")
-        vcs.ensure_repo_in_background(p["id"])
-        return workspace_detail(p)
-
-
-def link_paper(project_id: str, paper_id: str) -> dict[str, Any]:
-    from ..library import store
-    if not store.get_paper(paper_id):
-        raise LookupError(f"paper not found: {paper_id}")
-    with _lock:
-        p = _read(project_id)
-        if paper_id not in p["paper_ids"]:
-            p["paper_ids"].append(paper_id)
-            _write(p)
-        return workspace_detail(p)
-
-
-def unlink_paper(project_id: str, paper_id: str) -> dict[str, Any]:
-    with _lock:
-        p = _read(project_id)
-        p["paper_ids"] = [i for i in p["paper_ids"] if i != paper_id]
-        _write(p)
-        return workspace_detail(p)
-
-
-def unlink_deleted_paper(paper_id: str) -> None:
-    for p in list_projects(paper_id):
-        unlink_paper(p["id"], paper_id)
-

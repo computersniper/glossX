@@ -24,7 +24,7 @@ export async function openInstructions(projectId: string | null | undefined = us
   try {
     await workspaceApi.read(project, INSTRUCTIONS_FILE);
   } catch (e: any) {
-    if (isMissing(e) || e?.status === 0) return st.notify(zh ? "工作区服务不可用" : "The workspace service is unavailable");
+    if (e?.status !== 404) return st.notify(String(e?.message || e));
     const name = st.projects.find((p) => p.id === projectId)?.name || (zh ? "默认工作区" : "Default workspace");
     const body = zh
       ? `# ${name}\n\n写给智能体的项目说明：它在这个工作区里的每个对话开始时都会读到这份文件。\n\n## 目标\n\n- \n\n## 约定\n\n- 笔记放在 \`notes/\`\n`

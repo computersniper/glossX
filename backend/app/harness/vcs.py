@@ -286,8 +286,9 @@ def _rel(root: Path, path: Any, *, allow_root: bool = False) -> str:
     rel = workspace.relpath(root, target)
     if rel == "." and not allow_root:
         raise ValueError("path must be a file or folder inside the workspace")
-    if rel == ".git" or rel.startswith(".git/"):
-        raise ValueError("path must not be inside .git")
+    protected = workspace.is_protected_rel(rel)
+    if protected:
+        raise ValueError(protected)
     return rel
 
 

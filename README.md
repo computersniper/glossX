@@ -60,10 +60,9 @@ Switch between them with the toggle at the top left.
 
 Plugin authors: see the [Gloss Plugin Authoring specification](docs/plugin-authoring.md).
 
-### In progress
+### Threads, paper workspaces and version control
 
-These features are specified in [docs/glossx-workspaces.md](./docs/glossx-workspaces.md) and are
-being implemented right now; they may be incomplete or absent in the current build.
+The workspace features are specified in [docs/glossx-workspaces.md](./docs/glossx-workspaces.md).
 
 - **Threads and inbox** — sessions grouped under their project, per-thread unread and attention
   state (needs approval, needs answer, finished, failed), a live inbox with an unread badge.
@@ -71,6 +70,8 @@ being implemented right now; they may be incomplete or absent in the current bui
   with `GLOSSX.md` and `notes/`; research projects can hold several papers.
 - **Git-backed version control** — every workspace is a git repository, with auto-commit at the end
   of a turn, branches, merge, restore, a source-control view, and agent `vcs_*` tools.
+  Auto-commit can be disabled in agent settings. When Git is unavailable, file checkpoints
+  remain usable. Conflicting merges are aborted and report the affected files.
 
 ## Architecture
 
@@ -195,10 +196,11 @@ The harness settings hold the default mode, allow / ask / deny rules (a tool nam
 `shell_run(<prefix>*)`; deny beats ask beats allow), hooks, and the context limit (default 120k
 tokens). Reading is allowed by default; file writes ask; execution asks.
 
-### Agent directories (in progress)
+### Agent directories
 
-Like Claude Code's `.claude`, agent configuration lives in plain files. This layout is being
-implemented right now and may not be complete in the current build.
+Like Claude Code's `.claude`, agent configuration lives in plain files. Existing instructions,
+commands and agents in the data directory are copied to the new home without overwriting files
+or deleting the originals.
 
 - **Global home `~/.glossx/`** (override with `GLOSSX_HOME`): `GLOSSX.md` (global instructions),
   `settings.json` (permissions, hooks, context limit, default mode), `commands/*.md` (custom slash
@@ -220,8 +222,9 @@ Gloss:
 - Linux / macOS: `$XDG_DATA_HOME/glossx` (default `~/.local/share/glossx`)
 - Override with `GLOSS_DATA_DIR`.
 
-It holds the SQLite library, one folder per paper, `config.json`, sessions, workspaces and
-checkpoints, projects and memory, and custom commands and agents. Your Gloss data is never touched.
+It holds the SQLite library, one folder per paper, `config.json`, sessions, workspaces, projects
+and memory. Agent configuration lives in `~/.glossx/` and each workspace's `.glossx/`;
+checkpoints live in `.glossx/checkpoints/` and stay out of Git. Your Gloss data is never touched.
 
 ## Notes
 
@@ -234,7 +237,7 @@ checkpoints, projects and memory, and custom commands and agents. Your Gloss dat
 
 - [docs/glossx-design.md](./docs/glossx-design.md) — kernel, plugin manifest v2, adapters, core agent, context, API
 - [docs/glossx-harness.md](./docs/glossx-harness.md) — sessions, tool loop, permissions, commands, subagents, hooks, UI
-- [docs/glossx-workspaces.md](./docs/glossx-workspaces.md) — threads and inbox, per-paper workspaces, version control (in progress)
+- [docs/glossx-workspaces.md](./docs/glossx-workspaces.md) — threads and inbox, per-paper workspaces, version control
 - [docs/plugin-authoring.md](./docs/plugin-authoring.md) — plugin authoring (Gloss)
 - [CHANGELOG.md](./CHANGELOG.md)
 

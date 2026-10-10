@@ -167,7 +167,7 @@ async def patch_paper(paper_id: str, body: PaperPatch):
 async def delete_paper(paper_id: str):
     if not store.get_paper(paper_id):
         raise HTTPException(404, "paper not found")
-    projects.unlink_deleted_paper(paper_id)
+    projects.forget_paper(paper_id)
     store.delete_paper(paper_id)
     return {"ok": True}
 
@@ -241,7 +241,7 @@ async def get_fulltext(paper_id: str):
 
 def _seed_paper_project(paper_id: str) -> None:
     try:
-        projects.ensure_paper_project(paper_id)
+        projects.ensure_paper_project_quietly(store.get_paper(paper_id))
     except Exception:
         logging.getLogger(__name__).exception("Could not create workspace for paper %s", paper_id)
 
@@ -249,6 +249,12 @@ def _seed_paper_project(paper_id: str) -> None:
 @router.get("/{paper_id}/project")
 async def get_paper_project(paper_id: str):
     try:
-        return await run_in_threadpool(projects.ensure_paper_project, paper_id)
+        paper = store.get_paper(paper_id)
+        if not paper:
+            raise LookupError("paper not found")
+        project, _ = await run_in_threadpool(projects.ensure_paper_project, paper)
+        from ..harness import vcs
+        vcs.ensure_repo_in_background(project["id"])
+        return projects.workspace_detail(project)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error

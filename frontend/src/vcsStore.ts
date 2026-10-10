@@ -99,6 +99,8 @@ export async function createBranch(project: string | null | undefined, text: str
         await vcsApi.checkout(project, name);
       } catch (e) {
         if (!(e instanceof ApiError && e.status === 409)) throw e;
+        await useVcs.getState().refresh(project);
+        if (e.code !== "dirty" && (e.code === "busy" || !vcsEntry(project).status?.changes.length)) throw e;
         // the server will not move uncommitted work for us: let the user decide
         useVcs.setState((s) => ({ rev: s.rev + 1 }));
         return (await switchBranch(project, name)) ? name : null;
@@ -148,6 +150,7 @@ export async function switchBranch(project: string | null | undefined, branch: s
       // the tree became dirty in between (the server refuses with 409)
       if (!(e instanceof ApiError && e.status === 409) || how) throw e;
       await useVcs.getState().refresh(project);
+      if (e.code !== "dirty" && (e.code === "busy" || !vcsEntry(project).status?.changes.length)) throw e;
       const choice = await askDirty();
       if (!choice) return false;
       await vcsApi.checkout(project, branch, choice);

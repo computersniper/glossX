@@ -1,6 +1,6 @@
 # 后端进度日志（threads/inbox、论文工作区、git 版本控制、.glossx 目录）
 
-> 本文件由后端 agent 维护，每完成一步就更新。若中断，接手者从「3. 当前正在做」和「8. 下一步」开始。
+> 当前接手续作已完成；最新实际状态见第 9 节（2026-10-10，基线 5ff29e3）。第 2–8 节保留为旧 Claude agent 的中断记录，不代表当前待办。
 
 ## 1. 任务范围
 
@@ -101,3 +101,36 @@
 1. `tests/conftest.py` 设置 `GLOSSX_HOME` 到临时目录；写脚本直接跑通 `harness/vcs.py` 全流程并修 bug。
 2. 接线：`routers/harness.py` 加 `/vcs/*` 路由和 settings `paths`；`main.py` lifespan 调 `home.migrate()`；extensions/context/skills 接入 `.glossx`。
 3. `session.py`/`manager.py`/`routers/sessions.py` 的 inbox；然后 `projects.py` + papers/import 钩子；最后 engine 自动提交、vcs 工具、测试与真实应用验证。
+
+
+## 9. Codex 接手续作（2026-10-10，基线 5ff29e3）
+
+- 初次续作发现旧 Claude backend agent 仍写入，暂停后由主 agent 建立新 Git 基线；按用户新指令，以当前目录最新内容继续。
+- 已统一 `projects.py` 的双重 `ensure_paper_project` 签名，保留 `(paper dict) -> (project, created)`，导入使用 best-effort 包装；保留较完整的论文种子说明和引用格式。
+- 已移除 `manager.py`、`session.py` 重复 inbox 方法/字段/事件跟踪，保留 coalesced SSE 及运行时阻塞 attention 逻辑；保留默认按项目分组排序。
+- 下一步：接自动提交/VCS agent 工具、项目设置和内部路径约束，补重要测试与假 provider 联调。
+
+
+### 续作已完成接线与初次验证
+
+- 接好 root `drive_turn`：工具写入前等待仓库初始化（避免首次回合文件被吞入初始提交），结束时 best-effort 自动提交；项目设置 `vcs.auto_commit=false` 生效，提交带 Session/Turn trailer，system_note 携带 `commit` 供前端展示。
+- 注册 7 个 `vcs_*` 工具；只读工具可在 ask/plan 使用，变更为 exec/审批；切换/合并检查其它正在运行会话，更新 branch。
+- fs 写入先解析内部 symlink alias 后决定 `.glossx` 审批，配置修改不建议 always rule；VCS 参数也拒绝 `.git` / `.glossx/checkpoints`。
+- 新 `tests/test_workspaces.py` 首批 5 项通过（68.72 秒）：论文项目幂等/会话scope/删除保留笔记，FF与冲突merge中止、stash恢复、restore新提交、discard、保护路径，收件箱排序/read保留阻塞/replay，fake provider真实HTTP回合写入/自动提交/设置关闭，home隔离/配置审批。
+- 原 process-tree 用例改为 child-ready + release 文件握手：taskkill 完成后才允许子进程写alive，排除原 sleep(1) 先写文件导致假失败；单测 1 passed（2.66 秒），没有改生产进程清理实现。
+- 新增迁移非破坏性/项目设置安全边界和缺git/忙工作区拒切分支测试，准备全量跑。
+
+
+### 后端最终状态 / 验证证据
+
+- 已实现规格全部后端接口：论文关联/自动与懒创建工作区，sessions inbox/read/events/分支scope，workspace VCS所有操作与agent工具，全局/项目 `.glossx` 迁移、配置覆盖、权限与memory镜像、root回合自动提交。
+- 当前 HTTP 形态：`GET /api/papers/{id}/project` 返回 project object（不是tuple）；`GET /api/agent/projects?paper_id=` 为数组。project包含 `kind/paper_ids/source_paper_id/workspace:{key,path,vcs:{available,initialized,branch}}`。
+- session summary包含 `last_activity_at/last_viewed_at/unread/attention/preview/project/branch/workspace`；create支持 `{paper_id,project_id,branch}`。`/read` 返回session；`/inbox/read`返回summary与marked，`/inbox/summary`为 `{unread,blocking,total,items}`；SSE命名事件 `inbox.updated` 连接立即replay，变动coalesce推送。
+- VCS响应沿用第5节详细结构；`status`故意在git缺失时200+`available:false`供前端友好展示，其它git操作409+code。分支路径用`{name:path}`支持斜杠；冲突merge返回200+`merged:false/conflicts`且中止；dirty checkout409；stash切回恢复；restore先提交未保存文件然后新restore提交。
+- `GET /api/harness/settings?project_id=`返回全局settings+readonly paths+effective/project_settings；PUT只保存settings，忽略readonly返回字段；有效项目权限规则与hooks合并，project不可提升trusted_plugins/private network。
+- 自动提交产生 `system_note(kind="commit",commit:{id,short,...})`；`turn.completed`携带commit，git失败不让回合失败。interrupt若发生在git worker执行中，shield等待其完成后idle，避免背景git写入时开放切树。
+- 全量：`backend/.venv/Scripts/python.exe -m pytest -q` → **154 passed /10 skipped**，158.52秒。之后强化了auto_commit关闭新内容/HEAD不变断言，并新增取消git线程用例，定向 **2 passed**，17.39秒（共8项新workspace测试；全量当前应155，通过数未重新全量测不冒充已验证）。`compileall`与`git diff --check`通过。
+- 真实TCP假provider联调：复用前端隔离服务 `http://127.0.0.1:8797`，独立project `1e721ad87e644d41` / session `abf590e0f567496e`，`fs_edit`改论文阅读清单后auto commit `8165394`；验证log的Session trailer、clean、branch创建/切回/merge、inbox真实SSE连接replay、`/read`清unread。没有动前端agent seed项目。
+- 真实模型验证由主agent负责，证据在其 `docs/progress/verification.json`；本agent没修改用户Codex配置。
+- 原CI语法错误/旧双实现均已统一；旧process-tree测试由sleep竞争改为ready/release握手，杀树返回后释放child，证明它没有存活执行写入。生产清理代码未更改。
+- 无新增依赖、没有提交；交由主agent统一提交/推送和CI确认。

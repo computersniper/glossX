@@ -263,7 +263,8 @@ class LocalCodexProvider(Provider):
             except OSError:
                 text = ""
             if not text:
-                raise RuntimeError("codex CLI produced no output")
+                detail = _failure_detail(err, out, prompt)
+                raise RuntimeError(f"codex CLI produced no output: {detail}")
             resolved_session_id = _thread_id_from_jsonl(out) or session_id
             return (
                 text,

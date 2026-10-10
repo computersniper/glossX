@@ -58,9 +58,9 @@ GlossX 是一个 **本地、自托管** 的工作台，让 AI Agent 与你一起
 
 插件作者请参阅 [Gloss 插件开发规范](docs/plugin-authoring.zh.md)。
 
-### 开发中
+### 线程、论文工作区与版本控制
 
-以下功能已写入 [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)，正在实现中，当前构建里可能尚不完整或还没有。
+以下工作区功能的规格见 [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)。
 
 - **线程与收件箱**：会话按项目分组，每个线程有未读与关注状态（需要审批、需要回答、已完成、失败），
   并带有实时更新、显示未读数的收件箱。
@@ -68,6 +68,7 @@ GlossX 是一个 **本地、自托管** 的工作台，让 AI Agent 与你一起
   研究项目可包含多篇论文。
 - **基于 Git 的版本控制**：每个工作区都是一个 git 仓库，回合结束时自动提交，支持分支、合并、还原、
   源代码管理视图，以及 Agent 的 `vcs_*` 工具。
+  可在智能体设置中关闭自动提交。未安装 Git 时仍可使用文件检查点；合并冲突会中止合并并列出冲突文件。
 
 ## 架构简述
 
@@ -188,9 +189,10 @@ Harness 设置中包含默认模式、allow / ask / deny 规则（工具名、`t
 优先级 deny > ask > allow）、钩子，以及上下文上限（默认 120k tokens）。默认允许读取，写文件需询问，
 执行需询问。
 
-### Agent 目录（开发中）
+### Agent 目录
 
-与 Claude Code 的 `.claude` 类似，Agent 配置以普通文件的形式存放。该布局正在实现中，当前构建里可能尚不完整。
+与 Claude Code 的 `.claude` 类似，Agent 配置以普通文件的形式存放。数据目录中的旧说明、命令和 Agent
+会复制到新全局目录，不覆盖已有文件，也不删除原件。
 
 - **全局目录 `~/.glossx/`**（可用 `GLOSSX_HOME` 覆盖）：`GLOSSX.md`（全局说明）、
   `settings.json`（权限、钩子、上下文上限、默认模式）、`commands/*.md`（自定义斜杠命令）、
@@ -209,8 +211,9 @@ GlossX 使用 **独立的数据目录**，与 Gloss 分开，因此可以和已�
 - Linux / macOS：`$XDG_DATA_HOME/glossx`（默认 `~/.local/share/glossx`）
 - 可用 `GLOSS_DATA_DIR` 覆盖。
 
-其中包含 SQLite 论文库、每篇论文的目录、`config.json`、会话、工作区与检查点、项目与记忆，以及自定义命令和
-Agent。不会触碰你的 Gloss 数据。
+其中包含 SQLite 论文库、每篇论文的目录、`config.json`、会话、工作区、项目与记忆。Agent 配置放在
+`~/.glossx/` 和各工作区的 `.glossx/`；检查点位于 `.glossx/checkpoints/`，不进入 Git。
+不会触碰你的 Gloss 数据。
 
 ## 小贴士
 
@@ -223,7 +226,7 @@ Agent。不会触碰你的 Gloss 数据。
 
 - [docs/glossx-design.md](./docs/glossx-design.md)：内核、插件 manifest v2、适配器、核心 Agent、上下文、API
 - [docs/glossx-harness.md](./docs/glossx-harness.md)：会话、工具循环、权限、命令、子 Agent、钩子、界面
-- [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)：线程与收件箱、每篇论文的工作区、版本控制（开发中）
+- [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)：线程与收件箱、每篇论文的工作区、版本控制
 - [docs/plugin-authoring.zh.md](./docs/plugin-authoring.zh.md)：插件开发规范（Gloss）
 - [CHANGELOG.md](./CHANGELOG.md)
 
