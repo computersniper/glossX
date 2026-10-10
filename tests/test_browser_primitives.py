@@ -152,6 +152,11 @@ def test_cdp_multiplex_events_timeout_errors_and_disconnect():
 
 
 def test_installed_browser_cdp_and_process_cleanup(tmp_path):
+    # An installed executable does not imply a usable Chromium sandbox (for
+    # example on hosted Linux runners). Keep real-browser integration opt-in,
+    # like the real-provider and network suites; offline CDP tests still run.
+    if os.environ.get("GLOSS_TEST_BROWSER") != "1" and not os.environ.get("GLOSS_TEST_BROWSER_PATH"):
+        pytest.skip("Real browser not enabled (set GLOSS_TEST_BROWSER=1 or GLOSS_TEST_BROWSER_PATH)")
     executable = discover(os.environ.get("GLOSS_TEST_BROWSER_PATH"))
     if executable is None:
         pytest.skip("No installed Chromium browser")

@@ -42,3 +42,9 @@
 - [ ] 打包（已补当前/旧版 websocket client 的 hidden import）、提交推送、按 SHA 核验 CI/Preview。
 
 `.rgit/` 不存在；没有初始化或创建 capsule。交互模式按仓库指导由用户运行 `rgit init` 后再启用 capture。
+
+## CI 故障续作
+
+- `bbe73d4` 的 [CI](https://github.com/computersniper/glossX/actions/runs/38047734814)：前端通过；后端 183 passed / 10 skipped / 1 failed。唯一失败是 `test_installed_browser_cdp_and_process_cleanup`，Linux runner 检测到 Chromium 后自动启动，进程退出码 -6；stderr 当时被丢弃，不能认定具体启动失败原因。
+- 可选真实浏览器测试改为显式开启：`GLOSS_TEST_BROWSER=1` 或设置 `GLOSS_TEST_BROWSER_PATH`；默认 CI 继续跑离线 CDP/快照/URL 测试，不自动依赖宿主浏览器。没有关闭生产浏览器 sandbox，也没有把启动异常当成通过。
+- 未跑新的本地测试，遵守用户额度要求。Linux 真浏览器的 -6 原因仍需下一轮保留 stderr 后排查，再显式运行该用例；本修复只纠正默认 CI 的环境依赖。

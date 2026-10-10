@@ -118,6 +118,8 @@ packaging/GlossX.spec  scripts/  .github/workflows/（ci.yml, preview-build.yml,
 | 可自定义论文工作区 | 另一 agent 日志记录的补充需求尚未实现。须补全默认位置/单论文目录/API/UI和已有文件、Git 历史迁移方案，不自动搬已有目录。 |
 
 恢复顺序：看 Git 和四份日志末尾 → 优先修通真实浏览器及确认接管/清理 → 真 Codex 浏览器与缓存完整流程 → 全量检查/截图/打包 → 最后核验远程。开始前用 Git 保存新的本地修改，保留真实数据；没有启用开发 mock。
+
+CI 后续：`bbe73d4` 前端通过，后端 183 通过 / 10 跳过 / 1 失败（宿主 Chromium 启动退出 -6）。真实浏览器冒烟已改为 `GLOSS_TEST_BROWSER=1` 或 `GLOSS_TEST_BROWSER_PATH` 显式启用，默认 CI 保留离线测试；**Linux 真浏览器启动问题仍待保留 stderr 排查**，不视为已修复。未新增本地测试运行。完整记录见协调文档「CI 故障续作」。
 >
 > 2026-10-10 晚已完成并推送（`d2680df`）：新 logo（带 X）、README 改版、删掉 Gloss 模式的 Agent workspace、设置里四种模型接入方式的开关。
 
