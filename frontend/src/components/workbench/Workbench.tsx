@@ -3,7 +3,8 @@ import { useStore } from "../../store";
 import { Logo } from "../Logo";
 import { ModeToggle } from "../ModeToggle";
 import { ACTIVITIES, SideBar } from "./SideBar";
-import { EditorArea } from "./EditorArea";
+import { EditorArea, requestCloseTab } from "./EditorArea";
+import { useSessions } from "../../sessionStore";
 import { AiPane } from "./AiPane";
 import { BottomPanel } from "./BottomPanel";
 import { StatusBar } from "./StatusBar";
@@ -80,7 +81,7 @@ function useWorkbenchKeys() {
         else st.setLayout({ aiOpen: false });
       } else if (k === "j" && !e.shiftKey) st.setLayout({ bottomOpen: !layout.bottomOpen });
       else if (k === "w" && !e.shiftKey) {
-        if (st.activeTabKey) st.closeTab(st.activeTabKey);
+        if (st.activeTabKey) requestCloseTab(st.activeTabKey);
       } else if (e.key === "Tab") st.cycleTab(e.shiftKey ? -1 : 1);
       else if (e.key === "PageDown") st.cycleTab(1);
       else if (e.key === "PageUp") st.cycleTab(-1);
@@ -103,6 +104,14 @@ export function Workbench() {
   const zh = useStore((s) => s.uiLang) === "zh";
   const narrow = useNarrow();
   useWorkbenchKeys();
+  const sessionsAvailable = useSessions((s) => s.available);
+  // session list for the welcome page / status bar; retried while the backend is still starting
+  useEffect(() => {
+    void useSessions.getState().refresh();
+    if (sessionsAvailable !== false) return;
+    const timer = window.setInterval(() => void useSessions.getState().refresh(), 8000);
+    return () => window.clearInterval(timer);
+  }, [sessionsAvailable]);
 
   const maxSide = Math.max(200, window.innerWidth - (narrow ? 0 : layout.aiOpen ? layout.aiWidth : 0) - MIN_EDITOR - 48);
   const sideW = clamp(layout.sideWidth, 200, Math.min(560, maxSide));
@@ -114,7 +123,7 @@ export function Workbench() {
     <div className={`wb${narrow ? " narrow" : ""}`}>
       <div className="wb-main">
         <nav className="wb-activity" aria-label="Activity bar">
-          <div className="wb-activity-logo" title="GlossX · 旁注"><Logo size={22} /></div>
+          <button className="wb-activity-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={22} /></button>
           {ACTIVITIES.map((a) => (
             <button
               key={a.id}
@@ -123,25 +132,25 @@ export function Workbench() {
               aria-label={zh ? a.zh : a.en}
               onClick={() => showActivity(a.id)}
             >
-              <Icon name={a.icon} size={21} />
+              <Icon name={a.icon} size={19} strokeWidth={1.6} />
             </button>
           ))}
           <span className="spacer" />
           <button className="wb-act" title={zh ? "命令面板 (Ctrl+K)" : "Command palette (Ctrl+K)"} onClick={() => openPalette("commands")}>
-            <Icon name="command" size={20} />
+            <Icon name="command" size={18} strokeWidth={1.6} />
           </button>
         </nav>
         <div className="wb-column">
           <header className="wb-titlebar">
             <ModeToggle />
-            <span className="brand-name">GlossX</span>
-            <span className="brand-zh">旁注</span>
+            <span className="spacer" />
             <button className="wb-title-search" onClick={() => openPalette("commands")}>
               <Icon name="search" size={13} />
-              <span>{zh ? "搜索命令、论文、运行…" : "Search commands, papers, runs…"}</span>
-              <kbd>Ctrl+K</kbd>
+              <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, chats…"}</span>
+              <kbd>Ctrl K</kbd>
             </button>
             <span className="spacer" />
+            <div className="wb-title-toggles">
             <button className={`wb-icon-btn${layout.sideOpen ? " on" : ""}`} title={zh ? "侧边栏 (Ctrl+B)" : "Side bar (Ctrl+B)"} onClick={() => setLayout({ sideOpen: !layout.sideOpen })}>
               <Icon name="sidebar" size={16} />
             </button>
@@ -151,6 +160,7 @@ export function Workbench() {
             <button className={`wb-icon-btn${layout.aiOpen ? " on" : ""}`} title={zh ? "AI 面板 (Ctrl+L)" : "AI pane (Ctrl+L)"} onClick={() => setLayout({ aiOpen: !layout.aiOpen })}>
               <Icon name="aipane" size={16} />
             </button>
+            </div>
           </header>
           <div className="wb-panes">
             {layout.sideOpen && (

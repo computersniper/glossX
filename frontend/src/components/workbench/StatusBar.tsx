@@ -2,7 +2,22 @@ import { useStore } from "../../store";
 import { ProviderSwitcher } from "../ProviderSwitcher";
 import { THEMES } from "../ThemePicker";
 import { useAllAiTasks } from "../../api/aiTasks";
+import { Activity, Languages, Palette } from "lucide-react";
+import { useActiveSession, useSessions } from "../../sessionStore";
+import { formatTokens } from "../session/toolMeta";
+import { MenuButton, MenuItem, MenuLabel, Spinner } from "../ui";
 import { Icon } from "./icons";
+
+/** Three representative colors per theme for the picker swatches. */
+const SWATCH: Record<string, [string, string, string]> = {
+  midnight: ["#0f1216", "#1c2230", "#7aa2f7"],
+  graphite: ["#17181a", "#292c30", "#6ea8fe"],
+  nord: ["#2e3440", "#434c5e", "#88c0d0"],
+  solarized: ["#002b36", "#0e4b5a", "#268bd2"],
+  rose: ["#1c1620", "#35283d", "#f38ba8"],
+  emerald: ["#0c1512", "#1b2f27", "#34d399"],
+  daylight: ["#f7f8fa", "#dfe3e8", "#3b6fe0"],
+};
 
 const ACTIVE_IMPORT = new Set(["queued", "downloading", "parsing", "saving", "cancelling"]);
 
@@ -21,7 +36,11 @@ export function StatusBar() {
   const setLayout = useStore((s) => s.setLayout);
   const aiRunning = useAllAiTasks().filter((t) => t.running).length;
   const zh = uiLang === "zh";
-  const busy = runningRuns + imports + aiRunning;
+  const liveSessions = useSessions((s) => s.list.filter((x) => x.status && x.status !== "idle").length);
+  const hasSession = useSessions((s) => !!s.activeId);
+  const session = useActiveSession();
+  const busy = runningRuns + imports + aiRunning + liveSessions;
+  const ctxPct = session.context.limit ? Math.round((session.context.tokens_est / session.context.limit) * 100) : 0;
   const pct = budget ? Math.round(Math.max(
     budget.max_steps ? budget.steps / budget.max_steps : 0,
     budget.max_llm_calls ? budget.llm_calls / budget.max_llm_calls : 0,
@@ -37,16 +56,26 @@ export function StatusBar() {
         title={zh ? "当前项目" : "Active project"}
         onClick={() => setLayout({ activity: "projects", sideOpen: true })}
       >
-        <Icon name="projects" size={13} /> {projectName || (zh ? "无项目" : "No project")}
+        <Icon name="projects" size={13} /> <span>{projectName || (zh ? "无项目" : "No project")}</span>
       </button>
       <button
         className={`wb-status-item${busy ? " busy" : ""}`}
-        title={zh ? `运行中：${runningRuns} 个智能体运行，${imports} 个导入，${aiRunning} 个 AI 任务` : `Running: ${runningRuns} agent runs, ${imports} imports, ${aiRunning} AI tasks`}
+        title={zh ? `运行中：${liveSessions} 个对话，${runningRuns} 个智能体运行，${imports} 个导入，${aiRunning} 个 AI 任务` : `Running: ${liveSessions} chats, ${runningRuns} agent runs, ${imports} imports, ${aiRunning} AI tasks`}
         onClick={() => setLayout({ bottomOpen: true, bottomTab: "tasks" })}
       >
-        {busy ? <span className="agent-dot running" /> : <span className="agent-dot" />}
-        {zh ? `${busy} 个任务` : `${busy} running`}
+        {busy ? <Spinner size={12} /> : <Activity size={13} />}
+        <span>{busy ? (zh ? `${busy} 个任务进行中` : `${busy} running`) : zh ? "空闲" : "Idle"}</span>
       </button>
+      {hasSession && session.context.limit > 0 && (
+        <button
+          className="wb-status-item"
+          title={`${zh ? "对话上下文" : "Chat context"}: ${formatTokens(session.context.tokens_est)} / ${formatTokens(session.context.limit)} tokens`}
+          onClick={() => setLayout({ aiOpen: true, aiMode: "agent" })}
+        >
+          <span className={`wb-mini-meter${ctxPct >= 80 ? " hot" : ""}`}><i style={{ width: `${Math.min(100, ctxPct)}%` }} /></span>
+          <span>{zh ? "上下文" : "ctx"} {ctxPct}%</span>
+        </button>
+      )}
       {budget && (
         <button
           className="wb-status-item"
@@ -58,15 +87,35 @@ export function StatusBar() {
         </button>
       )}
       <span className="spacer" />
-      <button className="wb-status-item" title={zh ? "界面语言" : "Interface language"} onClick={() => setUiLang(zh ? "en" : "zh")}>
-        {zh ? "中文" : "EN"}
+      <button className="wb-status-item" title={zh ? "界面语言 · 切换为 English" : "Interface language · switch to 中文"} onClick={() => setUiLang(zh ? "en" : "zh")}>
+        <Languages size={13} /> <span>{zh ? "中文" : "English"}</span>
       </button>
-      <label className="wb-status-item" title={zh ? "主题" : "Theme"}>
-        🎨
-        <select value={theme} onChange={(e) => setTheme(e.target.value)}>
-          {THEMES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-      </label>
+      <MenuButton
+        className="wb-status-item"
+        chevron={false}
+        placement="top-end"
+        width={200}
+        title={zh ? "主题" : "Theme"}
+        label={<><Palette size={13} /> <span>{THEMES.find((t) => t.id === theme)?.name || theme}</span></>}
+      >
+        {(close) => (
+          <>
+            <MenuLabel>{zh ? "主题" : "Theme"}</MenuLabel>
+            {THEMES.map((t) => (
+              <MenuItem
+                key={t.id}
+                icon={<span className="gx-swatch">{(SWATCH[t.id] || []).map((c) => <i key={c} style={{ background: c }} />)}</span>}
+                label={t.name}
+                selected={t.id === theme}
+                onSelect={() => {
+                  setTheme(t.id);
+                  close();
+                }}
+              />
+            ))}
+          </>
+        )}
+      </MenuButton>
     </footer>
   );
 }

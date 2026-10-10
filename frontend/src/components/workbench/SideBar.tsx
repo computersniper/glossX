@@ -6,10 +6,16 @@ import { ScholarPanel } from "../ScholarPanel";
 import { SettingsPanel } from "../SettingsPanel";
 import { ExtensionsPanel } from "../ExtensionsPanel";
 import { CapabilityGroups, ProjectDetail } from "../AgentWorkspace";
+import { BookOpenText, FolderKanban, MessageSquarePlus, Search, Trash2, FileText } from "lucide-react";
+import { HarnessSettings } from "../HarnessSettings";
+import { EmptyState, Segmented } from "../ui";
+import { useSessions } from "../../sessionStore";
+import { WorkspaceView } from "./WorkspaceView";
 import { Icon } from "./icons";
 
 export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
+  { id: "workspace", icon: "workspace", en: "Workspace", zh: "工作区" },
   { id: "projects", icon: "projects", en: "Projects", zh: "项目" },
   { id: "search", icon: "search", en: "Search (Scholar)", zh: "学术搜索" },
   { id: "capabilities", icon: "plugins", en: "Capabilities & Plugins", zh: "能力与插件" },
@@ -53,7 +59,7 @@ function LibraryView() {
     setMenu(null);
     const paper = papers.find((p) => p.id === id);
     if (kind === "open") void openPaper(id).catch(() => {});
-    if (kind === "ask") askAgent({ paperIds: [id] });
+    if (kind === "ask") useSessions.getState().compose({ attachments: [{ kind: "paper", ref: id, label: paper?.title }] });
     if (kind === "del" && confirm(`${T.confirm}\n${paper?.title || ""}`)) {
       await deletePaper(id).catch((e) => notify(String(e?.message || e)));
     }
@@ -69,16 +75,20 @@ function LibraryView() {
           onChange={(e) => setImportQ(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void onImport()}
         />
-        <button className="small" onClick={() => void onImport()} disabled={creatingImport || !importQ.trim()}>{T.imp}</button>
-        <button className="small icon-btn" title={T.upload} onClick={() => fileRef.current?.click()} disabled={uploadBusy}>
-          <Icon name="upload" size={15} />
+        <button className="gx-btn sm" onClick={() => void onImport()} disabled={creatingImport || !importQ.trim()}>{T.imp}</button>
+        <button className="gx-icon-btn bordered" title={T.upload} onClick={() => fileRef.current?.click()} disabled={uploadBusy}>
+          <Icon name="upload" size={14} />
         </button>
         <input ref={fileRef} type="file" accept="application/pdf" multiple hidden onChange={(e) => onUpload(e.target.files)} />
       </div>
       <ImportQueue />
-      <input className="wb-input wb-filter" placeholder={T.filter} value={filter} onChange={(e) => setFilter(e.target.value)} />
+      <label className="wb-filter">
+        <Search size={13} />
+        <input placeholder={T.filter} value={filter} onChange={(e) => setFilter(e.target.value)} />
+        {papers.length > 0 && <span>{shown.length}</span>}
+      </label>
       <div className="wb-list">
-        {papers.length === 0 && <div className="muted wb-empty">{T.empty}</div>}
+        {papers.length === 0 && <EmptyState icon={<BookOpenText size={20} />} title={zh ? "论文库是空的" : "Your library is empty"} hint={T.empty} />}
         {papers.length > 0 && shown.length === 0 && <div className="muted wb-empty">{T.none}</div>}
         {shown.map((p) => (
           <div
@@ -115,9 +125,9 @@ function LibraryView() {
           style={{ left: Math.min(menu.x, window.innerWidth - 200), top: Math.min(menu.y, window.innerHeight - 120) }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <button onClick={() => void act("open", menu.id)}>{T.open}</button>
-          <button onClick={() => void act("ask", menu.id)}>{T.ask}</button>
-          <button className="danger" onClick={() => void act("del", menu.id)}>{T.del}</button>
+          <button onClick={() => void act("open", menu.id)}><FileText size={14} />{T.open}</button>
+          <button onClick={() => void act("ask", menu.id)}><MessageSquarePlus size={14} />{T.ask}</button>
+          <button className="danger" onClick={() => void act("del", menu.id)}><Trash2 size={14} />{T.del}</button>
         </div>
       )}
     </div>
@@ -156,10 +166,10 @@ function ProjectsView() {
     <div className="wb-side-body">
       <div className="wb-import">
         <input className="wb-input" placeholder={T.ph} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />
-        <button className="small" onClick={() => void add()} disabled={!name.trim()}>{T.add}</button>
+        <button className="gx-btn sm" onClick={() => void add()} disabled={!name.trim()}>{T.add}</button>
       </div>
       <div className="wb-list wb-list-compact">
-        {projects.length === 0 && <div className="muted wb-empty">{T.empty}</div>}
+        {projects.length === 0 && <EmptyState icon={<FolderKanban size={20} />} title={zh ? "还没有项目" : "No projects yet"} hint={T.empty} />}
         {projects.length > 0 && (
           <div className={`wb-item${!projectId ? " active" : ""}`} onClick={() => setProjectId(null)}>
             <div className="wb-item-title muted">{T.none}</div>
@@ -202,11 +212,36 @@ function SearchView() {
 }
 
 function SettingsView() {
-  return <div className="wb-side-body"><SettingsPanel /></div>;
+  const zh = useStore((s) => s.uiLang) === "zh";
+  const focus = useStore((s) => s.settingsFocus);
+  const [tab, setTab] = useState<"general" | "harness">("general");
+  // a feature-settings deep link always lands on the general page
+  const shown = focus ? "general" : tab;
+  return (
+    <div className="wb-side-body">
+      <div className="gx-ws-tabs">
+        <Segmented
+          size="sm"
+          value={shown}
+          onChange={(v) => {
+            if (focus) useStore.setState({ settingsFocus: null });
+            setTab(v);
+          }}
+          options={[
+            { value: "general", label: zh ? "通用" : "General" },
+            { value: "harness", label: zh ? "智能体" : "Agent harness" },
+          ]}
+        />
+      </div>
+      <div className="wb-settings-page" style={{ display: shown === "general" ? "flex" : "none" }}><SettingsPanel /></div>
+      {shown === "harness" && <div className="wb-settings-page"><HarnessSettings /></div>}
+    </div>
+  );
 }
 
 const VIEWS: Record<Activity, () => JSX.Element> = {
   library: LibraryView,
+  workspace: WorkspaceView,
   projects: ProjectsView,
   search: SearchView,
   capabilities: CapabilitiesView,
@@ -224,7 +259,7 @@ export function SideBar() {
   }, [activity]);
   return (
     <div className="wb-sidebar">
-      <div className="wb-pane-head">{zh ? meta.zh : meta.en}</div>
+      <div className="wb-pane-head"><span>{zh ? meta.zh : meta.en}</span></div>
       {ACTIVITIES.filter((a) => visited.has(a.id)).map((a) => {
         const V = VIEWS[a.id];
         return (

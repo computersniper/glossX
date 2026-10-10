@@ -20,11 +20,16 @@ import { evictPdfDoc } from "./pdf/docCache";
 
 // ---- workbench layout + editor tabs ----
 export type UiMode = "gloss" | "glossx"; // classic reader | agent workbench
-export type Activity = "library" | "projects" | "search" | "capabilities" | "settings";
+export type Activity = "library" | "workspace" | "projects" | "search" | "capabilities" | "settings";
 export type AiMode = "agent" | "chat" | "tools";
 export type BottomTab = "trace" | "runs" | "tasks";
-export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "projects" | "newProject" | "theme";
-export type EditorTab = { kind: "paper" | "run" | "welcome"; id: string };
+export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme";
+// file / checkpoint ids are `<workspace key>|<path or checkpoint id>`
+export type EditorTab = { kind: "paper" | "run" | "welcome" | "file" | "checkpoint"; id: string };
+export const splitWorkspaceId = (id: string) => {
+  const i = id.indexOf("|");
+  return { project: i < 0 ? "default" : id.slice(0, i), ref: i < 0 ? id : id.slice(i + 1) };
+};
 export const tabKey = (t: EditorTab) => `${t.kind}:${t.id}`;
 
 export interface Layout {
@@ -119,6 +124,8 @@ interface State {
   cycleTab: (dir: 1 | -1) => void;
   openRunTab: (runId: string) => void;
   openWelcome: () => void;
+  openFileTab: (project: string | null | undefined, path: string) => void;
+  openCheckpointTab: (project: string | null | undefined, checkpointId: string) => void;
   restoreTabs: () => Promise<void>;
   openCitation: (span: AgentSpan) => Promise<void>;
   // agent
@@ -297,11 +304,21 @@ export const useStore = create<State>((set, get) => ({
     addTab({ kind: "welcome", id: "welcome" });
     void get().activateTab("welcome:welcome");
   },
+  openFileTab: (project, path) => {
+    const id = `${project || "default"}|${path}`;
+    addTab({ kind: "file", id });
+    void get().activateTab(`file:${id}`);
+  },
+  openCheckpointTab: (project, checkpointId) => {
+    const id = `${project || "default"}|${checkpointId}`;
+    addTab({ kind: "checkpoint", id });
+    void get().activateTab(`checkpoint:${id}`);
+  },
   restoreTabs: async () => {
     const saved = readJson<{ tabs: EditorTab[]; active: string | null }>(TABS_KEY, { tabs: [], active: null });
     const known = new Set(get().papers.map((p) => p.id));
     const tabs = (Array.isArray(saved.tabs) ? saved.tabs : []).filter(
-      (t) => t && typeof t.id === "string" && (t.kind === "paper" ? known.has(t.id) : t.kind === "run" || t.kind === "welcome"),
+      (t) => t && typeof t.id === "string" && (t.kind === "paper" ? known.has(t.id) : t.kind === "run" || t.kind === "welcome" || t.kind === "file"),
     );
     if (!tabs.length) return;
     set({ openTabs: tabs });

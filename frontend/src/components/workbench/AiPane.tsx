@@ -1,19 +1,27 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useStore, type AiMode } from "../../store";
-import { AgentPanel } from "../AgentPanel";
+import { SessionChat } from "../session/SessionChat";
 import { ChatPanel } from "../ChatPanel";
 import { SidePanel } from "../SidePanel";
+import { FileText } from "lucide-react";
+import { EmptyState } from "../ui";
 import { Icon } from "./icons";
 
 const MODES: { id: AiMode; icon: string; en: string; zh: string }[] = [
   { id: "agent", icon: "agent", en: "Agent", zh: "智能体" },
-  { id: "chat", icon: "chat", en: "Chat", zh: "对话" },
-  { id: "tools", icon: "tools", en: "Paper tools", zh: "论文工具" },
+  { id: "chat", icon: "chat", en: "Paper chat", zh: "论文对话" },
+  { id: "tools", icon: "tools", en: "Tools", zh: "论文工具" },
 ];
 
 function NeedsPaper() {
   const zh = useStore((s) => s.uiLang) === "zh";
-  return <div className="panel-body muted">{zh ? "打开一篇论文后即可使用。" : "Open a paper to use this."}</div>;
+  return (
+    <EmptyState
+      icon={<FileText size={20} />}
+      title={zh ? "先打开一篇论文" : "Open a paper first"}
+      hint={zh ? "论文对话与论文工具针对当前打开的论文工作。" : "Paper chat and the paper tools work on the paper in the active tab."}
+    />
+  );
 }
 
 function ChatSlot() {
@@ -29,7 +37,7 @@ function ToolsSlot() {
 /** Default slot contents. The pane itself is only a container, so any slot can
  *  be swapped (e.g. a session-based agent chat) without touching the layout. */
 export const DEFAULT_AI_SLOTS: Record<AiMode, () => ReactNode> = {
-  agent: () => <AgentPanel />,
+  agent: () => <SessionChat />,
   chat: () => <ChatSlot />,
   tools: () => <ToolsSlot />,
 };
@@ -48,7 +56,7 @@ export function AiPane({ slots = DEFAULT_AI_SLOTS, onClose }: { slots?: Record<A
   return (
     <div className="wb-ai" data-ai-pane tabIndex={-1}>
       <div className="wb-ai-head">
-        <div className="wb-seg" role="tablist">
+        <div className="wb-ai-tabs" role="tablist">
           {MODES.map((m) => (
             <button
               key={m.id}
@@ -63,7 +71,7 @@ export function AiPane({ slots = DEFAULT_AI_SLOTS, onClose }: { slots?: Record<A
             </button>
           ))}
         </div>
-        <span className="wb-ai-context muted" title={current?.title}>{current?.title || ""}</span>
+        <span className="wb-ai-context" title={current?.title}>{mode !== "agent" ? current?.title || "" : ""}</span>
         {onClose && (
           <button className="wb-icon-btn" title={zh ? "收起 AI 面板 (Ctrl+L)" : "Hide AI pane (Ctrl+L)"} onClick={onClose}>
             <Icon name="close" size={14} />

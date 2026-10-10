@@ -1,0 +1,142 @@
+// Tool families: icon, human label and the one-line argument summary on a tool card.
+import {
+  BadgeCheck, BookOpen, Bot, Brain, FilePen, FileSearch, FileText, FolderTree, Globe, Library, ListTodo, Map as MapIcon,
+  MessageCircleQuestion, Play, Plug, Search, Server, Sparkles, Terminal, Telescope, Workflow, Wrench, type LucideIcon,
+} from "lucide-react";
+import type { SpanRef, ToolCallMessage } from "../../api/harness";
+import { useStore } from "../../store";
+
+export type ToolFamily = "paper" | "research" | "read" | "edit" | "exec" | "web" | "agent" | "external";
+
+const EXACT: Record<string, { icon: LucideIcon; family: ToolFamily; en: string; zh: string }> = {
+  library_search: { icon: Search, family: "paper", en: "Search library", zh: "检索论文库" },
+  library_list: { icon: Library, family: "paper", en: "List library", zh: "列出论文库" },
+  library_import: { icon: Library, family: "paper", en: "Import paper", zh: "导入论文" },
+  paper_read: { icon: BookOpen, family: "paper", en: "Read paper", zh: "阅读论文" },
+  paper_search_spans: { icon: FileSearch, family: "paper", en: "Search passages", zh: "检索段落" },
+  paper_summary: { icon: BookOpen, family: "paper", en: "Summarize paper", zh: "总结论文" },
+  paper_explain: { icon: BookOpen, family: "paper", en: "Explain passage", zh: "讲解段落" },
+  paper_references: { icon: BookOpen, family: "paper", en: "References", zh: "参考文献" },
+  scholar_search: { icon: Search, family: "paper", en: "Search scholar", zh: "学术搜索" },
+  run_workflow: { icon: Workflow, family: "research", en: "Run workflow", zh: "运行工作流" },
+  verify_claims: { icon: BadgeCheck, family: "research", en: "Verify claims", zh: "核验论断" },
+  agent_reader: { icon: Telescope, family: "research", en: "Reader agent", zh: "阅读子智能体" },
+  fs_list: { icon: FolderTree, family: "read", en: "List files", zh: "列出文件" },
+  fs_read: { icon: FileText, family: "read", en: "Read file", zh: "读取文件" },
+  fs_glob: { icon: FileSearch, family: "read", en: "Find files", zh: "查找文件" },
+  fs_grep: { icon: FileSearch, family: "read", en: "Search files", zh: "搜索文件" },
+  fs_write: { icon: FilePen, family: "edit", en: "Write file", zh: "写入文件" },
+  fs_edit: { icon: FilePen, family: "edit", en: "Edit file", zh: "编辑文件" },
+  shell_run: { icon: Terminal, family: "exec", en: "Run command", zh: "运行命令" },
+  python_run: { icon: Play, family: "exec", en: "Run Python", zh: "运行 Python" },
+  web_search: { icon: Globe, family: "web", en: "Search web", zh: "搜索网页" },
+  web_fetch: { icon: Globe, family: "web", en: "Fetch page", zh: "抓取网页" },
+  todo_write: { icon: ListTodo, family: "agent", en: "Update tasks", zh: "更新任务" },
+  ask_user: { icon: MessageCircleQuestion, family: "agent", en: "Ask you", zh: "向你提问" },
+  task: { icon: Bot, family: "agent", en: "Subagent", zh: "子智能体" },
+  plan_submit: { icon: MapIcon, family: "agent", en: "Propose plan", zh: "提交计划" },
+  memory_recall: { icon: Brain, family: "agent", en: "Recall memory", zh: "回忆记忆" },
+  memory_note: { icon: Brain, family: "agent", en: "Save memory", zh: "写入记忆" },
+  result_read: { icon: FileText, family: "agent", en: "Re-read result", zh: "重读结果" },
+};
+
+export function toolMeta(tool: string, zh: boolean): { icon: LucideIcon; family: ToolFamily; label: string } {
+  const hit = EXACT[tool];
+  if (hit) return { icon: hit.icon, family: hit.family, label: zh ? hit.zh : hit.en };
+  const pretty = tool.replace(/^(mcp|skill|delegate|remote)_/, "").replace(/_/g, " ");
+  if (tool.startsWith("mcp_")) return { icon: Plug, family: "external", label: pretty };
+  if (tool.startsWith("skill_")) return { icon: Sparkles, family: "external", label: pretty };
+  if (tool.startsWith("delegate_")) return { icon: Bot, family: "external", label: pretty };
+  if (tool.startsWith("remote_") || tool.includes("ssh")) return { icon: Server, family: "exec", label: pretty };
+  if (tool.startsWith("paper_") || tool.startsWith("library_")) return { icon: BookOpen, family: "paper", label: pretty };
+  if (tool.startsWith("fs_")) return { icon: FileText, family: "read", label: pretty };
+  return { icon: Wrench, family: "external", label: pretty };
+}
+
+const PRIMARY = ["path", "file_path", "command", "query", "pattern", "url", "question", "description", "workflow", "goal", "prompt", "task", "script", "text", "name"];
+
+const clip = (s: string, n = 120) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+/** One-line summary of what the call is about. */
+export function argSummary(call: Pick<ToolCallMessage, "tool" | "args">): string {
+  const args = call.args || {};
+  const papers = useStore.getState().papers;
+  const title = (id: unknown) => papers.find((p) => p.id === id)?.title || String(id);
+  const parts: string[] = [];
+  if (typeof args.paper_id === "string") parts.push(clip(title(args.paper_id), 60));
+  if (Array.isArray(args.paper_ids) && args.paper_ids.length) {
+    parts.push(args.paper_ids.length === 1 ? clip(title(args.paper_ids[0]), 60) : `${args.paper_ids.length} papers`);
+  }
+  if (call.tool === "todo_write" && Array.isArray(args.todos)) return `${args.todos.length} items`;
+  if (call.tool === "task" && args.subagent_type) parts.push(String(args.subagent_type));
+  const key = PRIMARY.find((k) => typeof args[k] === "string" && args[k].trim());
+  if (key) parts.push(clip(String(args[key]).replace(/\s+/g, " ").trim()));
+  else if (!parts.length) {
+    const first = Object.entries(args).find(([, v]) => typeof v === "string" || typeof v === "number");
+    if (first) parts.push(clip(`${first[0]}: ${String(first[1]).replace(/\s+/g, " ")}`));
+  }
+  if (typeof args.section === "string" && args.section) parts.push(`§ ${clip(args.section, 40)}`);
+  if (args.pages != null && args.pages !== "") parts.push(`p. ${args.pages}`);
+  return parts.join(" · ");
+}
+
+const SPAN_MARK = /\[S:([^\]\s]+#\d+)\]/g;
+
+/** Citable spans of a tool call: structured ones first, then `[S:<paper>#<n>]` markers in the preview. */
+export function callSpans(call: ToolCallMessage): SpanRef[] {
+  const out = new Map<string, SpanRef>();
+  for (const s of [...(call.spans || []), ...(call.citations || [])]) {
+    if (s && s.id && s.paper_id) out.set(String(s.id), s);
+  }
+  const text = call.result_preview || "";
+  for (const m of text.matchAll(SPAN_MARK)) {
+    const id = m[1];
+    if (out.has(id)) continue;
+    // "… [S:id] (p. 4)" / "p.4 [S:id]" style hints near the marker give us a page to jump to
+    const near = text.slice(Math.max(0, m.index! - 40), m.index! + m[0].length + 40);
+    const page = /\bp(?:age|\.)?\s*(\d{1,4})\b/i.exec(near);
+    // span pages are 0-based; the hint printed for readers is 1-based
+    out.set(id, { id, paper_id: id.slice(0, id.lastIndexOf("#")), page: page ? Math.max(0, Number(page[1]) - 1) : null });
+  }
+  return [...out.values()];
+}
+
+export function spanLabel(span: SpanRef): string {
+  const title = span.title || useStore.getState().papers.find((p) => p.id === span.paper_id)?.title || span.paper_id;
+  const short = title.length > 28 ? `${title.slice(0, 27)}…` : title;
+  return span.page != null ? `${short} · p.${span.page + 1}` : `${short} · #${span.id.slice(span.id.lastIndexOf("#") + 1)}`;
+}
+
+/** Open the paper tab for a span and flash it when we know where it is. */
+export function openSpan(span: SpanRef) {
+  const st = useStore.getState();
+  if (!st.papers.some((p) => p.id === span.paper_id)) {
+    st.notify(st.uiLang === "zh" ? "这篇论文不在论文库中" : "That paper is not in the library");
+    return;
+  }
+  if (span.page != null) {
+    void st.openCitation({ id: span.id, paper_id: span.paper_id, title: span.title || "", page: span.page, bbox: span.bbox ?? null, text: span.text || "" });
+  } else {
+    void st.openPaper(span.paper_id).catch(() => {});
+  }
+}
+
+export function formatDuration(start?: number | null, end?: number | null): string {
+  if (!start || !end || end < start) return "";
+  const s = end - start;
+  if (s < 1) return `${Math.max(1, Math.round(s * 1000))}ms`;
+  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
+  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+}
+
+export function relativeTime(ts: number | undefined, zh: boolean): string {
+  if (!ts) return "";
+  const d = Date.now() / 1000 - ts;
+  if (d < 60) return zh ? "刚刚" : "now";
+  if (d < 3600) return zh ? `${Math.floor(d / 60)} 分钟前` : `${Math.floor(d / 60)}m`;
+  if (d < 86400) return zh ? `${Math.floor(d / 3600)} 小时前` : `${Math.floor(d / 3600)}h`;
+  if (d < 86400 * 7) return zh ? `${Math.floor(d / 86400)} 天前` : `${Math.floor(d / 86400)}d`;
+  return new Date(ts * 1000).toLocaleDateString(zh ? "zh-CN" : undefined, { month: "short", day: "numeric" });
+}
+
+export const formatTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(Math.round(n)));

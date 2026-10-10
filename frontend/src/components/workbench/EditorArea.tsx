@@ -1,11 +1,18 @@
-import { useEffect } from "react";
-import { tabKey, useStore, type EditorTab } from "../../store";
+import { useEffect, useState } from "react";
+import { ArrowUp, Command, FolderTree, MessageSquare, Upload, type LucideIcon } from "lucide-react";
+import { splitWorkspaceId, tabKey, useStore, type EditorTab } from "../../store";
+import { useSessions } from "../../sessionStore";
 import { Outline } from "../Outline";
 import { Logo } from "../Logo";
 import { PdfViewer } from "../../pdf/PdfViewer";
 import { RunResult, RunStatus, RunTrace, agentText } from "../AgentRunViews";
+import { relativeTime } from "../session/toolMeta";
+import { Spinner } from "../ui";
+import { CheckpointView, FileEditor, isDirty, useFiles } from "./FileEditor";
 import { Icon } from "./icons";
 import { SHORTCUTS } from "./shortcuts";
+
+const baseName = (path: string) => path.split("/").pop() || path;
 
 function useTabTitle(tab: EditorTab) {
   const papers = useStore((s) => s.papers);
@@ -13,44 +20,63 @@ function useTabTitle(tab: EditorTab) {
   const zh = useStore((s) => s.uiLang) === "zh";
   if (tab.kind === "welcome") return zh ? "欢迎" : "Welcome";
   if (tab.kind === "run") return run?.goal || (zh ? "运行报告" : "Run report");
+  if (tab.kind === "file") return baseName(splitWorkspaceId(tab.id).ref);
+  if (tab.kind === "checkpoint") return zh ? "修改差异" : "Change diff";
   return papers.find((p) => p.id === tab.id)?.title || (zh ? "论文" : "Paper");
+}
+
+const TAB_ICON: Record<EditorTab["kind"], string> = { paper: "paper", run: "report", welcome: "home", file: "file", checkpoint: "diff" };
+
+/** Close a tab, asking first when a workspace file has unsaved edits. */
+export function requestCloseTab(key: string) {
+  const st = useStore.getState();
+  const tab = st.openTabs.find((t) => tabKey(t) === key);
+  if (tab?.kind === "file") {
+    if (isDirty(tab.id) && !confirm(st.uiLang === "zh" ? "这个文件有未保存的修改，仍然关闭？" : "This file has unsaved changes. Close anyway?")) return;
+    useFiles.getState().drop(tab.id);
+  }
+  st.closeTab(key);
 }
 
 function TabButton({ tab }: { tab: EditorTab }) {
   const key = tabKey(tab);
   const active = useStore((s) => s.activeTabKey === key);
   const activateTab = useStore((s) => s.activateTab);
-  const closeTab = useStore((s) => s.closeTab);
   const live = useStore((s) => tab.kind === "run" && ["running", "awaiting_approval"].includes(s.runs[tab.id]?.status || ""));
+  const dirty = useFiles((s) => {
+    const b = tab.kind === "file" ? s.buffers[tab.id] : undefined;
+    return !!b && b.loaded && b.content !== b.saved;
+  });
   const zh = useStore((s) => s.uiLang) === "zh";
   const title = useTabTitle(tab);
   return (
     <div
       role="tab"
       aria-selected={active}
-      className={`wb-tab${active ? " active" : ""}`}
-      title={title}
+      className={`wb-tab kind-${tab.kind}${active ? " active" : ""}${dirty ? " dirty" : ""}`}
+      title={tab.kind === "file" || tab.kind === "checkpoint" ? splitWorkspaceId(tab.id).ref : title}
       onClick={() => void activateTab(key)}
       onMouseDown={(e) => e.button === 1 && e.preventDefault()}
       onAuxClick={(e) => {
         if (e.button === 1) {
           e.preventDefault();
-          closeTab(key);
+          requestCloseTab(key);
         }
       }}
     >
-      <Icon name={tab.kind === "paper" ? "paper" : tab.kind === "run" ? "report" : "home"} size={14} />
+      <Icon name={TAB_ICON[tab.kind]} size={14} />
       <span className="wb-tab-title">{title}</span>
-      {live && <span className="agent-dot running" />}
+      {live && <span className="gx-dot st-running" />}
       <button
         className="wb-tab-close"
         title={zh ? "关闭 (Ctrl+W)" : "Close (Ctrl+W)"}
         onClick={(e) => {
           e.stopPropagation();
-          closeTab(key);
+          requestCloseTab(key);
         }}
       >
-        <Icon name="close" size={12} />
+        <i className="wb-tab-dirty" />
+        <Icon name="close" size={13} />
       </button>
     </div>
   );
@@ -110,7 +136,7 @@ function ReportView({ runId, visible }: { runId: string; visible: boolean }) {
     <div className={`wb-doc wb-report${visible ? "" : " hidden"}`}>
       <div className="wb-report-inner agent-panel">
         {!run ? (
-          <div className="muted">…</div>
+          <div className="gx-chat-loading"><div className="gx-skel w40" /><div className="gx-skel w90" /><div className="gx-skel w75" /></div>
         ) : (
           <>
             <div className="wb-report-kicker">
@@ -144,76 +170,120 @@ function ReportView({ runId, visible }: { runId: string; visible: boolean }) {
 
 function Welcome({ visible }: { visible: boolean }) {
   const papers = useStore((s) => s.papers);
-  const projects = useStore((s) => s.projects);
   const runs = useStore((s) => s.recentRuns);
   const openPaper = useStore((s) => s.openPaper);
   const openRunTab = useStore((s) => s.openRunTab);
   const openPalette = useStore((s) => s.openPalette);
-  const askAgent = useStore((s) => s.askAgent);
   const setLayout = useStore((s) => s.setLayout);
-  const setProjectId = useStore((s) => s.setAgentProjectId);
+  const sessions = useSessions((s) => s.list);
+  const selectSession = useSessions((s) => s.select);
+  const compose = useSessions((s) => s.compose);
+  const newChat = useSessions((s) => s.newChat);
   const zh = useStore((s) => s.uiLang) === "zh";
+  const [q, setQ] = useState("");
   const T = zh
-    ? { tag: "旁注 · 一个窗口完成全部研究工作", start: "开始", imp: "导入论文…", ask: "提出研究问题…", palette: "命令面板", recentP: "最近论文", recentPr: "项目", recentR: "最近运行", keys: "快捷键", none: "暂无" }
-    : { tag: "旁注 · every step of your research in one window", start: "Start", imp: "Import a paper…", ask: "Start a research question…", palette: "Command palette", recentP: "Recent papers", recentPr: "Projects", recentR: "Recent runs", keys: "Keyboard shortcuts", none: "None yet" };
+    ? { kicker: "研究工作台", title: "把论文读进去，把问题想清楚。", tag: "导入论文，向智能体提出问题；它会逐段阅读、给出带出处的回答，并把笔记和代码留在工作区里。", ph: "提出一个研究问题…", imp: "导入论文", impH: "arXiv、DOI、链接或 PDF", chat: "新对话", chatH: "向智能体提问或布置任务", ws: "打开工作区", wsH: "笔记、代码与修改记录", pal: "命令面板", papers: "最近论文", chats: "最近对话", runs: "最近运行", keys: "快捷键", noneP: "导入第一篇论文后，它会出现在这里。", noneC: "还没有对话。" }
+    : { kicker: "Research workbench", title: "Read closely. Ask better questions.", tag: "Import papers and put questions to the agent — it reads passage by passage, answers with sources, and leaves notes and code in your workspace.", ph: "Ask a research question…", imp: "Import a paper", impH: "arXiv, DOI, URL or PDF", chat: "New chat", chatH: "Ask or hand over a task", ws: "Open workspace", wsH: "Notes, code and change history", pal: "Command palette", papers: "Recent papers", chats: "Recent chats", runs: "Recent runs", keys: "Keyboard", noneP: "Import your first paper and it will show up here.", noneC: "No chats yet." };
+
+  const ask = () => {
+    const text = q.trim();
+    if (!text) return;
+    newChat();
+    compose({ text, send: true });
+    setQ("");
+  };
+  const actions: { icon: LucideIcon; title: string; hint: string; keys?: string; run: () => void }[] = [
+    { icon: Upload, title: T.imp, hint: T.impH, run: () => openPalette("import") },
+    { icon: MessageSquare, title: T.chat, hint: T.chatH, keys: "Ctrl+L", run: () => { newChat(); compose({}); } },
+    { icon: FolderTree, title: T.ws, hint: T.wsH, run: () => setLayout({ activity: "workspace", sideOpen: true }) },
+    { icon: Command, title: T.pal, hint: zh ? "所有操作，一处可达" : "Every action in one place", keys: "Ctrl+K", run: () => openPalette("commands") },
+  ];
 
   return (
     <div className={`wb-doc wb-welcome${visible ? "" : " hidden"}`}>
       <div className="wb-welcome-inner">
-        <div className="wb-welcome-brand">
-          <Logo size={44} />
-          <div>
-            <h1>GlossX</h1>
-            <p className="muted">{T.tag}</p>
-          </div>
+        <header className="wb-hero">
+          <div className="wb-hero-kicker"><Logo size={18} /><span>GlossX</span><i>旁注</i><em>{T.kicker}</em></div>
+          <h1>{T.title}</h1>
+          <p>{T.tag}</p>
+          <form
+            className="wb-hero-ask"
+            onSubmit={(e) => {
+              e.preventDefault();
+              ask();
+            }}
+          >
+            <input value={q} placeholder={T.ph} onChange={(e) => setQ(e.target.value)} />
+            <button type="submit" className="gx-send" disabled={!q.trim()} aria-label={zh ? "发送" : "Send"}><ArrowUp size={15} strokeWidth={2.25} /></button>
+          </form>
+        </header>
+
+        <div className="wb-actions">
+          {actions.map((a) => {
+            const I = a.icon;
+            return (
+              <button key={a.title} type="button" onClick={a.run}>
+                <I size={16} strokeWidth={1.6} />
+                <strong>{a.title}</strong>
+                <small>{a.hint}</small>
+                {a.keys && <kbd>{a.keys}</kbd>}
+              </button>
+            );
+          })}
         </div>
+
         <div className="wb-welcome-grid">
           <section>
-            <h3>{T.start}</h3>
-            <button className="wb-link" onClick={() => openPalette("import")}><Icon name="upload" size={15} /> {T.imp}</button>
-            <button className="wb-link" onClick={() => askAgent({})}><Icon name="agent" size={15} /> {T.ask}</button>
-            <button className="wb-link" onClick={() => openPalette("commands")}><Icon name="command" size={15} /> {T.palette}</button>
-            <h3>{T.recentP}</h3>
-            {papers.length === 0 && <div className="muted">{T.none}</div>}
+            <h3>{T.papers}</h3>
+            {papers.length === 0 && <p className="wb-welcome-none">{T.noneP}</p>}
             {papers.slice(0, 6).map((p) => (
-              <button key={p.id} className="wb-link" onClick={() => void openPaper(p.id).catch(() => {})} title={p.title}>
-                <Icon name="paper" size={15} /> <span>{p.title || "Untitled"}</span>
+              <button key={p.id} className="wb-row" onClick={() => void openPaper(p.id).catch(() => {})} title={p.title}>
+                <Icon name="paper" size={14} />
+                <span>{p.title || "Untitled"}</span>
+                <em>{[(p.authors || [])[0], p.year].filter(Boolean).join(" · ")}</em>
               </button>
             ))}
           </section>
           <section>
-            <h3>{T.recentR}</h3>
-            {runs.length === 0 && <div className="muted">{T.none}</div>}
-            {runs.slice(0, 5).map((r) => (
-              <button key={r.id} className="wb-link" onClick={() => openRunTab(r.id)} title={r.goal}>
-                <span className={`agent-dot ${r.status}`} /> <span>{r.goal}</span>
-              </button>
-            ))}
-            <h3>{T.recentPr}</h3>
-            {projects.length === 0 && <div className="muted">{T.none}</div>}
-            {projects.slice(0, 5).map((p) => (
+            <h3>{T.chats}</h3>
+            {sessions.length === 0 && runs.length === 0 && <p className="wb-welcome-none">{T.noneC}</p>}
+            {sessions.slice(0, 5).map((s) => (
               <button
-                key={p.id}
-                className="wb-link"
+                key={s.id}
+                className="wb-row"
+                title={s.title}
                 onClick={() => {
-                  setProjectId(p.id);
-                  setLayout({ activity: "projects", sideOpen: true });
+                  selectSession(s.id);
+                  setLayout({ aiOpen: true, aiMode: "agent" });
                 }}
               >
-                <Icon name="projects" size={15} /> <span>{p.name}</span>
+                {s.status !== "idle" ? <Spinner size={13} /> : <Icon name="chat" size={14} />}
+                <span>{s.title}</span>
+                <em>{relativeTime(s.updated_at, zh)}</em>
               </button>
             ))}
-            <h3>{T.keys}</h3>
-            <div className="wb-keys">
-              {SHORTCUTS.map((s) => (
-                <div key={s.keys}>
-                  <span>{zh ? s.zh : s.en}</span>
-                  <kbd>{s.keys}</kbd>
-                </div>
-              ))}
-            </div>
+            {runs.length > 0 && <h3>{T.runs}</h3>}
+            {runs.slice(0, 4).map((r) => (
+              <button key={r.id} className="wb-row" onClick={() => openRunTab(r.id)} title={r.goal}>
+                <Icon name="report" size={14} />
+                <span>{r.goal}</span>
+                <em>{relativeTime(r.created_at, zh)}</em>
+              </button>
+            ))}
           </section>
         </div>
+
+        <footer className="wb-keys">
+          <h3>{T.keys}</h3>
+          <div>
+            {SHORTCUTS.map((s) => (
+              <span key={s.keys}>
+                <kbd>{s.keys}</kbd>
+                {zh ? s.zh : s.en}
+              </span>
+            ))}
+          </div>
+        </footer>
       </div>
     </div>
   );
@@ -249,9 +319,15 @@ export function EditorArea() {
       )}
       <div className="wb-editor-body">
         {current && <PaperEditor visible={!!paperActive && !loading} />}
-        {loading && <div className="wb-doc wb-loading muted">{zh ? "正在打开论文…" : "Opening paper…"}</div>}
+        {loading && <div className="wb-doc wb-loading"><Spinner size={16} /> {zh ? "正在打开论文…" : "Opening paper…"}</div>}
         {openTabs.filter((t) => t.kind === "run").map((t) => (
           <ReportView key={t.id} runId={t.id} visible={activeTabKey === tabKey(t)} />
+        ))}
+        {openTabs.filter((t) => t.kind === "file").map((t) => (
+          <FileEditor key={t.id} id={t.id} visible={activeTabKey === tabKey(t)} />
+        ))}
+        {openTabs.filter((t) => t.kind === "checkpoint").map((t) => (
+          <CheckpointView key={t.id} id={t.id} visible={activeTabKey === tabKey(t)} />
         ))}
         <Welcome visible={showWelcome} />
       </div>
