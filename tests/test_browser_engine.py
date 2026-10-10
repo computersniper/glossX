@@ -408,3 +408,34 @@ def test_handed_off_launch_retries_fresh_profile_then_next_browser(tmp_path, mon
     assert len({launch[1] for launch in launches}) == 4
     assert all('WEBVIEW2_USER_DATA_FOLDER' not in launch[2] for launch in launches)
     assert not stale.exists() and fresh_other.exists()
+
+
+def test_desktop_app_lends_its_own_browser(monkeypatch, tmp_path):
+    from app.harness.browser import process as process_module
+    from app.harness.browser.process import BrowserProcess, DESKTOP_BROWSER
+
+    opened = []
+
+    class Client:
+        _closed = False
+
+        async def close(self):
+            self._closed = True
+
+    async def open_client(url):
+        opened.append(url)
+        return Client()
+
+    async def check():
+        monkeypatch.setenv('GLOSSX_BROWSER_CDP', 'ws://127.0.0.1:9/devtools/browser/token')
+        monkeypatch.setattr(process_module.CDPClient, 'open', staticmethod(open_client))
+        monkeypatch.setattr(process_module, 'discover_all', lambda *_: pytest.fail('desktop mode must not look for a browser'))
+        browser = BrowserProcess(tmp_path)
+        first = await browser.start()
+        assert await browser.start() is first
+        assert opened == ['ws://127.0.0.1:9/devtools/browser/token']
+        assert browser.executable.browser == DESKTOP_BROWSER and browser.process is None
+        status = await BrowserManager(Sessions()).status()
+        assert status['available'] and status['embedded'] and status['browser'] == DESKTOP_BROWSER
+        await browser.close()
+    asyncio.run(check())

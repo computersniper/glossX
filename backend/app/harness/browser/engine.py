@@ -13,7 +13,7 @@ from ... import config
 from .. import settings, workspace
 from .cdp import CDPError
 from .discovery import discover
-from .process import BrowserProcess
+from .process import DESKTOP_BROWSER, BrowserProcess, desktop_endpoint
 from .proxy import GuardProxy
 from .security import validate_url, BrowserSecurityError
 from .snapshot import SnapshotReferences
@@ -91,6 +91,8 @@ class BrowserManager:
 
     async def status(self):
         opts = settings.load_global().get('browser', {})
+        if desktop_endpoint():
+            return {'available': True, 'browser': DESKTOP_BROWSER, 'path': None, 'headed': True, 'embedded': True, 'running': bool(self.browser and self.browser.client and not self.browser.client._closed), 'restart_pending': False}
         executable = await asyncio.to_thread(discover, opts.get('path'))
         return {'available': executable is not None, 'browser': executable.browser if executable else None, 'path': str(executable.path) if executable else opts.get('path'), 'headed': opts.get('headed', False), 'running': bool(self.browser and self.browser.process and (self.browser.process.returncode is None)), 'restart_pending': self._applied_options is not None and any((opts.get(key) != self._applied_options.get(key) for key in ('path', 'headed', 'allow_private')))}
 
@@ -332,7 +334,11 @@ class BrowserManager:
             async with self._context_lock:
                 state = self.states.get(sid)
                 if state is None:
-                    created = await self._client.call('Target.createBrowserContext', {'disposeOnDetach': True})
+                    params = {'disposeOnDetach': True}
+                    if desktop_endpoint():
+                        # Desktop pages get the guard proxy per context, not by command line.
+                        params['proxyServer'] = f'http://127.0.0.1:{self.browser.proxy_port}'
+                    created = await self._client.call('Target.createBrowserContext', params)
                     state = BrowserSession(created['browserContextId'])
                     self.states[sid] = state
             async with state.lock:

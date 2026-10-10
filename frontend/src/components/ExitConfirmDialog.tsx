@@ -3,10 +3,14 @@ import { useStore } from "../store";
 
 declare global {
   interface Window {
-    pywebview?: {
-      api?: {
-        cancel_exit?: () => Promise<boolean>;
-        confirm_exit?: (dontAskAgain: boolean) => Promise<boolean>;
+    // Set by the Electron shell's preload script.
+    glossxDesktop?: {
+      shell: "electron";
+      cancelExit: () => Promise<boolean>;
+      confirmExit: (dontAskAgain: boolean) => Promise<boolean>;
+      browser: {
+        show: (targetId: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
+        hide: () => Promise<boolean>;
       };
     };
   }
@@ -37,7 +41,7 @@ export function ExitConfirmDialog() {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setOpen(false);
-      void window.pywebview?.api?.cancel_exit?.();
+      void window.glossxDesktop?.cancelExit();
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
@@ -47,13 +51,13 @@ export function ExitConfirmDialog() {
 
   const cancel = async () => {
     setOpen(false);
-    await window.pywebview?.api?.cancel_exit?.();
+    await window.glossxDesktop?.cancelExit();
   };
 
   const confirm = async () => {
     setExiting(true);
     try {
-      await window.pywebview?.api?.confirm_exit?.(dontAskAgain);
+      await window.glossxDesktop?.confirmExit(dontAskAgain);
     } catch {
       setExiting(false);
     }
