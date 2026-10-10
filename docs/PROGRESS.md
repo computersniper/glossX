@@ -7,6 +7,8 @@
 
 > **2026-10-11 PDF 白屏修复**：缓存切换的文档状态竞态、旧渲染写入及错误重试，验证与未验收范围见 `docs/progress/pdf-white-screen.md`。
 
+> **Electron 新窗口 500**：已根据真实日志修复 portable 共用临时解压目录的问题；原因、推断与待验收项目见 `docs/progress/new-window-portable.md`。
+
 ## 0. 一分钟了解现状
 
 - **项目**：GlossX —— 面向科研与学习的 agent harness，在 Gloss 论文阅读器基础上开发（课程项目，Group 35）。

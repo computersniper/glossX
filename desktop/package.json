@@ -26,6 +26,6 @@
       { "from": "../packaging/gloss.ico", "to": "gloss.ico" }
     ],
     "win": { "icon": "../packaging/gloss.ico" },
-    "portable": { "artifactName": "GlossX.exe" }
+    "portable": { "artifactName": "GlossX.exe", "unpackDirName": true }
   }
 }
