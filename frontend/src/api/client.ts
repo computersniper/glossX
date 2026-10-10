@@ -596,6 +596,7 @@ export const api = {
     fetch("/api/settings").then((r) => j<{
       config: any;
       available_providers: string[];
+      all_providers?: string[];
       provider_statuses: Record<string, ProviderConnectionStatus>;
     }>(r)),
   getProviderStatuses: () =>

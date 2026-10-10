@@ -1,33 +1,91 @@
 <p align="center">
-  <img src="./docs/logo.svg" width="84" alt="GlossX logo" />
+  <img src="./docs/cover-x.svg" width="880" alt="GlossX —— 面向科研与学习的开放、插件原生 Agent Harness" />
 </p>
 
-<h1 align="center">GlossX</h1>
+<p align="center">
+  <a href="./README.md"><b>English</b></a> ·
+  <a href="#-快速开始"><b>快速开始</b></a> ·
+  <a href="#-功能一览"><b>功能</b></a> ·
+  <a href="#-架构"><b>架构</b></a> ·
+  <a href="#-文档"><b>文档</b></a> ·
+  <a href="./CHANGELOG.md"><b>版本记录</b></a>
+</p>
 
-<p align="center"><b>面向科研与学习的开放、插件原生 Agent Harness · 构建于 Gloss 论文阅读器之上</b></p>
+<p align="center">
+  <img src="https://img.shields.io/badge/状态-积极开发中-a78bfa?style=flat-square" alt="状态：积极开发中" />
+  <img src="https://img.shields.io/badge/运行-完全本地-7aa2f7?style=flat-square" alt="完全本地运行" />
+  <img src="https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-64748b?style=flat-square" alt="Windows、macOS、Linux" />
+  <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+" />
+  <img src="https://img.shields.io/badge/node-18%2B-5fa04e?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node 18+" />
+  <img src="https://img.shields.io/badge/模型-Claude%20Code%20%7C%20Codex%20%7C%20Anthropic%20%7C%20OpenAI%20兼容-0f172a?style=flat-square" alt="支持的模型" />
+</p>
 
-<p align="center"><a href="./README.md"><b>English →</b></a> · <a href="./CHANGELOG.md"><b>版本记录</b></a></p>
+<br />
 
-> **当前状态：积极开发中。** GlossX 位于一个私有仓库的 `glossX-dev` 分支。**目前没有公开发布，
-> 也尚未发布到 npm。** 预览版（Windows 的 `GlossX.exe` 与 `glossx-local` npm 压缩包）由 GitHub Actions 的
-> **“Preview build”** 工作流构建，可在工作流产物（artifacts）中下载，保留 14 天。在此之前，请
-> [从源码运行](#-安装与运行)。
->
-> GlossX 构建于本地 AI 论文阅读器 **Gloss** 之上。上游项目是
-> [computersniper/gloss](https://github.com/computersniper/gloss)；其公开 Release 与 npm 包属于上游，
-> 并不是 GlossX 的发布渠道。
+**GlossX** 是一个本地、自托管的研究工作台，让 AI Agent *和你一起*做研究。导入论文，提出问题，
+Agent 会逐段阅读、给出可以点击跳回原文的回答，并把笔记和代码留在带版本记录的工作区里。一切都在你自己的机器上。
 
----
+它完整保留了 **Gloss** 作为论文阅读器的全部能力，并在其上加入完整的 Agent Harness：
+由模型自己决定调用哪些工具的长期**会话**、类 Cursor 的工作台，以及“一切皆插件”的扩展体系
+（工具、命令、子 Agent、技能、钩子、工作流、模型提供方都是插件）。
 
-GlossX 是一个 **本地、自托管** 的工作台，让 AI Agent 与你一起做研究。它完整保留了 Gloss 作为论文阅读器的
-全部能力，并在其上加入完整的 Agent Harness：长生命周期的 Agent **会话**（由模型自己决定调用哪些工具）、
-类 Cursor 的工作台（论文库、多标签 PDF 阅读器、工作区文件），以及“一切皆插件”的扩展体系（工具、命令、
-子 Agent、技能、钩子、工作流、模型提供方都是插件）。
+<p align="center">
+  <img src="./docs/screenshots/agent-chat-dark.png" width="900" alt="GlossX 工作台：论文库、PDF 阅读器，以及带工具卡片、引用和待办清单的 Agent 会话" />
+</p>
 
-一切都跑在你自己的机器上。模型可以是本机的 **Claude Code CLI**、本机的 **Codex CLI**、**Anthropic API**，
-或 **任意 OpenAI 兼容端点**。
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>📖 读</h3>
+      真正的 PDF 阅读器，配合速览、笔记、思维导图、翻译和高亮。每个回答都能定位到原文的具体段落。
+    </td>
+    <td width="33%" valign="top">
+      <h3>🤖 交给 Agent</h3>
+      Agent 会话可以检索、精读、核实结论、写文件、跑代码，带审批、计划模式、子 Agent 和待办清单。
+    </td>
+    <td width="33%" valign="top">
+      <h3>🧩 扩展</h3>
+      一切皆插件：技能、斜杠命令、钩子、MCP 服务器、Claude Code / Codex 代理、SSH 远程和工作流。
+    </td>
+  </tr>
+</table>
 
-## 两种模式
+> [!NOTE]
+> **GlossX 正在积极开发中**，位于一个私有仓库的 `glossX-dev` 分支。目前没有公开发布，也尚未发布到 npm。
+> 预览版（Windows 的 `GlossX.exe` 与 `glossx-local` npm 压缩包）来自 GitHub Actions **Preview build**
+> 工作流的产物（保留 14 天）；也可以[从源码运行](#-快速开始)。
+> GlossX 构建于 **[Gloss](https://github.com/computersniper/gloss)** 之上，上游的公开 Release 与 npm 包属于 Gloss，不是 GlossX 的发布渠道。
+
+## 📸 界面预览
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="./docs/screenshots/threads-light.png" alt="按项目分组的会话列表、通知铃铛和欢迎页" />
+      <p align="center"><sub><b>会话与收件箱</b>：会话按项目分组，铃铛里优先列出需要你处理的。</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="./docs/screenshots/workspace-diff-dark.png" alt="源代码管理视图：差异、提交框和分支切换" />
+      <p align="center"><sub><b>带版本的工作区</b>：每个工作区都是 git 仓库，Agent 每轮自动提交。</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top" align="center">
+      <img src="./docs/screenshots/subagent-light.png" width="330" alt="子 Agent 任务卡片及其嵌套的工具调用" />
+      <p align="center"><sub><b>子 Agent</b>：委派的任务会显示它自己的工具调用和结果。</sub></p>
+    </td>
+    <td width="50%" valign="top" align="center">
+      <img src="./docs/screenshots/approval-light.png" width="330" alt="执行命令前的内联审批卡片" />
+      <p align="center"><sub><b>审批</b>：写文件和执行命令前先询问，可以批准一次、始终允许或拒绝。</sub></p>
+    </td>
+  </tr>
+</table>
+
+<sub>截图来自用测试模型驱动的真实会话（输入框里显示为 <code>fake</code>）。</sub>
+
+模型可以是本机的 **Claude Code CLI**、本机的 **Codex CLI**、**Anthropic API**，或 **任意 OpenAI 兼容端点**。
+
+## 🔀 两种模式
 
 通过左上角的开关切换。
 
@@ -36,7 +94,7 @@ GlossX 是一个 **本地、自托管** 的工作台，让 AI Agent 与你一起
 | **Gloss** | 经典的本地 AI 论文阅读器：PDF 阅读器，配合速览、笔记、思维导图、对话、翻译、解释、高亮、批注、参考文献、学术搜索、论文库、技能与插件。 |
 | **GlossX** | 研究工作台：论文库、多标签 PDF 阅读器、由模型自主调用工具的会话式 Agent 对话、带检查点的工作区文件，以及下文介绍的完整 Harness。 |
 
-## 功能一览
+## ✨ 功能一览
 
 | 功能 | 说明 |
 |---|---|
@@ -70,7 +128,7 @@ GlossX 是一个 **本地、自托管** 的工作台，让 AI Agent 与你一起
   源代码管理视图，以及 Agent 的 `vcs_*` 工具。
   可在智能体设置中关闭自动提交。未安装 Git 时仍可使用文件检查点；合并冲突会中止合并并列出冲突文件。
 
-## 架构简述
+## 🧱 架构
 
 ```
 内核            能力注册表 · 调度器 · 权限与沙箱闸门 · 预算计量 · 追踪日志
@@ -94,7 +152,7 @@ Harness         会话 · 工具调用循环 · 模式与权限 · 上下文压�
 仓库结构：`backend/`（FastAPI，托管已构建的前端）、`frontend/`（React + Vite + pdfjs-dist + KaTeX +
 React Flow）、`cli/`、`scripts/`、`packaging/`。
 
-## 安装与运行
+## 🚀 快速开始
 
 GlossX 尚未公开发布，请选择以下方式之一。
 
@@ -139,7 +197,7 @@ ssh -N -L 8010:127.0.0.1:8010 -p <SSH端口> user@server
 
 然后在本机打开 `http://localhost:8010`。
 
-## CLI
+## 🧰 CLI
 
 ```bash
 ./gloss serve                  # Linux/macOS：启动 web 应用
@@ -152,7 +210,7 @@ ssh -N -L 8010:127.0.0.1:8010 -p <SSH端口> user@server
 ./gloss skills                 # 列出发现到的 Claude / Codex 技能
 ```
 
-## 配置
+## 🔧 配置
 
 ### 模型提供方
 
@@ -203,7 +261,7 @@ Harness 设置中包含默认模式、allow / ask / deny 规则（工具名、`t
 - 加入论文库的每篇论文都会拥有自己的项目与工作区目录，每个工作区都是一个 git 仓库，每个 Agent 回合自动提交，
   并支持分支（见 [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)）。
 
-## 数据位置
+## 📁 数据位置
 
 GlossX 使用 **独立的数据目录**，与 Gloss 分开，因此可以和已安装的 Gloss 同时运行：
 
@@ -215,14 +273,14 @@ GlossX 使用 **独立的数据目录**，与 Gloss 分开，因此可以和已�
 `~/.glossx/` 和各工作区的 `.glossx/`；检查点位于 `.glossx/checkpoints/`，不进入 Git。
 不会触碰你的 Gloss 数据。
 
-## 小贴士
+## 💡 小贴士
 
 - 本地 `claude` / `codex` 走你已有的订阅登录，无需 API key。
 - 数据都在本地；只有外部检索（Crossref、arXiv、Semantic Scholar、网页搜索与抓取）会访问外网，
   离线时会优雅降级。
 - 生成的结果（速览、笔记、导图、翻译、高亮）会被缓存并复用。
 
-## 文档
+## 📚 文档
 
 - [docs/glossx-design.md](./docs/glossx-design.md)：内核、插件 manifest v2、适配器、核心 Agent、上下文、API
 - [docs/glossx-harness.md](./docs/glossx-harness.md)：会话、工具循环、权限、命令、子 Agent、钩子、界面
@@ -230,7 +288,7 @@ GlossX 使用 **独立的数据目录**，与 Gloss 分开，因此可以和已�
 - [docs/plugin-authoring.zh.md](./docs/plugin-authoring.zh.md)：插件开发规范（Gloss）
 - [CHANGELOG.md](./CHANGELOG.md)
 
-## 经典 Gloss 模式
+## 📖 经典 Gloss 模式
 
 经典 Gloss 阅读器的截图（上游项目为 [computersniper/gloss](https://github.com/computersniper/gloss)）：
 
@@ -253,7 +311,7 @@ GlossX 使用 **独立的数据目录**，与 Gloss 分开，因此可以和已�
   </tr>
 </table>
 
-## 致谢
+## 🙏 致谢
 
 GlossX 构建于 Gloss 之上，而 Gloss 是对 **[Moonlight](https://www.themoonlight.io/)**（“陪你读论文的 AI 同事”）
 的一次 **本地自托管重构**，从零重写，让它完全跑在你自己的机器上。设计上还参考了两个很棒的项目：

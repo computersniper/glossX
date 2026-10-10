@@ -269,6 +269,11 @@ async def test_connection(name: str | None = None) -> dict:
 
 def get_provider(name: str | None = None) -> Provider:
     name = resolve_provider_name(name)
+    if name in _PROVIDERS and not is_enabled(name):
+        raise RuntimeError(
+            f"The '{name}' model provider is turned off in Settings. "
+            "Turn it on or choose another provider."
+        )
     return _PROVIDERS.get(name, _PROVIDERS["local_claude"])
 
 
@@ -314,8 +319,21 @@ def _settings_for_current_feature(
     }
 
 
-def available() -> list[str]:
+def all_providers() -> list[str]:
+    """Every provider GlossX knows, whether or not it is switched on."""
     return list(_PROVIDERS.keys())
+
+
+def is_enabled(name: str, cfg: dict | None = None) -> bool:
+    """Providers are on unless the user switched them off in Settings."""
+    providers = (cfg or load_config()).get("providers") or {}
+    return (providers.get(name) or {}).get("enabled", True) is not False
+
+
+def available() -> list[str]:
+    """Providers the user can pick: the ones switched on in Settings."""
+    cfg = load_config()
+    return [name for name in _PROVIDERS if is_enabled(name, cfg)]
 
 
 async def complete(

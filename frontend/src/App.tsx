@@ -3,7 +3,6 @@ import { useStore } from "./store";
 import { Library } from "./components/Library";
 import { Outline } from "./components/Outline";
 import { SidePanel } from "./components/SidePanel";
-import { AgentWorkspace } from "./components/AgentWorkspace";
 import { Logo } from "./components/Logo";
 import { ProviderSwitcher } from "./components/ProviderSwitcher";
 import { ExitConfirmDialog } from "./components/ExitConfirmDialog";
@@ -92,7 +91,7 @@ function ClassicApp() {
           <span className="brand-zh">旁注</span>
         </div>
         <ModeToggle />
-        {(view === "agent" || reading) && (
+        {reading && (
           <div className="crumbs">
             <button className="link" onClick={closePaper}>{uiLang === "zh" ? "← 论文库" : "← Library"}</button>
           </div>
@@ -101,9 +100,7 @@ function ClassicApp() {
         <ProviderSwitcher />
       </header>
 
-      {view === "agent" ? (
-        <AgentWorkspace />
-      ) : !reading ? (
+      {!reading ? (
         <Library />
       ) : (
         <div className="reader">

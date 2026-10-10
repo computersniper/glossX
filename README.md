@@ -1,35 +1,96 @@
 <p align="center">
-  <img src="./docs/logo.svg" width="84" alt="GlossX logo" />
+  <img src="./docs/cover-x.svg" width="880" alt="GlossX — an open, plugin-native agent harness for research and learning" />
 </p>
 
-<h1 align="center">GlossX</h1>
+<p align="center">
+  <a href="./README.zh.md"><b>中文</b></a> ·
+  <a href="#-quick-start"><b>Quick start</b></a> ·
+  <a href="#-features"><b>Features</b></a> ·
+  <a href="#-architecture"><b>Architecture</b></a> ·
+  <a href="#-documentation"><b>Docs</b></a> ·
+  <a href="./CHANGELOG.md"><b>Changelog</b></a>
+</p>
 
-<p align="center"><b>An open, plugin-native agent harness for research and learning · built on the Gloss paper reader</b></p>
+<p align="center">
+  <img src="https://img.shields.io/badge/status-active%20development-a78bfa?style=flat-square" alt="Status: active development" />
+  <img src="https://img.shields.io/badge/runs-100%25%20local-7aa2f7?style=flat-square" alt="Runs locally" />
+  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-64748b?style=flat-square" alt="Windows, macOS, Linux" />
+  <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+" />
+  <img src="https://img.shields.io/badge/node-18%2B-5fa04e?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node 18+" />
+  <img src="https://img.shields.io/badge/models-Claude%20Code%20%7C%20Codex%20%7C%20Anthropic%20%7C%20OpenAI--compatible-0f172a?style=flat-square" alt="Models" />
+</p>
 
-<p align="center"><a href="./README.zh.md"><b>中文文档 →</b></a> · <a href="./CHANGELOG.md"><b>Changelog</b></a></p>
+<br />
 
-> **Status: under active development.** GlossX lives on the `glossX-dev` branch of a private
-> repository. There are **no public releases and no npm publication yet**. Preview builds
-> (`GlossX.exe` for Windows and the `glossx-local` npm tarball) are produced by the GitHub Actions
-> **"Preview build"** workflow and are available as workflow artifacts (kept for 14 days). Until
-> then, [run it from source](#-install--run).
->
-> GlossX is built on **Gloss**, the local AI paper reader. The upstream project is
-> [computersniper/gloss](https://github.com/computersniper/gloss); its public releases and npm
-> package belong to that project, not to GlossX.
+**GlossX** is a local, self-hosted workbench in which an AI agent does research *with* you.
+Import papers, ask a question, and the agent reads passage by passage, answers with sources you
+can click, and leaves its notes and code in a versioned workspace — all on your own machine.
 
----
+It keeps everything **Gloss** does as a paper reader and adds a full agent harness on top:
+long-lived **sessions** in which the model itself decides which tools to call, a Cursor-style
+workbench, and a plugin system where tools, commands, subagents, skills, hooks, workflows and
+providers are all plugins.
 
-GlossX is a **local, self-hosted** workbench in which an AI agent does research with you. It keeps
-everything Gloss does as a paper reader, and adds a full agent harness on top: long-lived agent
-**sessions** in which the model itself decides which tools to call, a Cursor-style workbench with a
-paper library, multi-tab PDF reader and workspace files, and a plugin system where everything
-(tools, commands, subagents, skills, hooks, workflows, providers) is a plugin.
+<p align="center">
+  <img src="./docs/screenshots/agent-chat-dark.png" width="900" alt="GlossX workbench: paper library, PDF reader and an agent session with tool-call cards, citations and a todo list" />
+</p>
 
-Everything runs on your own machine. Models can be your local **Claude Code CLI**, your local
-**Codex CLI**, the **Anthropic API**, or **any OpenAI-compatible endpoint**.
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>📖 Read</h3>
+      A real PDF reader with summaries, notes, mind maps, translation and highlights — every answer points back to the exact passage.
+    </td>
+    <td width="33%" valign="top">
+      <h3>🤖 Delegate</h3>
+      Agent sessions that search, read, verify claims, write files and run code, with approvals, plan mode, subagents and a todo list.
+    </td>
+    <td width="33%" valign="top">
+      <h3>🧩 Extend</h3>
+      Everything is a plugin: skills, slash commands, hooks, MCP servers, Claude Code / Codex delegates, SSH remotes and workflows.
+    </td>
+  </tr>
+</table>
 
-## Two modes
+> [!NOTE]
+> **GlossX is under active development** on the `glossX-dev` branch of a private repository.
+> There are no public releases and no npm publication yet. Preview builds (`GlossX.exe` for
+> Windows and the `glossx-local` npm tarball) come from the GitHub Actions **Preview build**
+> workflow artifacts (kept for 14 days); otherwise [run it from source](#-quick-start).
+> GlossX is built on **[Gloss](https://github.com/computersniper/gloss)**, whose public releases
+> and npm package belong to that upstream project.
+
+## 📸 A quick look
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="./docs/screenshots/threads-light.png" alt="Threads grouped by project with an inbox bell, and the welcome page" />
+      <p align="center"><sub><b>Threads &amp; inbox</b> — sessions grouped by project; the bell lists what needs you first.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="./docs/screenshots/workspace-diff-dark.png" alt="Source control view with a diff, commit box and branch switcher" />
+      <p align="center"><sub><b>Versioned workspaces</b> — every workspace is a git repo; the agent commits each turn.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top" align="center">
+      <img src="./docs/screenshots/subagent-light.png" width="330" alt="A subagent task card with its nested tool calls" />
+      <p align="center"><sub><b>Subagents</b> — delegated tasks show their own tool calls and result.</sub></p>
+    </td>
+    <td width="50%" valign="top" align="center">
+      <img src="./docs/screenshots/approval-light.png" width="330" alt="An inline approval card before a shell command runs" />
+      <p align="center"><sub><b>Approvals</b> — writes and commands ask first: once, always, or deny.</sub></p>
+    </td>
+  </tr>
+</table>
+
+<sub>Screenshots are from real sessions driven by a test model (shown as <code>fake</code> in the composer).</sub>
+
+Models can be your local **Claude Code CLI**, your local **Codex CLI**, the **Anthropic API**, or
+**any OpenAI-compatible endpoint**.
+
+## 🔀 Two modes
 
 Switch between them with the toggle at the top left.
 
@@ -38,7 +99,7 @@ Switch between them with the toggle at the top left.
 | **Gloss** | The classic local AI paper reader: PDF reader with summary, notes, mind map, chat, translate, explain, highlights, annotations, references, scholar search, library, skills and plugins. |
 | **GlossX** | The research workbench: library, multi-tab PDF reader, a session-based agent chat where the model calls tools itself, workspace files with checkpoints, and the full harness described below. |
 
-## Features
+## ✨ Features
 
 | Feature | What it does |
 |---|---|
@@ -73,7 +134,7 @@ The workspace features are specified in [docs/glossx-workspaces.md](./docs/gloss
   Auto-commit can be disabled in agent settings. When Git is unavailable, file checkpoints
   remain usable. Conflicting merges are aborted and report the affected files.
 
-## Architecture
+## 🧱 Architecture
 
 ```
 kernel          capability registry · scheduler · permission & sandbox gate · budget meter · trace log
@@ -99,7 +160,7 @@ Design documents: [docs/glossx-design.md](./docs/glossx-design.md),
 Repository layout: `backend/` (FastAPI, serves the built SPA), `frontend/` (React + Vite + pdfjs-dist
 + KaTeX + React Flow), `cli/`, `scripts/`, `packaging/`.
 
-## Install & run
+## 🚀 Quick start
 
 GlossX is not published yet, so choose one of the following.
 
@@ -145,7 +206,7 @@ ssh -N -L 8010:127.0.0.1:8010 -p <ssh-port> user@server
 
 Then open `http://localhost:8010` locally.
 
-## CLI
+## 🧰 CLI
 
 ```bash
 ./gloss serve                  # Linux/macOS: start the web app
@@ -158,7 +219,7 @@ Then open `http://localhost:8010` locally.
 ./gloss skills                 # list discovered Claude / Codex skills
 ```
 
-## Configuration
+## 🔧 Configuration
 
 ### Providers
 
@@ -213,7 +274,7 @@ or deleting the originals.
   a git repository with auto-commit per agent turn and branches (see
   [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)).
 
-## Data location
+## 📁 Data location
 
 GlossX uses its **own data directory**, separate from Gloss, so it can run next to an installed
 Gloss:
@@ -226,14 +287,14 @@ It holds the SQLite library, one folder per paper, `config.json`, sessions, work
 and memory. Agent configuration lives in `~/.glossx/` and each workspace's `.glossx/`;
 checkpoints live in `.glossx/checkpoints/` and stay out of Git. Your Gloss data is never touched.
 
-## Notes
+## 💡 Notes
 
 - Local `claude` / `codex` use your existing subscription login (no API key).
 - Your data stays local; only external lookups (Crossref, arXiv, Semantic Scholar, web search/fetch)
   leave your machine, and they degrade gracefully when offline.
 - Generated results (summary, notes, mind map, translation, highlights) are cached and reused.
 
-## Documentation
+## 📚 Documentation
 
 - [docs/glossx-design.md](./docs/glossx-design.md) — kernel, plugin manifest v2, adapters, core agent, context, API
 - [docs/glossx-harness.md](./docs/glossx-harness.md) — sessions, tool loop, permissions, commands, subagents, hooks, UI
@@ -241,7 +302,7 @@ checkpoints live in `.glossx/checkpoints/` and stay out of Git. Your Gloss data 
 - [docs/plugin-authoring.md](./docs/plugin-authoring.md) — plugin authoring (Gloss)
 - [CHANGELOG.md](./CHANGELOG.md)
 
-## Classic Gloss mode
+## 📖 Classic Gloss mode
 
 Screenshots of the classic Gloss reader (the upstream project is
 [computersniper/gloss](https://github.com/computersniper/gloss)):
@@ -265,7 +326,7 @@ Screenshots of the classic Gloss reader (the upstream project is
   </tr>
 </table>
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
 GlossX builds on Gloss, a **local, self-hosted reconstruction of [Moonlight](https://www.themoonlight.io/)**
 ("an AI colleague for reading research papers"), rebuilt from scratch to run entirely on your own

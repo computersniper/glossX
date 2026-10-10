@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <defs>
+    <linearGradient id="gx-x" x1="52" y1="10" x2="88" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c4b5fd"/>
+      <stop offset="0.55" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#7aa2f7"/>
+    </linearGradient>
+    <!-- the page gives way around the X so the two never touch -->
+    <mask id="gx-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96">
+      <rect width="96" height="96" fill="#fff"/>
+      <circle cx="70" cy="28" r="21" fill="#000"/>
+    </mask>
+  </defs>
+  <g mask="url(#gx-cut)">
+    <rect x="14" y="22" width="50" height="62" rx="9" fill="#a78bfa" fill-opacity="0.16" stroke="#7aa2f7" stroke-width="3.5"/>
+    <g stroke="#7aa2f7" stroke-width="3.5" stroke-linecap="round">
+      <line x1="26" y1="44" x2="52" y2="44"/>
+      <line x1="26" y1="56" x2="52" y2="56"/>
+      <line x1="26" y1="68" x2="42" y2="68"/>
+    </g>
+  </g>
+  <!-- the X: two crossing strokes, read as a four-point spark over the page -->
+  <g stroke="url(#gx-x)" stroke-width="8" stroke-linecap="round">
+    <line x1="57" y1="15" x2="83" y2="41"/>
+    <line x1="83" y1="15" x2="57" y2="41"/>
+  </g>
+</svg>

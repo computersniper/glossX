@@ -110,7 +110,6 @@ interface State {
   setMode: (m: UiMode) => void;
   view: "library" | "reader" | "agent";
   closePaper: () => void;
-  openAgentWorkspace: () => void;
   // layout
   layout: Layout;
   setLayout: (patch: Partial<Layout>) => void;
@@ -226,16 +225,15 @@ export const useStore = create<State>((set, get) => ({
       // the paper open in the classic reader becomes the active paper tab
       set({ mode: m });
       if (st.view === "reader" && st.current) void get().openPaper(st.current.id).catch(() => {});
-      else if (st.view === "agent" && st.agentRunId) get().openRunTab(st.agentRunId);
     } else {
       const active = st.openTabs.find((t) => tabKey(t) === st.activeTabKey);
-      const view = active?.kind === "paper" && st.current ? "reader" : active?.kind === "run" ? "agent" : "library";
+      // classic Gloss has no agent workspace: anything but a paper maps to the library
+      const view = active?.kind === "paper" && st.current ? "reader" : "library";
       set({ mode: m, view });
     }
   },
   view: "library",
   closePaper: () => set({ view: "library", selection: null }),
-  openAgentWorkspace: () => set({ view: "agent", selection: null }),
   layout: readJson<Layout>(LAYOUT_KEY, DEFAULT_LAYOUT),
   setLayout: (patch) => {
     const layout = { ...get().layout, ...patch };

@@ -1,7 +1,7 @@
 """Settings: view/update provider config (secrets masked on read)."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import config
@@ -23,7 +23,9 @@ class SettingsPatch(BaseModel):
 async def get_settings():
     return {
         "config": config.public_config(),
+        # available = switched on; all = every provider, for the on/off switches
         "available_providers": registry.available(),
+        "all_providers": registry.all_providers(),
         "provider_statuses": registry.provider_statuses(),
     }
 
@@ -57,8 +59,32 @@ async def update_settings(body: SettingsPatch):
             registry.reset_status(name)
     if body.feature_settings is not None:
         patch["feature_settings"] = body.feature_settings
+    _keep_an_enabled_active_provider(patch)
     config.save_config(patch)
     return {"config": config.public_config()}
+
+
+def _keep_an_enabled_active_provider(patch: dict) -> None:
+    """Apply provider on/off switches safely.
+
+    At least one provider must stay on, and the active provider is moved to the
+    first enabled one when the user switches the active provider off.
+    """
+    current = config.load_config()
+    switches = {
+        name: (current.get("providers", {}).get(name) or {}).get("enabled", True) is not False
+        for name in registry.all_providers()
+    }
+    for name, values in (patch.get("providers") or {}).items():
+        if name in switches and isinstance(values, dict) and "enabled" in values:
+            values["enabled"] = bool(values["enabled"])
+            switches[name] = values["enabled"]
+    enabled = [name for name, on in switches.items() if on]
+    if not enabled:
+        raise HTTPException(status_code=400, detail="At least one model provider must stay on.")
+    active = patch.get("provider") or current.get("provider")
+    if active not in enabled:
+        patch["provider"] = enabled[0]
 
 
 class TestBody(BaseModel):
@@ -69,4 +95,7 @@ class TestBody(BaseModel):
 async def test_provider(body: TestBody):
     """Check connectivity; local CLIs use their fast login-status command."""
     provider = body.provider or config.load_config().get("provider")
+    if provider in registry.all_providers() and not registry.is_enabled(provider):
+        return {"ok": False, "provider": provider, "disabled": True,
+                "error": f"The '{provider}' model provider is turned off in Settings."}
     return await registry.test_connection(provider)

@@ -205,7 +205,7 @@ function Welcome({ visible }: { visible: boolean }) {
     <div className={`wb-doc wb-welcome${visible ? "" : " hidden"}`}>
       <div className="wb-welcome-inner">
         <header className="wb-hero">
-          <div className="wb-hero-kicker"><Logo size={18} /><span>GlossX</span><i>旁注</i><em>{T.kicker}</em></div>
+          <div className="wb-hero-kicker"><Logo size={20} x /><span>GlossX</span><i>旁注</i><em>{T.kicker}</em></div>
           <h1>{T.title}</h1>
           <p>{T.tag}</p>
           <form

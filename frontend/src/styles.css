@@ -1035,3 +1035,18 @@ button.small { font-size: 12px; padding: 3px 8px; margin-top: 6px; }
   width: 110px; height: 26px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--border);
   background: var(--bg2); color: var(--fg); font: inherit; font-size: 12.5px;
 }
+
+/* Settings: on/off switches for each model provider (the checkbox itself is
+   styled by .setting-toggle, and as a switch by the GlossX workbench styles) */
+.provider-switches { display: grid; gap: 6px; margin: 4px 0 12px; }
+.provider-switch.setting-toggle {
+  display: flex; align-items: center; gap: 12px; margin: 0; padding: 9px 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg2);
+  transition: border-color .15s ease, opacity .15s ease;
+}
+.provider-switch.setting-toggle:not(.on) { opacity: .62; }
+.provider-switch.setting-toggle.on { border-color: color-mix(in srgb, var(--accent) 42%, var(--border)); }
+.provider-switch input { flex: none; margin: 0; }
+.provider-switch-text { display: grid; gap: 1px; min-width: 0; }
+.provider-switch-text b { font-weight: 600; font-size: 13px; color: var(--fg); }
+.provider-switch-text small { font-size: 11.5px; color: var(--fg-dim); }

@@ -20,6 +20,13 @@ const LANGS = [
 const CLAUDE_EFFORT = ["", "low", "medium", "high", "xhigh", "max"];
 const CODEX_EFFORT = ["", "minimal", "low", "medium", "high"];
 const CLAUDE_MODELS = ["sonnet", "opus", "haiku"];
+// [English name, Chinese name, English hint, Chinese hint]
+const PROVIDER_NAMES: Record<string, [string, string, string, string]> = {
+  local_claude: ["Claude Code (local CLI)", "Claude Code（本机 CLI）", "Uses your local claude login; no API key", "使用本机 claude 的登录，无需 API key"],
+  local_codex: ["Codex (local CLI)", "Codex（本机 CLI）", "Uses your local codex login; no API key", "使用本机 codex 的登录，无需 API key"],
+  anthropic: ["Anthropic API", "Anthropic API", "API key, or any Anthropic-compatible endpoint", "API key，或任意 Anthropic 兼容端点"],
+  openai: ["OpenAI-compatible API", "OpenAI 兼容 API", "OpenAI, a local vLLM, or any compatible endpoint", "OpenAI、本地 vLLM 或任意兼容端点"],
+};
 
 export function SettingsPanel() {
   const loadSettings = useStore((s) => s.loadSettings);
@@ -31,6 +38,7 @@ export function SettingsPanel() {
   const openFeatureSettings = useStore((s) => s.openFeatureSettings);
   const [cfg, setCfg] = useState<any>(null);
   const [providers, setProviders] = useState<string[]>([]);
+  const [allProviders, setAllProviders] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -56,6 +64,7 @@ export function SettingsPanel() {
     api.getSettings().then((s) => {
       setCfg(s.config);
       setProviders(s.available_providers);
+      setAllProviders(s.all_providers || s.available_providers);
     });
     void refreshUsage();
   }, []);
@@ -170,10 +179,44 @@ export function SettingsPanel() {
         <span>{uiLang === "zh" ? "关闭应用时显示退出提醒" : "Show a confirmation before quitting the app"}</span>
       </label>
 
-      <label>Active AI provider</label>
+      <label>{uiLang === "zh" ? "模型接入方式" : "Model providers"}</label>
+      <div className="provider-switches">
+        {allProviders.map((p) => {
+          const on = cfg.providers?.[p]?.enabled !== false;
+          const onCount = allProviders.filter((x) => cfg.providers?.[x]?.enabled !== false).length;
+          const last = on && onCount <= 1;
+          return (
+            <label key={p} className={"setting-toggle provider-switch" + (on ? " on" : "")} title={last ? (uiLang === "zh" ? "至少保留一种" : "At least one must stay on") : undefined}>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={on}
+                disabled={last}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  setCfg((c: any) => {
+                    const next = { ...c, providers: { ...c.providers, [p]: { ...c.providers[p], enabled } } };
+                    // turning the active provider off moves the selection to the first one still on
+                    if (!enabled && c.provider === p) {
+                      next.provider = allProviders.find((x) => x !== p && next.providers?.[x]?.enabled !== false) || c.provider;
+                    }
+                    return next;
+                  });
+                }}
+              />
+              <span className="provider-switch-text">
+                <b>{PROVIDER_NAMES[p]?.[uiLang === "zh" ? 1 : 0] || p}</b>
+                <small>{PROVIDER_NAMES[p]?.[uiLang === "zh" ? 3 : 2] || ""}</small>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      <label>{uiLang === "zh" ? "当前使用" : "Active AI provider"}</label>
       <select value={cfg.provider} onChange={(e) => setCfg({ ...cfg, provider: e.target.value })}>
-        {providers.map((p) => (
-          <option key={p} value={p}>{p}</option>
+        {allProviders.filter((p) => cfg.providers?.[p]?.enabled !== false).map((p) => (
+          <option key={p} value={p}>{PROVIDER_NAMES[p]?.[uiLang === "zh" ? 1 : 0] || p}</option>
         ))}
       </select>
       <div className="test-conn">
