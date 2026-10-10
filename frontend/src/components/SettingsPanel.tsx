@@ -103,6 +103,7 @@ export function SettingsPanel() {
         target_language: cfg.target_language,
         providers: cfg.providers,
         feature_settings: cfg.feature_settings || {},
+        paper_workspace_root: cfg.paper_workspace_root || "",
       });
       await loadSettings();
       if (checkConnection) await checkProvider(cfg.provider);
@@ -180,6 +181,10 @@ export function SettingsPanel() {
         />
         <span>{uiLang === "zh" ? "关闭应用时显示退出提醒" : "Show a confirmation before quitting the app"}</span>
       </label>
+
+      <label>{uiLang === "zh" ? "新论文工作区默认目录" : "Default folder for new paper workspaces"}</label>
+      <input aria-label={uiLang === "zh" ? "新论文工作区默认目录" : "Default folder for new paper workspaces"} value={cfg.paper_workspace_root || ""} placeholder={uiLang === "zh" ? "留空使用应用数据目录" : "Blank uses the app data folder"} onChange={(e) => setCfg({ ...cfg, paper_workspace_root: e.target.value })} />
+      <p className="usage-note">{uiLang === "zh" ? "输入本机绝对路径，保存后仅用于新建论文工作区；已有目录不会移动。单个项目可在工作区中更改位置。" : "Enter an absolute local path and save. This affects new paper workspaces; existing folders stay in place. Change an existing project’s folder in Workspace."}</p>
 
       <label>{uiLang === "zh" ? "模型接入方式" : "Model providers"}</label>
       <div className="provider-switches">
@@ -349,7 +354,7 @@ export function SettingsPanel() {
           onChange={(e) => setProv("openai", "api_key", e.target.value)} />
       </fieldset>
 
-      <button className="primary" onClick={() => void save()} disabled={saving}>
+      <button className="primary" onClick={() => void save().catch((e) => notify(String(e?.message || e)))} disabled={saving}>
         {saving ? "Saving…" : "Save settings"}
       </button>
     </div>

@@ -75,6 +75,12 @@ def current_call_meter():
     return _CALL_METER.get()
 
 
+def _meter_unavailable() -> None:
+    callback = getattr(_CALL_METER.get(), "usage_unavailable", None)
+    if callback:
+        callback()
+
+
 def _meter_after(system: str, messages: list[dict], text: str, usage: dict | None = None) -> None:
     meter = _CALL_METER.get()
     if meter is not None:
@@ -383,6 +389,7 @@ async def complete(
                 sent_sys, sent_msgs = sys, msgs
     except Exception as error:
         _record_status(provider_name, False, str(error) or type(error).__name__)
+        _meter_unavailable()
         raise
     _record_status(provider_name, True)
     result = (result[0], normalize_usage(result[1], sent_sys, sent_msgs, result[0]))
@@ -420,14 +427,25 @@ async def stream(
                     connected = True
                 chunks.append(chunk)
                 yield chunk
-    except Exception as error:
-        _record_status(provider_name, False, str(error) or type(error).__name__)
+    except BaseException as error:
+        if not isinstance(error, asyncio.CancelledError):
+            _record_status(provider_name, False, str(error) or type(error).__name__)
+        if chunks or usage:
+            # Preserve incurred usage even if the caller interrupts after text
+            # arrives. An incomplete billing snapshot isn't an exact call.
+            partial = dict(usage)
+            if not partial.get("_complete"):
+                partial["exact"] = False
+            _meter_after(sys, msgs, "".join(chunks), partial)
+            _record_usage(provider=provider_name, model=model, system=sys, messages=msgs,
+                          text="".join(chunks), usage=partial)
+        else:
+            _meter_unavailable()
         raise
     if not connected:
         _record_status(provider_name, True)
     _meter_after(sys, msgs, "".join(chunks), usage)
-    # The provider streaming contract only yields text, not a terminal usage
-    # object. Record a tokenizer estimate rather than inventing exact values.
+    # The task-local sink carries terminal usage; missing usage is estimated.
     _record_usage(
         provider=provider_name, model=model, system=sys, messages=msgs,
         text="".join(chunks), usage=usage,
@@ -444,11 +462,11 @@ async def _harness_stream(p: Provider, name: str, system: str, messages: list[di
             yield chunk
         return
     effective_model = model or (load_config().get("providers", {}).get(name) or {}).get("model")
-    signature = hashlib.sha256((name + "\n" + str(effective_model) + "\n" + system).encode()).hexdigest()
+    signature = hashlib.sha256(("harness-v2\n" + name + "\n" + str(effective_model) + "\n" + system).encode()).hexdigest()
     record = session.get("provider_thread") or {}
     old = record.get("messages") or []
     matches = bool(old) and len(messages) >= len(old) and all(
-        a.get("role") == b.get("role") and str(a.get("content", "")).strip() == str(b.get("content", "")).strip()
+        a.get("role") == b.get("role") and str(a.get("content", "")) == str(b.get("content", ""))
         for a, b in zip(old, messages))
     resume = record.get("id") if record.get("signature") == signature and matches and record.get("compactions") == session["context"].get("compactions", 0) else None
     reset = _HARNESS_RESET.get()
@@ -457,16 +475,18 @@ async def _harness_stream(p: Provider, name: str, system: str, messages: list[di
     sent = messages[len(old):] if resume else messages
     if not sent:
         sent = [{"role": "user", "content": "Continue."}]
-    try:
-        text, usage, thread = await method("" if resume and name == "local_codex" else system, sent, model, session_id=resume)
-    except ProviderSessionUnavailableError:
-        session.pop("provider_thread", None)
-        if callable(reset):
-            reset("thread_unavailable")
-        text, usage, thread = await method(system, messages, model, session_id=None)
+    with provider_runtime_options(harness=True, codex_usage_baseline=record.get("thread_usage") if resume else None):
+        try:
+            text, usage, thread = await method("" if resume and name == "local_codex" else system, sent, model, session_id=resume)
+        except ProviderSessionUnavailableError:
+            session.pop("provider_thread", None)
+            if callable(reset):
+                reset("thread_unavailable")
+            text, usage, thread = await method(system, messages, model, session_id=None)
     session["provider_thread"] = {"id": thread, "signature": signature,
                                   "compactions": session["context"].get("compactions", 0),
-                                  "messages": [*messages, {"role": "assistant", "content": text}]}
+                                  "thread_usage": usage.get("_thread_usage"),
+                                  "messages": [*messages, {"role": "assistant", "content": text.strip()}]}
     report_stream_usage(usage)
     for start in range(0, len(text), 24):
         yield text[start:start + 24]
@@ -501,6 +521,8 @@ async def complete_in_session(
             result = await complete_session(sys, msgs, model, session_id=session_id)
     except Exception as error:
         _record_status(provider, False, str(error) or type(error).__name__)
+        if record_usage:
+            _meter_unavailable()
         raise
     _record_status(provider, True)
     if record_usage:

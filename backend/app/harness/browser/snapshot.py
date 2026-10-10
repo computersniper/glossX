@@ -36,8 +36,8 @@ def _quoted(value: Any, limit: int = 220) -> str:
 
 
 class SnapshotReferences:
-    def __init__(self):
-        self._counter = 0
+    def __init__(self, *, counter_start: int = 0):
+        self._counter = counter_start
         self._refs: dict[str, ElementReference] = {}
 
     def invalidate(self):

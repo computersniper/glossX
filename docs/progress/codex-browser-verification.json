@@ -1,0 +1,56 @@
+{
+  "ok": true,
+  "model": "gpt-5.6-sol",
+  "tools": [
+    {
+      "tool": "browser_open",
+      "status": "done",
+      "error": null
+    },
+    {
+      "tool": "browser_read",
+      "status": "done",
+      "error": null
+    },
+    {
+      "tool": "browser_import_paper",
+      "status": "done",
+      "error": null
+    }
+  ],
+  "approvals": [
+    {
+      "tool": "browser_import_paper",
+      "decision": "once"
+    }
+  ],
+  "session_id": "b603c8caf068485f",
+  "paper_id": "19ac1d3de707",
+  "project_id": "ef4d4a013fad4e0d",
+  "usage": {
+    "input_tokens_est": 33374,
+    "output_tokens_est": 110,
+    "llm_calls": 4,
+    "input_tokens": 81401,
+    "cached_input_tokens": 68864,
+    "cache_write_tokens": 0,
+    "output_tokens": 491,
+    "reasoning_tokens": 187,
+    "cache_hit_rate": 0.8459846930627388,
+    "last_call": {
+      "input": 22386,
+      "cached": 21632,
+      "output": 66,
+      "exact": true,
+      "hit_rate": 0.9663182346109176
+    },
+    "exact": true
+  },
+  "ledger_totals": {
+    "llm_calls": 4,
+    "input_tokens": 81401,
+    "cached_input_tokens": 68864,
+    "output_tokens": 491,
+    "reasoning_tokens": 187
+  }
+}

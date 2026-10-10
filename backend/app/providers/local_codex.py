@@ -13,9 +13,12 @@ import base64
 import json
 import os
 import tempfile
+import hashlib
+from pathlib import Path
 from typing import AsyncIterator
 
 from ..config import ensure_codex_sandbox, load_config
+from .. import config as app_config
 from ..platform_support import (
     resolve_cli_command,
     subprocess_group_options,
@@ -38,6 +41,15 @@ def _cfg() -> dict:
 
 # Benign warnings the CLI prints on every run; they never explain a failure.
 _NOISE_MARKERS = ("failed to load models cache",)
+
+# Invocation-local overrides measured on Codex 0.144.6: fixed input 22,047 ->
+# 10,997 tokens. Preserve user provider/auth/network configuration. GlossX
+# supplies its own skills/tool catalog; native CLI extensions aren't connected.
+HARNESS_CONFIG_OVERRIDES = (
+    "skills.include_instructions=false", "skills.bundled.enabled=false",
+    "features.plugins=false", "features.apps=false", "features.memories=false",
+    "project_doc_max_bytes=0",
+)
 
 
 def _failure_detail(err: bytes, out: bytes, prompt: str, limit: int = 1500) -> str:
@@ -101,6 +113,54 @@ def _usage_from_jsonl(output: bytes) -> dict:
             usage = event["usage"]
             return {**usage, "reasoning_tokens": usage.get("reasoning_output_tokens", 0), "exact": True}
     return {}
+
+
+def _usage_for_call(raw: dict, baseline: dict | None, resumed: bool) -> dict:
+    """exec JSONL reports thread totals; subtract the durable pre-call baseline."""
+    keys = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens")
+    result = dict(raw)
+    if raw and resumed:
+        if baseline is None or any(int(raw.get(k) or 0) < int(baseline.get(k) or 0) for k in keys):
+            result = {"exact": False}
+        else:
+            for key in keys:
+                result[key] = int(raw.get(key) or 0) - int(baseline.get(key) or 0)
+    if raw:
+        result["_thread_usage"] = {k: int(raw.get(k) or 0) for k in keys}
+    return result
+
+
+def _usage_path(thread: str) -> Path:
+    # Keep accounting in GlossX data, never read/edit a personal CLI rollout.
+    return app_config.DATA_DIR / "codex-usage" / (hashlib.sha256(thread.encode()).hexdigest() + ".json")
+
+
+def _load_usage(thread: str) -> dict | None:
+    try:
+        value = json.loads(_usage_path(thread).read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _save_usage(thread: str, usage: dict) -> None:
+    path = _usage_path(thread)
+    temporary = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # A unique sibling prevents concurrent threads sharing a temp filename.
+        fd, temporary = tempfile.mkstemp(prefix=path.stem, suffix=".tmp", dir=path.parent)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(usage, handle)
+        os.replace(temporary, path)
+    except OSError:
+        pass  # Missing accounting must not turn a successful inference into failure.
+    finally:
+        if temporary:
+            try:
+                Path(temporary).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _session_is_unavailable(detail: str) -> bool:
@@ -212,6 +272,7 @@ class LocalCodexProvider(Provider):
         effort = runtime_option("effort", cfg.get("effort", ""))
         timeout = float(cfg.get("timeout", 600))
         sandbox = str(ensure_codex_sandbox())
+        baseline = runtime_option("codex_usage_baseline") or (_load_usage(session_id) if session_id else None)
 
         # codex has no separate system-prompt flag; fold it into the instructions.
         transcript = render_transcript(messages)
@@ -242,6 +303,9 @@ class LocalCodexProvider(Provider):
             cmd += ["-m", model]
         if effort:
             cmd += ["-c", f"model_reasoning_effort={effort}"]
+        if runtime_option("harness", False):
+            for override in HARNESS_CONFIG_OVERRIDES:
+                cmd += ["-c", override]
         for image_path in image_paths:
             cmd += ["-i", image_path]
         if session_id:
@@ -279,9 +343,16 @@ class LocalCodexProvider(Provider):
                 detail = _failure_detail(err, out, prompt)
                 raise RuntimeError(f"codex CLI produced no output: {detail}")
             resolved_session_id = _thread_id_from_jsonl(out) or session_id
+            raw_usage = _usage_from_jsonl(out)
+            per_call = _usage_for_call(raw_usage, baseline, bool(session_id))
+            usage = normalize_usage(per_call, system, messages, text)
+            if "_thread_usage" in per_call:
+                usage["_thread_usage"] = per_call["_thread_usage"]
+                if persist_session and resolved_session_id:
+                    _save_usage(resolved_session_id, per_call["_thread_usage"])
             return (
                 text,
-                normalize_usage(_usage_from_jsonl(out), system, messages, text),
+                usage,
                 resolved_session_id,
             )
         finally:

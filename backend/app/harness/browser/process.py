@@ -4,6 +4,9 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+import os
+import signal
+from collections import deque
 from pathlib import Path
 
 from ...platform_support import subprocess_group_options, terminate_process_tree
@@ -26,6 +29,17 @@ class BrowserProcess:
         self._last_used = time.monotonic()
         self._leases = 0
         self.proxy_port = None
+        self._stderr_task = None
+        self._stderr_tail = deque(maxlen=30)
+        self._job = None
+
+    async def _drain_stderr(self, stream):
+        while chunk := await stream.readline():
+            self._stderr_tail.append(chunk.decode('utf-8', 'replace').strip()[:1000])
+
+    def _startup_error(self, message):
+        detail = '\n'.join(self._stderr_tail)[-6000:]
+        return CDPError(message + (':\n' + detail if detail else ''))
 
     def touch(self):
         self._last_used = time.monotonic()
@@ -42,7 +56,7 @@ class BrowserProcess:
     async def start(self) -> CDPClient:
         async with self._lock:
             self.touch()
-            if self.process is not None and self.process.returncode is None and self.client is not None:
+            if self.process is not None and self.process.returncode is None and self.client is not None and not self.client._closed:
                 return self.client
             await self._stop()
             self.executable = await asyncio.to_thread(discover, self.path)
@@ -65,14 +79,21 @@ class BrowserProcess:
                 args.append("--headless=new")
             args.append("about:blank")
             try:
+                self._stderr_tail.clear()
                 self.process = await asyncio.create_subprocess_exec(
-                    *args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                    *args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
                     **subprocess_group_options(),
                 )
+                if os.name == 'nt':
+                    from .job import BrowserJob
+                    self._job = BrowserJob()
+                    self._job.assign(self.process.pid)
+                self._stderr_task = asyncio.create_task(self._drain_stderr(self.process.stderr))
                 deadline = time.monotonic() + 20
                 while time.monotonic() < deadline:
                     if self.process.returncode is not None:
-                        raise CDPError(f"Browser exited during startup (code {self.process.returncode})")
+                        await asyncio.sleep(0)
+                        raise self._startup_error(f"Browser exited during startup (code {self.process.returncode})")
                     try:
                         lines = (await asyncio.to_thread(port_file.read_text, encoding="utf-8")).splitlines()
                         port = int(lines[0])
@@ -85,7 +106,7 @@ class BrowserProcess:
                     self.client = await CDPClient.open(f"ws://127.0.0.1:{port}{endpoint}")
                     self._idle_task = asyncio.create_task(self._watch_idle(), name="glossx-browser-idle")
                     return self.client
-                raise CDPError("Browser startup timed out; check browser.path and profile permissions")
+                raise self._startup_error("Browser startup timed out; check browser.path and profile permissions")
             except BaseException:
                 # Includes cancelled launch: don't leave a child running.
                 cleanup = asyncio.create_task(self._stop())
@@ -114,11 +135,27 @@ class BrowserProcess:
                 pass
         client, self.client = self.client, None
         process, self.process = self.process, None
+        # terminate_process_tree uses communicate(), so relinquish ownership of
+        # stderr before it starts draining subprocess pipes.
+        stderr_task, self._stderr_task = self._stderr_task, None
+        if stderr_task is not None:
+            stderr_task.cancel()
+            await asyncio.gather(stderr_task, return_exceptions=True)
         try:
             if client is not None:
                 await client.close()
         finally:
+            job, self._job = self._job, None
+            if job is not None:
+                job.close()
             if process is not None:
+                if os.name != 'nt':
+                    # The parent may already have exited while its pgid still
+                    # contains renderers. The generic helper returns early then.
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                 await terminate_process_tree(process)
 
     async def close(self):

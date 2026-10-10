@@ -38,6 +38,7 @@ def report_stream_usage(usage: dict) -> None:
     sink = _STREAM_USAGE.get()
     if sink is not None:
         sink.update(usage)
+        sink.setdefault("_complete", True)
 
 
 def normalize_usage(raw: dict | None, system: str = "", messages: list[Message] | None = None,

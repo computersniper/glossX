@@ -1,0 +1,44 @@
+{
+  "model": "gpt-5.6-sol",
+  "cases": [
+    {
+      "case": "baseline",
+      "overrides": [],
+      "returncode": 0,
+      "reply": "OK.",
+      "usage": {
+        "input_tokens": 22047,
+        "cached_input_tokens": 20608,
+        "output_tokens": 6,
+        "reasoning_output_tokens": 0,
+        "reasoning_tokens": 0,
+        "exact": true
+      }
+    },
+    {
+      "case": "lean",
+      "overrides": [
+        "skills.include_instructions=false",
+        "skills.bundled.enabled=false",
+        "features.plugins=false",
+        "features.apps=false",
+        "features.memories=false",
+        "project_doc_max_bytes=0"
+      ],
+      "returncode": 0,
+      "reply": "OK.",
+      "usage": {
+        "input_tokens": 10997,
+        "cached_input_tokens": 6272,
+        "output_tokens": 6,
+        "reasoning_output_tokens": 0,
+        "reasoning_tokens": 0,
+        "exact": true
+      }
+    }
+  ],
+  "ok": true,
+  "reply_exact": false,
+  "input_reduction": 11050,
+  "input_reduction_percent": 50.12
+}

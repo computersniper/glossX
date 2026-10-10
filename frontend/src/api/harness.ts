@@ -377,6 +377,7 @@ function flattenTree(raw: any): TreeEntry[] {
 }
 
 export const workspaceApi = {
+  location: (projectId: string, path: string) => request<{ project_id: string; path: string; previous_path: string; source_preserved: boolean; verified_files: number }>(`${W(projectId)}/location`, { method: "POST", json: { path, confirm: true } }),
   tree: (projectId?: string | null) =>
     request<any>(`${W(projectId)}/tree`).then((r) => ({ entries: flattenTree(r), truncated: !!r?.truncated, root: (r?.root || r?.path || "") as string })),
   read: (projectId: string | null | undefined, path: string) =>

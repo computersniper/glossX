@@ -102,6 +102,11 @@ class CDPClient:
             reason = f"Browser connection failed: {error}"
         finally:
             self._closed = True
+            for queues in tuple(self._events.values()):
+                for queue in tuple(queues):
+                    if queue.full():
+                        queue.get_nowait()
+                    queue.put_nowait(None)
             for future in tuple(self._pending.values()):
                 if not future.done():
                     future.set_exception(CDPError(reason))

@@ -1,0 +1,11 @@
+{
+  "data_dir": "C:\\Users\\CAIJIE~1\\AppData\\Local\\Temp\\glossx-browser-acceptance-v3ytc9v9",
+  "checks": [
+    "lease prevents idle shutdown",
+    "idle shutdown stops descendants",
+    "crash restart cleans old descendants",
+    "restarted process tree closed",
+    "cancelled real startup cleans descendants"
+  ],
+  "success": true
+}

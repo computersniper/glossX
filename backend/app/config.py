@@ -131,6 +131,8 @@ PORT = int(os.environ.get("GLOSS_PORT", "8010"))
 # Provider / app configuration (persisted)
 # ---------------------------------------------------------------------------
 DEFAULT_CONFIG: dict[str, Any] = {
+    # Empty preserves the built-in location; changes apply to new paper projects.
+    "paper_workspace_root": "",
     # desktop app: warn before closing because in-flight work is interrupted
     "confirm_exit": True,
     # active LLM provider: "local_claude" | "anthropic" | "openai"

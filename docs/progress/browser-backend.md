@@ -95,3 +95,52 @@
 4. 若基础导航修通，再用假provider经harness调用17工具、批准下载/导入/密码/submit，检查ask/plan拒写及takeover。
 5. 运行 `backend/.venv/Scripts/python.exe -m pytest tests/test_browser_primitives.py -q`，再新增上述engine/API约束测试与必要全量回归；最终保存浏览器PID并通过关闭后的OS进程状态核验cleanup。
 6. 主agent已有 `scripts/dev/verify_browser.py` 计划/打包canary，使用前先确认文件实际是否存在及内容；本agent没有创建或声称这份脚本已运行。
+
+## 2026-10-10 恢复完整实现和测试（基线 6b15b9c，进行中）
+
+用户恢复 agent team 全力完成，前节「免验证」为历史状态，现已撤销。未提交代码以当前工作区为准。
+
+- 真实 Edge 挂起根因：autoAttach(waitForDebugger) 后又显式 attach 同一 page，形成两个 session；guard 会把尚未登记的页面当弹窗关闭。现在消费 autoattached session，先安装 Fetch/DOM/AX 再 resume，启动默认 tab 在 autoAttach 前关闭。两轮真实公网 arxiv open/read/snapshot 已退出 0；完整流程仍在补。
+- 已新增持久验收入口 `scripts/dev/verify_browser.py`，自动隔离数据与 GLOSSX_HOME，finally 关闭浏览器；可设 BROWSER_TRACE=1 输出 CDP 方法诊断。
+- 已修初次并发操作 context 创建竞争、关闭 CDP 的事件监听退出、SSE 首帧 yield 持锁、关闭活动 tab 的 viewer 切换。待专门测试。
+- 运行中 path/headed/allow_private 更改：活动操作或 viewer 仍保持原策略；无 lease 的下次操作重启自有 browser/context，status.restart_pending 表示等待。idle_timeout 动态应用，不通过 CLI 配置改变行为。
+- Linux startup stderr 现持续排空并保留末 30 行，在早退/超时异常中返回最多 6000 字符；没有默认 --no-sandbox。
+- 通用 DOI 已接入原 fetch_doi 的可选 client_factory；浏览器注入每跳 validate + 数字地址固定 proxy 的 GET 适配，复用 Crossref 元数据解析，不走 importer 无限制下载路径。待测试。
+- 操作返回 changes 和详细 note（URL、标题、可见正文、滚动变化），JS dialog 自动 dismiss 并记录，待真实控页验证。
+- 当前离线 primitives：22 passed，1 real-browser skipped；此记录不代表新增引擎测试或全流程已完成。
+
+### 本轮最终状态（代码冻结，取代上文进行中 / 待测描述）
+
+实现已完成，未提交，由协调者统一 Git 保存。没有新增项目依赖或更改个人 Edge/Chrome/CLI 配置。
+
+- autoattached session 是唯一页面控制通道；每个会话独立 incognito browserContext。新页面先安装网络拦截、禁下载、禁自动弹窗，再恢复 renderer；创建期间的多余弹窗保持暂停并关闭。refs 为各页面分配互不重叠数字范围，导航或新 snapshot 作废旧 refs。
+- 输入 API 与 17 个工具完整保留。下载 / 导入静态审批，密码 / submit / Enter 动态审批；ask/plan 即使有 allow rule 也不得下载/导入或提交密码/表单。用户接管 input 属于明确用户动作，不重复要求 agent 审批；接管时 agent 操作拒绝。
+- 操作变化提示不再只有 completed：返回 changes，记录 URL、标题、正文变化、滚动坐标；alert/confirm/prompt 自动取消并记录消息，避免卡死控制通道。正文只比较前 4000 字符，详细结果仍应 read/snapshot。
+- settings 浏览器 path/headed/allow_private 变化在 viewer/操作 lease 结束后的下一次操作重启，返回 status.restart_pending；持续开启 viewer 时应先切离浏览器面板使 SSE 释放，随后重新进入。重启销毁旧 context/tabs，并取消及 gather 旧 guard。idle_timeout 后续 watchdog 应用，navigation_budget 实时读取。
+- Windows 新增只包含 GlossX 自有浏览器的 kill-on-close Job Object，父进程 crash 后仍关闭子树；Posix 清理已有 process group，即使父进程先退出。stderr 单独排空，清理前释放 reader 给 communicate，避免重复读取。取消启动、取消页面初始化、取消普通操作均完成必要清理或释放 lease/lock。
+- 通用 DOI 使用原 importer 的 Crossref 解析与 PDF 链接，经可注入 guarded client 获取数据；无公开 PDF 返回明确错误。直接 PDF、arXiv abs、citation_pdf_url 路径保留。
+
+实际验证（均隔离数据与 GLOSSX_HOME）：
+
+- `GLOSS_TEST_BROWSER=1` 的 primitives 与新增引擎定向测试合计 47 passed（23 真 Edge primitives + 24 engine），格式化与页面初始化取消补丁之后运行；随后新增 read-only 模式 allow-rule 禁止 browser writes 的 4 个参数用例，engine 单独最终 **28 passed**。最终浏览器子集覆盖共 51 个用例，常规 CI 仅将 1 个真实浏览器用例 opt-in 跳过。
+- `scripts/dev/verify_browser.py`：**19 checks success=true**，公网 arXiv 导航/AX/read/find/screenshot/guarded PDF 下载/真正导入与论文工作区、首帧 JPEG、关闭活动 tab 后 viewer 存活、多会话隔离/外部 tab 拒绝、接管拒 agent、默认私网拒绝、显式开启后的本地 ref 输入/select/click/history/reload/stale refs、前后两轮 OS 全部子树停止。报告 `docs/progress/browser-verification.json`。
+- `--api-only`：真实 FastAPI 应用生命周期与 HTTP API（ASGI TestClient）、假 provider，5 个工具（open/snapshot/read/screenshot/import_paper）全部 done，导入实际批准 once、返回 paper、删除会话后 browser API 404；**4 checks success=true**。报告 `browser-verification-api.json`。最初脚本误读 approvals 等待到期，已改为真实 pending_approvals；成功报告来自修正后独立重跑，不包含那次失败。
+- `--lifecycle-only`：真实 Edge lease 阻止 idle、释放后 idle 全子树停止、手动 kill 父进程后的 crash restart 清旧子树、新进程关闭、在 CDP 握手阶段取消真正启动全子树停止，**5 checks success=true**。首次 idle 检查误把 process=None 当清理完成，已改 await watchdog 完成后用 Windows OpenProcess/GetExitCodeProcess 独立判活。
+- 全部自有测试进程已 finally close；最后 OS 查询无任何 `glossx-browser-acceptance` profile 的 Edge 进程。协调者另做真实 Codex 浏览器回合、服务 signal + viewer 关闭、source launcher smoke；其证据由协调者维护。
+
+可复用命令（PowerShell，仓库根）：
+
+```powershell
+$env:GLOSS_TEST_BROWSER='1'
+backend/.venv/Scripts/python.exe -m pytest tests/test_browser_engine.py tests/test_browser_primitives.py -q
+backend/.venv/Scripts/python.exe scripts/dev/verify_browser.py --api --lifecycle
+```
+
+独立补验用 `--api-only` / `--lifecycle-only`；普通运行只做公网与控页。BROWSER_TRACE=1 输出实际 CDP 方法，报告自动写对应 JSON，临时目录保留纸库与截图方便调查。
+
+限制与未验证（不属于未实现）：
+
+- 当前机器是 Windows，只真实跑 Edge；Linux/macOS 浏览器没有实机验证。Linux hosted runner 的历史 exit -6 根因未确认；现会带 stderr 早退诊断，不默认 no-sandbox。
+- DOI guarded importer 经离线完整 Crossref/PDF/元数据契约验证，没有对某个真实出版社 DOI 证明公开 PDF 可获取；订阅 / captcha / 无公开 PDF 仍可能失败，用户可上传 PDF。
+- Native installer 内的浏览器 smoke 与发布 CI 由协调者负责，本 agent 未声称打包产物通过。
+- JS 自动弹窗被阻止，需通过 open(new_tab=true) / viewer new_tab 明确创建；服务工作线程仍经 socket proxy，不能绕过私网 guard。Fake-IP 只对 DNS 返回 198.18/15 的 hostname 用 DoH 补实际公开地址；字面私网 IP 和 localhost 不走 fallback。

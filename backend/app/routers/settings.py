@@ -18,6 +18,7 @@ async def get_model_suggestions():
 
 
 class SettingsPatch(BaseModel):
+    paper_workspace_root: str | None = None
     confirm_exit: bool | None = None
     provider: str | None = None
     output_language: str | None = None
@@ -45,6 +46,21 @@ async def get_provider_statuses():
 @router.post("")
 async def update_settings(body: SettingsPatch):
     patch: dict = {}
+    if body.paper_workspace_root is not None:
+        from ..harness.locations import normalize_path
+
+        try:
+            patch["paper_workspace_root"] = (str(normalize_path(body.paper_workspace_root))
+                                             if body.paper_workspace_root.strip() else "")
+            if patch["paper_workspace_root"]:
+                from pathlib import Path
+                from ..agent import projects
+
+                base = Path(patch["paper_workspace_root"])
+                if any(base == root or root in base.parents for _, root in projects.workspace_paths()):
+                    raise ValueError("The default location cannot be inside an existing workspace")
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
     if body.confirm_exit is not None:
         patch["confirm_exit"] = body.confirm_exit
     if body.provider:

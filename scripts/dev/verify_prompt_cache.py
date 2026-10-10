@@ -74,6 +74,15 @@ def main() -> None:
                 assert not report["calls"][0]["resumed"] and all(call["resumed"] for call in report["calls"][1:])
                 assert all(call["usage"]["exact"] for call in report["calls"])
                 assert report["session_usage"]["llm_calls"] == len(report["calls"])
+                last_total = report["calls"][-1]["usage"]["_thread_usage"]
+                for key in ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"):
+                    assert sum(call["usage"][key] for call in report["calls"]) == last_total[key]
+                    assert report["session_usage"][key] == last_total[key]
+                ledger = store.ai_usage_summary(task_type="agent")["total"]
+                assert ledger["input_tokens"] == last_total["input_tokens"]
+                assert ledger["cached_input_tokens"] == last_total["cached_input_tokens"]
+                report["ledger_totals"] = ledger
+                report["raw_cumulative_matches_delta_sum"] = True
                 report["ok"] = True
             finally:
                 await manager.shutdown()

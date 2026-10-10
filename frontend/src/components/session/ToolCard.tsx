@@ -14,16 +14,21 @@ import { argSummary, callCommit, callSpans, formatDuration, formatTokens, openSp
 const EDIT_TOOLS = new Set(["fs_edit", "fs_write"]);
 
 function BrowserResult({ call, zh }: { call: ToolCallMessage; zh: boolean }) {
+  const [expanded, setExpanded] = useState(false);
   let result: any = call.browser || {};
   try { result = { ...JSON.parse(call.result_preview || "{}"), ...result }; } catch { /* truncated preview is still shown below */ }
   const sid = call.session_id || useSessions.getState().activeId;
   const url = call.url || result.url || call.args?.url;
   const screenshot = call.screenshot || result.image_url;
   const safeImage = typeof screenshot === "string" && /^\/api\/sessions\/[^/]+\/browser\/files\//.test(screenshot);
+  const body = result.text || result.snapshot;
   return <div className="gx-browser-result">
     {safeImage && <img src={screenshot} alt={result.title || (zh ? "页面截图" : "Page screenshot")} loading="lazy" />}
     {result.title && <strong>{result.title}</strong>}
     {url && <code title={url}>{url}</code>}
+    {typeof body === "string" && <pre className="gx-result">{expanded ? body : body.slice(0, 2000)}</pre>}
+    {typeof body === "string" && body.length > 2000 && <button type="button" className="gx-link" onClick={() => setExpanded(!expanded)}>{expanded ? (zh ? "收起正文" : "Show less") : (zh ? "显示完整正文" : "Show full text")}</button>}
+    {result.path && !safeImage && <code>{result.path}</code>}
     {sid && <button type="button" className="gx-link" onClick={() => void openBrowser(undefined, sid)}><ExternalLink size={12} />{zh ? "在浏览器查看" : "View in browser"}</button>}
   </div>;
 }
@@ -330,14 +335,14 @@ export function ToolCard({ call, project, sub, approvalFor, kidsOf }: ToolCardPr
                   ))}
                 </div>
               )}
-              {(call.result_preview || call.error) && (
+              {(call.result_preview || call.error) && (!call.tool.startsWith("browser_") || call.status === "error") && (
                 isVcsDiff && full === null
                   ? <VcsDiffResult text={call.result_preview || ""} zh={zh} />
                   : isTask && call.status === "done" && full === null
                   ? <div className="gx-task-result gx-prose"><Markdown text={call.result_preview || ""} /></div>
                   : <pre className={`gx-result${call.status === "error" ? " bad" : ""}`}>{call.error && call.status === "error" ? call.error : full ?? call.result_preview}</pre>
               )}
-              {call.result_ref && call.status === "done" && full === null && (call.result_chars == null || call.result_chars > (call.result_preview || "").length) && (
+              {call.result_ref && !call.tool.startsWith("browser_") && call.status === "done" && full === null && (call.result_chars == null || call.result_chars > (call.result_preview || "").length) && (
                 <button type="button" className="gx-link" onClick={loadFull}>
                   {zh ? "显示完整结果" : "Show the full result"}{call.result_chars ? ` · ${formatTokens(call.result_chars)} ${zh ? "字符" : "chars"}` : ""}
                 </button>

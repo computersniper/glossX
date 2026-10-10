@@ -127,6 +127,11 @@ def create(name: str, description: str = "", *, kind: str = "research",
         "memory": [],
         "run_ids": [],
     }
+    if kind == "paper" and config.load_config().get("paper_workspace_root"):
+        from ..harness.locations import normalize_path
+
+        base = normalize_path(config.load_config()["paper_workspace_root"])
+        project["workspace_path"] = str(base / project["id"])
     with _lock:
         _write(project)
     workspace_detail(project)
@@ -422,6 +427,53 @@ def remember_claims(project_id: str, run_id: str, claims: list[dict[str, Any]]) 
 def workspace_detail(project: dict[str, Any]) -> dict[str, Any]:
     from ..harness import workspace, vcs
     key = project["id"]
+    if workspace.is_relocating(key):
+        # Lists and inbox refreshes remain readable while filesystem tools and
+        # new turns are reserved. Do not seed files during a verified copy.
+        root = workspace_path(key) or (config.WORKSPACES_DIR / key).resolve()
+        project["workspace"] = {"key": key, "path": str(root), "relocating": True,
+                                "vcs": {"available": vcs.available(), "initialized": vcs.is_repo(root),
+                                        "branch": vcs.head_branch(root)}}
+        return project
     root = workspace.root_for(key)
     project["workspace"] = {"key": key, "path": str(root), "vcs": vcs.brief(key)}
     return project
+
+
+def workspace_path(project_id: str) -> Path | None:
+    """Read only the location metadata, avoiding workspace-detail recursion."""
+    try:
+        data = _read(project_id)
+    except ProjectNotFoundError:
+        return None
+    value = data.get("workspace_path")
+    if not value:
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        raise ValueError("Invalid stored workspace location")
+    return path.resolve()
+
+
+def workspace_paths() -> list[tuple[str, Path]]:
+    paths = [("default", (config.WORKSPACES_DIR / "default").resolve())]
+    for file in _dir().glob("*.json"):
+        key = file.stem
+        try:
+            _read(key)
+            paths.append((key, workspace_path(key) or (config.WORKSPACES_DIR / key).resolve()))
+        except ProjectNotFoundError:
+            continue
+    return paths
+
+
+def set_workspace_path(project_id: str, path: Path) -> None:
+    """Switch only after the location service has copied and verified files."""
+    with _lock:
+        project = _read(project_id)
+        project.pop("workspace", None)
+        project["workspace_path"] = str(path)
+        target = _path(project_id)
+        temporary = target.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(project, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporary, target)

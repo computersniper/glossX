@@ -64,7 +64,12 @@ class AnthropicProvider(Provider):
             head, marker, tail = system.partition("# Tools\n")
             body["system"] = [{"type": "text", "text": head, "cache_control": {"type": "ephemeral"}}] if head.strip() else []
             if marker:
-                body["system"].append({"type": "text", "text": marker + tail, "cache_control": {"type": "ephemeral"}})
+                # Tools/skills/subagents end before project instruction blocks.
+                boundaries = [tail.find(label) for label in ("\n\n# Global instructions", "\n\n# Project instructions", "\n\n# Project\n") if label in tail]
+                boundary = min(boundaries) if boundaries else len(tail)
+                body["system"].append({"type": "text", "text": marker + tail[:boundary], "cache_control": {"type": "ephemeral"}})
+                if tail[boundary:]:
+                    body["system"].append({"type": "text", "text": tail[boundary:], "cache_control": {"type": "ephemeral"}})
         if len(msgs) > 1:
             stable = msgs[-2]
             if isinstance(stable["content"], str):
@@ -116,7 +121,7 @@ class AnthropicProvider(Provider):
                     elif evt.get("type") == "message_delta":
                         usage.update(evt.get("usage") or {})
                     if usage:
-                        report_stream_usage(anthropic_usage(usage))
+                        report_stream_usage({**anthropic_usage(usage), "_complete": evt.get("type") == "message_stop"})
                     if evt.get("type") == "content_block_delta":
                         d = evt.get("delta", {})
                         if d.get("type") == "text_delta":

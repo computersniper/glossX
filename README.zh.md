@@ -120,7 +120,7 @@ Agent 会逐段阅读、给出可以点击跳回原文的回答，并把笔记�
 
 ### 线程、论文工作区与版本控制
 
-以下工作区功能的规格见 [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)。
+以下工作区功能的规格见 [docs/glossx-workspaces.md](./docs/glossx-workspaces.md)。设置中可指定新论文工作区的默认位置；单个工作区可手动选择新目录，确认后复制并校验文件、Git 历史及检查点，再切换路径，原目录始终保留。
 
 浏览器与缓存见[规格](docs/glossx-browser-cache.md)和[进度记录](docs/progress/browser-cache-integration.md)。
 设置新增 `gpt-6.1-sol` 等当前 Codex 模型建议；实际可用性取决于账号和端点，仍支持自定义模型 ID。

@@ -33,8 +33,54 @@ def _project(project_id: str | None) -> str | None:
 def _root(project_id: str | None):
     try:
         return workspace.root_for(_project(project_id))
+    except workspace.WorkspaceBusyError as error:
+        raise HTTPException(409, str(error)) from error
     except workspace.WorkspaceError as error:
         raise HTTPException(400, str(error)) from error
+
+
+class WorkspaceLocationBody(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+    confirm: bool = False
+
+
+@workspace_router.post("/{project_id}/location")
+async def relocate_workspace(project_id: str, body: WorkspaceLocationBody, request: Request):
+    from ..harness import locations
+
+    project = _project(project_id)
+    if project is None:
+        raise HTTPException(400, "Choose a project workspace to relocate")
+    if not body.confirm:
+        raise HTTPException(400, "Explicit confirmation is required; the old directory will be preserved")
+    blocked = _refuse_while_running(request, project_id, "relocate the workspace")
+    if blocked is not None:
+        return blocked
+    try:
+        destination = locations.normalize_path(body.path)
+        source = _root(project_id)
+        workspace.begin_relocation(project)
+    except workspace.WorkspaceBusyError as error:
+        return JSONResponse({"detail": str(error), "code": "busy"}, status_code=409)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    task = asyncio.create_task(asyncio.to_thread(locations.relocate, project, source, destination))
+    try:
+        # A disconnected client cannot stop a filesystem worker: keep the
+        # workspace reserved until it has actually finished, just like git.
+        while True:
+            try:
+                result = await asyncio.shield(task)
+                break
+            except asyncio.CancelledError:
+                if task.cancelled():
+                    raise
+    except (ValueError, OSError) as error:
+        raise HTTPException(400, str(error)) from error
+    finally:
+        workspace.end_relocation(project)
+        _sync_sessions(request, project_id)
+    return result
 
 
 def _session_scope(request: Request, session_id: str | None, project_id: str | None,

@@ -1,12 +1,235 @@
 {
   "model": "gpt-5.6-sol",
-  "ok": false,
-  "interrupted_by_user": true,
-  "reason": "User requested minimum implementation and no further testing to conserve quota.",
   "calls": [
-    {"number": 1, "resumed": false, "sent_characters": 27247, "duration_seconds": 32.359, "usage": {"input_tokens": 29060, "cached_input_tokens": 10496, "output_tokens": 95, "reasoning_tokens": 68, "exact": true}, "cache_hit_rate": 0.36118375774260153},
-    {"number": 2, "resumed": true, "sent_characters": 467, "duration_seconds": 41.203, "usage": {"input_tokens": 58705, "cached_input_tokens": 39424, "output_tokens": 102, "reasoning_tokens": 68, "exact": true}, "cache_hit_rate": 0.6715611958095563}
+    {
+      "number": 1,
+      "resumed": false,
+      "sent_characters": 26205,
+      "duration_seconds": 31.75,
+      "usage": {
+        "input_tokens": 35654,
+        "cached_input_tokens": 28032,
+        "cache_write_tokens": 0,
+        "output_tokens": 114,
+        "reasoning_tokens": 48,
+        "exact": true,
+        "prompt_tokens": 35654,
+        "completion_tokens": 114,
+        "total_tokens": 35768,
+        "_thread_usage": {
+          "input_tokens": 35654,
+          "cached_input_tokens": 28032,
+          "output_tokens": 114,
+          "reasoning_tokens": 48
+        }
+      },
+      "cache_hit_rate": 0.7862231446681999
+    },
+    {
+      "number": 2,
+      "resumed": true,
+      "sent_characters": 467,
+      "duration_seconds": 24.922,
+      "usage": {
+        "input_tokens": 18413,
+        "cached_input_tokens": 17664,
+        "cache_write_tokens": 0,
+        "output_tokens": 7,
+        "reasoning_tokens": 0,
+        "exact": true,
+        "prompt_tokens": 18413,
+        "completion_tokens": 7,
+        "total_tokens": 18420,
+        "_thread_usage": {
+          "input_tokens": 54067,
+          "cached_input_tokens": 45696,
+          "output_tokens": 121,
+          "reasoning_tokens": 48
+        }
+      },
+      "cache_hit_rate": 0.9593222179981534
+    },
+    {
+      "number": 3,
+      "resumed": true,
+      "sent_characters": 471,
+      "duration_seconds": 21.328,
+      "usage": {
+        "input_tokens": 18541,
+        "cached_input_tokens": 18176,
+        "cache_write_tokens": 0,
+        "output_tokens": 25,
+        "reasoning_tokens": 0,
+        "exact": true,
+        "prompt_tokens": 18541,
+        "completion_tokens": 25,
+        "total_tokens": 18566,
+        "_thread_usage": {
+          "input_tokens": 72608,
+          "cached_input_tokens": 63872,
+          "output_tokens": 146,
+          "reasoning_tokens": 48
+        }
+      },
+      "cache_hit_rate": 0.980313898926703
+    },
+    {
+      "number": 4,
+      "resumed": true,
+      "sent_characters": 480,
+      "duration_seconds": 21.531,
+      "usage": {
+        "input_tokens": 18706,
+        "cached_input_tokens": 18304,
+        "cache_write_tokens": 0,
+        "output_tokens": 7,
+        "reasoning_tokens": 0,
+        "exact": true,
+        "prompt_tokens": 18706,
+        "completion_tokens": 7,
+        "total_tokens": 18713,
+        "_thread_usage": {
+          "input_tokens": 91314,
+          "cached_input_tokens": 82176,
+          "output_tokens": 153,
+          "reasoning_tokens": 48
+        }
+      },
+      "cache_hit_rate": 0.9785095691222068
+    },
+    {
+      "number": 5,
+      "resumed": true,
+      "sent_characters": 471,
+      "duration_seconds": 23.859,
+      "usage": {
+        "input_tokens": 18834,
+        "cached_input_tokens": 18560,
+        "cache_write_tokens": 0,
+        "output_tokens": 25,
+        "reasoning_tokens": 0,
+        "exact": true,
+        "prompt_tokens": 18834,
+        "completion_tokens": 25,
+        "total_tokens": 18859,
+        "_thread_usage": {
+          "input_tokens": 110148,
+          "cached_input_tokens": 100736,
+          "output_tokens": 178,
+          "reasoning_tokens": 48
+        }
+      },
+      "cache_hit_rate": 0.9854518424126579
+    },
+    {
+      "number": 6,
+      "resumed": true,
+      "sent_characters": 480,
+      "duration_seconds": 20.937,
+      "usage": {
+        "input_tokens": 18998,
+        "cached_input_tokens": 18688,
+        "cache_write_tokens": 0,
+        "output_tokens": 7,
+        "reasoning_tokens": 0,
+        "exact": true,
+        "prompt_tokens": 18998,
+        "completion_tokens": 7,
+        "total_tokens": 19005,
+        "_thread_usage": {
+          "input_tokens": 129146,
+          "cached_input_tokens": 119424,
+          "output_tokens": 185,
+          "reasoning_tokens": 48
+        }
+      },
+      "cache_hit_rate": 0.9836824928939888
+    }
   ],
-  "three_turn_acceptance_completed": false,
-  "fixed_overhead_optimization_retained": false
+  "turns": [
+    {
+      "input_tokens_est": 0,
+      "output_tokens_est": 0,
+      "llm_calls": 2,
+      "input_tokens": 54067,
+      "cached_input_tokens": 45696,
+      "cache_write_tokens": 0,
+      "output_tokens": 121,
+      "reasoning_tokens": 48,
+      "cache_hit_rate": 0.8451735809273679,
+      "last_call": {
+        "input": 18413,
+        "cached": 17664,
+        "output": 7,
+        "exact": true,
+        "hit_rate": 0.9593222179981534
+      },
+      "exact": true,
+      "duration_seconds": 62.516
+    },
+    {
+      "input_tokens_est": 0,
+      "output_tokens_est": 0,
+      "llm_calls": 2,
+      "input_tokens": 37247,
+      "cached_input_tokens": 36480,
+      "cache_write_tokens": 0,
+      "output_tokens": 32,
+      "reasoning_tokens": 0,
+      "cache_hit_rate": 0.9794077375359089,
+      "last_call": {
+        "input": 18706,
+        "cached": 18304,
+        "output": 7,
+        "exact": true,
+        "hit_rate": 0.9785095691222068
+      },
+      "exact": true,
+      "duration_seconds": 45.406
+    },
+    {
+      "input_tokens_est": 0,
+      "output_tokens_est": 0,
+      "llm_calls": 2,
+      "input_tokens": 37832,
+      "cached_input_tokens": 37248,
+      "cache_write_tokens": 0,
+      "output_tokens": 32,
+      "reasoning_tokens": 0,
+      "cache_hit_rate": 0.9845633326284626,
+      "last_call": {
+        "input": 18998,
+        "cached": 18688,
+        "output": 7,
+        "exact": true,
+        "hit_rate": 0.9836824928939888
+      },
+      "exact": true,
+      "duration_seconds": 48.453
+    }
+  ],
+  "ok": true,
+  "session_usage": {
+    "input_tokens_est": 39811,
+    "output_tokens_est": 72,
+    "llm_calls": 6,
+    "input_tokens": 129146,
+    "cached_input_tokens": 119424,
+    "cache_write_tokens": 0,
+    "output_tokens": 185,
+    "reasoning_tokens": 48,
+    "cache_hit_rate": 0.9247208585631765,
+    "last_call": {
+      "input": 18998,
+      "cached": 18688,
+      "output": 7,
+      "exact": true,
+      "hit_rate": 0.9836824928939888
+    },
+    "exact": true
+  },
+  "raw_cumulative_matches_delta_sum": true,
+  "turn_and_session_totals_match": true,
+  "three_turn_acceptance_completed": true,
+  "accounting_check": "Independent read-back of saved raw CLI totals, per-call deltas, turn totals and session totals; exact equality for all four token counters."
 }

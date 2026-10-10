@@ -380,6 +380,8 @@ class SessionManager:
 
     # -- turns ----------------------------------------------------------------------------
     def _reserve(self, rt: Runtime) -> None:
+        if workspace.is_relocating(rt.session.get("project_id")):
+            raise SessionBusyError("workspace relocation is in progress")
         if not self._accepting:
             raise SessionBusyError("the server is shutting down")
         if rt.parent is not None or rt.session.get("parent_id"):

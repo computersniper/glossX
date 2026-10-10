@@ -259,7 +259,45 @@ def _parser() -> argparse.ArgumentParser:
         help="run only the local server (for diagnostics)",
     )
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {APP_VERSION}")
+    parser.add_argument("--browser-smoke", type=Path, metavar="REPORT", help="verify bundled CDP modules with an isolated browser profile")
     return parser
+
+
+def _browser_smoke(report_path: Path) -> int:
+    import asyncio
+    import json
+    import tempfile
+    from app.harness.browser.process import BrowserProcess
+
+    async def verify() -> dict:
+        with tempfile.TemporaryDirectory(prefix="glossx-bundle-browser-") as temporary:
+            browser = BrowserProcess(Path(temporary))
+            process = None
+            try:
+                client = await browser.start()
+                process = browser.process
+                target = await client.call("Target.createTarget", {"url": "about:blank"})
+                attached = await client.call("Target.attachToTarget", {"targetId": target["targetId"], "flatten": True})
+                session_id = attached["sessionId"]
+                await client.call("Runtime.evaluate", {"expression": "document.body.innerHTML='<h1>GlossX</h1><button>Bundle verified</button>'"}, session_id=session_id)
+                tree = await client.call("Accessibility.getFullAXTree", session_id=session_id)
+                assert any(node.get("name", {}).get("value") == "Bundle verified" for node in tree["nodes"]), "AX tree missing fixture button"
+                frame = await client.call("Page.captureScreenshot", {"format": "png"}, session_id=session_id)
+                assert len(frame.get("data", "")) > 100, "empty browser screenshot"
+                result = {"browser": browser.executable.browser, "ax_nodes": len(tree["nodes"]), "screenshot_bytes_base64": len(frame["data"])}
+            finally:
+                await browser.close()
+            assert process is not None and process.returncode is not None, "browser did not exit"
+            result["process_exit_code"] = process.returncode
+            return result
+
+    try:
+        result = {"ok": True, **asyncio.run(verify())}
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    return 0 if result["ok"] else 1
 
 
 def main() -> int:
@@ -271,6 +309,8 @@ def main() -> int:
         return 2
 
     _prepare_imports()
+    if args.browser_smoke:
+        return _browser_smoke(args.browser_smoke)
     log_path = _configure_logging()
 
     try:

@@ -51,3 +51,46 @@
 3. 真实账户 Claude / Anthropic / OpenAI 流式 usage 测量；随后全量测试及前端重放用量、压缩/分叉 cache_reset 交互。
 
 实现遗漏/有意略过：没有添加降低 Codex skills/plugins/MCP 固定开销的覆盖参数（没有减少输入的实测证据）；没有保留假模型开发配置；没有最终打包验证。核心 B1–B3 后端接口、流式采集、稳定前缀、CLI thread/fallback 已接；线程恢复只真实观察过第一次续接，重启后/分叉后/丢失thread恢复依赖当前单元覆盖，未做真实CLI完整验收。
+
+## 恢复完整工作与验证（最新状态，以此节为准）
+
+用户撤销免测试要求，已恢复完成全部缓存验证。上面的暂停记录保留为历史。
+
+1. 最后收尾后原24项再次通过；新增OpenAI/Anthropic流式HTTP合同（真实流格式，经task局部sink、meter、账本）、手动压缩实际计量、fork thread重置、真实run_subagent父会话/父回合一次聚合，缓存定向10项通过。
+2. 使用官方配置源码确认 skills.include_instructions/bundled 与 CLI features：仅逐调用覆盖，不忽略 user config/auth/provider。对照普通input22047与关闭原生skills说明/系统skills/plugins/apps/memories/projectdocs的input10997，减少11050（50.12%）。两者exit0并输出OK.；句号不同于探针的严格OK要求，报告额外保留reply_exact=false。输入减少有实测证据，缓存命中升降不作为因果证据。已仅对harness启用这一组覆盖，经典paper调用保持自身配置。报告 codex-overhead-comparison.json。
+3. 发现并修复关键累计计量陷阱：Codex exec resume的turn.completed.usage是整个thread累计，不能每次直接累加。来源：[官方仓库问题说明](https://github.com/openai/codex/issues/49574)。旧暂停第2call58705是累计，不是该call输入；真实call差分29645输入/28928缓存/7输出/0reasoning。上表的旧数字只应视为原始CLI事件快照。
+4. provider保留私有_thread_usage原始累计；恢复时减前值。基线同时保存在GlossX会话provider_thread和GlossX数据目录codex-usage（线程ID哈希文件），经典shared paper/chat也经同一provider差分，服务重启仍有基线。基线缺失/计数回退标exact=false并估算，绝不把未知累计当call；新thread/fallback从零算。没有读取或修改个人CLI rollout。
+5. 新增差分、磁盘重启基线、缺失/计数重置合同；完整真实3用户回合脚本正在运行，报告将包含raw累计与每call差分及会话/账本总和一致证明。
+
+配置依据：[官方skills配置源码](https://github.com/openai/codex/blob/main/codex-rs/config/src/skills_config.rs)。没有新增依赖，也不改个人配置/认证/自定义provider。
+
+## 完整缓存验收结果（最新）
+
+- 针对性集合 **31 passed**（9.14秒）：promptcache13项、旧usage、Codex/Claude恢复、进程清理。额外覆盖经典Codex shared session恢复跨新provider实例持久基线、harness参数仅作用于该调用且不启用ignore-user-config、旧OpenAI兼容端点拒绝stream_options时撤掉该字段继续流式并诚实估算。
+- 真实Codex **3用户回合 / 6模型调用全部完成，ok=true**；每回合一次真实GlossX fs_read，随后回答；第一次新thread、后面全部resume，仅发送467–480字符新内容；每call exact。原始累计、差分、各turn和session已在报告读回做独立等值核对，四个token计数完全相同。报告 `docs/progress/cache-verification.json`。
+
+| 调用 | 恢复 | 输入（本次差分） | 缓存（本次差分） | 输出 | 命中率 |
+|---|---|---:|---:|---:|---:|
+| 1 | false | 35654 | 28032 | 114 | 78.62% |
+| 2 | true | 18413 | 17664 | 7 | 95.93% |
+| 3 | true | 18541 | 18176 | 25 | 98.03% |
+| 4 | true | 18706 | 18304 | 7 | 97.85% |
+| 5 | true | 18834 | 18560 | 25 | 98.55% |
+| 6 | true | 18998 | 18688 | 7 | 98.37% |
+
+会话总计 input129146/cached119424/output185/reasoning48，缓存率92.47%；3个回合均2次调用。首call的CLI可能含多个内部推理请求，保留全部turn累计，不能拿最后单一API用量代替。首轮原始完整prompt字符26205，后续仅发新增内容；不能把减少发送字符等同于同比例减少计费输入。固定开销减少50.12%的结论仅来自相同短提示的独立baseline/lean对照。
+
+真实测试临时GlossX数据已清理，Manager.shutdown已执行；只读进程检查没有自有codex exec残留。没有启用mock/服务器。测试脚本最后补了账本总量assert（代码保留供下次），本次进程运行的是补assert前版本；实际账本采集链路由31项合同测试覆盖，报告只声称实际做过的raw/差分/turn/session读回核对。
+
+剩余限制：本轮用户只授权真实Codex；没有调用其他provider真实账户或写他们的配置，Claude/Anthropic/OpenAI以已有CLI合同和真实格式HTTP流测试验证。主协调者负责全量pytest、前端、浏览器与打包/CI。本cache子任务的实现和授权范围内验证已完成。
+
+## 收尾只读审查与明确修正
+
+主协调安排独立B1–B3审查，未重复真实模型调用。发现并补了两个明确问题：
+
+- 流式异常/取消发生在已收到文字或用量后，原注册表会漏账。现在完整已收到的终态用量仍精确计入；部分Anthropic快照显式标_complete=false，异常时仅估算并标exact=false。没有任何输出/用量的失败（包括CLI被取消前没有JSON事件）只把会话/回合exact降为false，不伪造token，不把未知当精确零。
+- 普通assistant回答的UI解析会合并空行；如果未来模型历史只用UI text，就改写前缀并可能触发冷启动。现在普通回答也存隐藏raw，模型历史用原始protocol-safe回答；CLI恢复历史比较严格逐字，不再strip历史用户消息掩盖变化。
+
+新增失败完整/部分计量合同2项、空失败标未知1项、UI空行不改模型历史1项；只跑相关选择器：流式/API兼容5passed，恢复/空行2passed，失败/未知3passed。先前31项没有重复跑；新测试由主协调纳入最终全量（缓存文件现17项）。没有更改执行权限：ask/plan仍在run_call中按mode检查，工具目录稳定不等于执行授权。
+
+原真实报告没有ledger_totals，临时数据已清理，所以无法补出原SQLite逐行读回证据；不冒充已做。报告中的raw累计/差分/turn/session读回核对是真的，账本链路以合同测试及下一次真实脚本现有ledger assert验证。CLI在产出JSON前崩溃/取消时最终计费数据不可获取，明确降exact=false；其他provider真实账户仍未调用。

@@ -25,16 +25,20 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
   const [status, setStatus] = useState<BrowserStatus | null>(null);
   const [frame, setFrame] = useState<BrowserFrame | null>(null);
   const [address, setAddress] = useState("");
+  const addressEdited = useRef(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false);
   const [text, setText] = useState("");
   const [actions, setActions] = useState<{ time: number; text: string }[]>([]);
   const image = useRef<HTMLImageElement>(null);
+  const inputQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const pending = useRef(0);
   const scroll = useRef<{ x: number; y: number; timer: ReturnType<typeof setTimeout> | null }>({ x: 0, y: 0, timer: null });
   const current = state?.tabs?.find((t) => t.id === state.active || t.active) || state?.tabs?.[0];
   const url = state?.url || current?.url || "";
   const controlling = state?.controlling === "user";
+  const history = [...actions, ...(state?.log || []).map((a) => ({ time: (a.time || a.at || Date.now() / 1000) * 1000, text: a.text || a.note || [a.action, a.url].filter(Boolean).join(" ") }))].filter((a) => a.text).sort((a, b) => b.time - a.time).slice(0, 30);
   const put = useBrowser.getState().put;
   const note = (value: string) => setActions((a) => [{ time: Date.now(), text: value }, ...a].slice(0, 12));
 
@@ -45,7 +49,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
     } catch (e: any) { setError(String(e?.message || e)); }
   }, [sessionId]);
   useEffect(() => { if (visible) void load(); }, [visible, load]);
-  useEffect(() => { setAddress(url); }, [url]);
+  useEffect(() => { if (!addressEdited.current) setAddress(url); }, [url]);
   useEffect(() => { if (!visible || !status?.available || !state?.tabs?.length) return;
     setConnected(false);
     const stop = browserApi.frames(sessionId, (f) => { setFrame(f); setConnected(true); }, (s) => put(sessionId, s), (message) => { setConnected(false); if (message) setError(message); });
@@ -56,9 +60,10 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
   useEffect(() => { if (!visible && controlling) void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [visible, controlling, sessionId]);
   useEffect(() => () => { if (useBrowser.getState().states[sessionId]?.controlling === "user") void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [sessionId]);
 
-  const act = async (body: BrowserInput, label?: string) => {
-    if (busy && !["click", "scroll", "key", "text"].includes(body.type)) return;
-    setBusy(true); setError("");
+  const act = (body: BrowserInput, label?: string) => {
+    pending.current += 1; setBusy(true);
+    const run = async () => {
+    setError("");
     try {
       const result = await browserApi.input(sessionId, body);
       if (result?.tabs) put(sessionId, result);
@@ -70,12 +75,17 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
       }
       if (!["click", "scroll", "key", "text"].includes(body.type)) await load();
     } catch (e: any) { setError(String(e?.message || e)); }
-    finally { setBusy(false); }
+    finally { pending.current -= 1; if (!pending.current) setBusy(false); }
+    };
+    const next = inputQueue.current.then(run, run);
+    inputQueue.current = next;
+    return next;
   };
   const navigate = () => {
     const input = address.trim();
     if (!input) return;
     const target = /^https?:\/\//i.test(input) || input === "about:blank" ? input : `https://${input}`;
+    addressEdited.current = false;
     setFrame(null);
     void act({ type: "navigate", url: target }, `${zh ? "打开" : "Navigate"} ${target}`);
   };
@@ -108,7 +118,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
       <button type="button" className="gx-icon-btn" title={zh ? "后退" : "Back"} disabled={!current || busy} onClick={() => void act({ type: "back" })}><ArrowLeft size={14} /></button>
       <button type="button" className="gx-icon-btn" title={zh ? "前进" : "Forward"} disabled={!current || busy} onClick={() => void act({ type: "forward" })}><ArrowRight size={14} /></button>
       <button type="button" className="gx-icon-btn" title={zh ? "刷新" : "Reload"} disabled={!current || busy} onClick={() => void act({ type: "reload" })}>{busy || state?.loading ? <Spinner size={14} /> : <RefreshCw size={14} />}</button>
-      <label><Globe size={13} /><input value={address} onChange={(e) => setAddress(e.target.value)} aria-label={zh ? "网址" : "Address"} placeholder="https://arxiv.org/abs/1706.03762" spellCheck={false} /><button type="submit" className="gx-icon-btn" title={zh ? "打开网址" : "Go"} disabled={!address.trim() || busy}><Send size={12} /></button></label>
+      <label><Globe size={13} /><input value={address} onChange={(e) => { addressEdited.current = true; setAddress(e.target.value); }} aria-label={zh ? "网址" : "Address"} placeholder="https://arxiv.org/abs/1706.03762" spellCheck={false} /><button type="submit" className="gx-icon-btn" title={zh ? "打开网址" : "Go"} disabled={!address.trim() || busy}><Send size={12} /></button></label>
     </form>
     <div className="gx-browser-controls">
       <button type="button" className={`gx-browser-takeover${controlling ? " on" : ""}`} aria-pressed={controlling} disabled={!current || busy} onClick={() => void act({ type: "takeover", controlling: controlling ? "agent" : "user" })}>{controlling ? <Hand size={13} /> : <Sparkles size={13} />}{controlling ? (zh ? "你正在控制 · 交回智能体" : "You are controlling · give back") : (zh ? "智能体控制 · 接管" : "Agent controls · take over")}</button>
@@ -116,6 +126,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
       <button type="button" className="gx-btn ghost sm" disabled={!current || busy} onClick={() => void act({ type: "import_paper" }, zh ? "导入论文" : "Import paper")}><Import size={13} />{zh ? "导入这篇论文" : "Import this paper"}</button>
       <button type="button" className="gx-btn ghost sm" disabled={!current || busy} onClick={() => void share()}><MessageSquarePlus size={13} />{zh ? "发到对话" : "Send page to chat"}</button>
     </div>
+    {status?.restart_pending && <div className="gx-browser-notice" role="status">{zh ? "浏览器设置已更改，将在浏览器重启后生效。可重启 GlossX，或等浏览器空闲关闭。" : "Browser settings changed and will apply after it restarts. Restart GlossX or wait for the idle browser to close."}</div>}
     {error && <div className="gx-browser-error" role="alert"><span>{error}</span><button type="button" className="gx-link" onClick={() => void load()}>{zh ? "重试" : "Retry"}</button></div>}
     <div className="gx-browser-page">
       {status?.available === false ? <EmptyState icon={<Globe size={24} />} title={zh ? "没有找到浏览器" : "No browser found"} hint={zh ? "安装 Edge、Chrome 或 Chromium，或在智能体设置中指定浏览器路径。" : "Install Edge, Chrome or Chromium, or set its executable path in agent settings."} action={<button type="button" className="gx-btn" onClick={() => useStore.getState().setLayout({ activity: "settings", sideOpen: true })}>{zh ? "打开设置" : "Open settings"}</button>} />
@@ -127,6 +138,6 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
       : <div className="gx-browser-wait"><Spinner size={22} /><span>{zh ? "正在连接页面画面…" : "Connecting to the live page…"}</span></div>}
     </div>
     {controlling && <form className="gx-browser-type" onSubmit={(e) => { e.preventDefault(); if (text) { void act({ type: "text", text }); setText(""); } }}><Hand size={13} /><input value={text} onChange={(e) => setText(e.target.value)} placeholder={zh ? "向页面当前焦点输入文字（支持中文）…" : "Type into the page’s focused field…"} /><button type="submit" className="gx-btn sm" disabled={!text}>{zh ? "输入" : "Type"}</button><button type="button" className="gx-btn ghost sm" onClick={() => void act({ type: "key", key: "Enter" })}>Enter</button></form>}
-    <footer className="gx-browser-foot"><span className={`gx-dot${connected ? " st-idle" : ""}`} /><span>{connected ? (zh ? "画面已连接" : "Live view connected") : (zh ? "等待画面" : "Waiting for live view")}</span><span className="spacer" /><details><summary>{zh ? "操作记录" : "Actions"} · {actions.length}</summary><ol>{actions.length ? actions.map((a) => <li key={a.time + a.text}><time>{new Date(a.time).toLocaleTimeString()}</time>{a.text}</li>) : <li>{zh ? "导航和导入操作会显示在这里。" : "Navigation and imports appear here."}</li>}</ol></details></footer>
+    <footer className="gx-browser-foot"><span className={`gx-dot${connected ? " st-idle" : ""}`} /><span>{connected ? (zh ? "画面已连接" : "Live view connected") : (zh ? "等待画面" : "Waiting for live view")}</span><span className="spacer" /><details><summary>{zh ? "操作记录" : "Actions"} · {history.length}</summary><ol>{history.length ? history.map((a, i) => <li key={a.time + a.text + i}><time>{new Date(a.time).toLocaleTimeString()}</time>{a.text}</li>) : <li>{zh ? "你和智能体的操作会显示在这里。" : "Your actions and the agent’s actions appear here."}</li>}</ol></details></footer>
   </div>;
 }

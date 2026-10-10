@@ -89,6 +89,12 @@ class UsageMeter:
         if self.rt:
             self.rt.emit("usage.updated", dict(self.session["usage"]))
 
+    def usage_unavailable(self) -> None:
+        self.session["usage"]["exact"] = False
+        self.turn["exact"] = False
+        if self.rt:
+            self.rt.emit("usage.updated", dict(self.session["usage"]))
+
 
 def err(error: BaseException) -> str:
     text = str(error).strip()
@@ -642,8 +648,10 @@ async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
     text, calls = protocol.parse_message(raw)
     msg["text"] = text
     msg["streaming"] = False
+    # Keep model history byte-stable: UI parsing collapses blank lines, so use
+    # the original protocol-safe reply for future prompts even without tools.
+    msg["raw"] = raw.strip()
     if calls:
-        msg["raw"] = raw.strip()
         msg["tool_calls"] = len(calls)
     ctx_mod.stamp(msg)
     usage = session["usage"]

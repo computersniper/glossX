@@ -9,8 +9,8 @@ import socket
 from urllib.parse import urlsplit
 from .security import BrowserSecurityError, _public, validate_url, resolve_addresses
 
-
 class GuardProxy:
+
     def __init__(self, allow_private=False):
         self.allow_private = allow_private
         self.server = None
@@ -23,7 +23,7 @@ class GuardProxy:
 
     async def _connect(self, host, port):
         addresses = await resolve_addresses(host, port)
-        if not addresses or (not self.allow_private and any(not _public(a[4][0]) for a in addresses)):
+        if not addresses or (not self.allow_private and any((not _public(a[4][0]) for a in addresses))):
             raise BrowserSecurityError('Private network connection blocked')
         last = None
         for address in addresses:
@@ -60,14 +60,14 @@ class GuardProxy:
                 rest = header.split(b'\r\n', 1)[1]
                 # Ask the origin to close each request, so a subsequent request
                 # for another host cannot ride an already-admitted socket.
-                headers = [line for line in rest.split(b'\r\n') if line and
-                           not line.lower().startswith((b'proxy-', b'connection:'))]
+                headers = [line for line in rest.split(b'\r\n') if line and (not line.lower().startswith((b'proxy-', b'connection:')))]
                 remote.write(f'{method} {path} {version}\r\n'.encode() + b'\r\n'.join(headers) + b'\r\nConnection: close\r\n\r\n')
                 await remote.drain()
             await writer.drain()
             self.writers.add(remote)
+
             async def copy(source, destination):
-                while data := await source.read(65536):
+                while (data := (await source.read(65536))):
                     destination.write(data)
                     await destination.drain()
             a = asyncio.create_task(copy(reader, remote))
@@ -75,7 +75,8 @@ class GuardProxy:
             try:
                 await asyncio.wait([a, b], return_when=asyncio.FIRST_COMPLETED)
             finally:
-                a.cancel(); b.cancel()
+                a.cancel()
+                b.cancel()
                 await asyncio.gather(a, b, return_exceptions=True)
         except (Exception, asyncio.CancelledError):
             try:

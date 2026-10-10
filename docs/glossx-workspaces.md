@@ -34,6 +34,15 @@ version control with branches.
 
 ## 2. A workspace per paper
 
+Workspace location extension: `paper_workspace_root` in `/api/settings`
+sets the base folder for newly created paper projects only (blank retains
+`DATA_DIR/workspaces`). Existing locations remain unchanged. An explicit
+`POST /api/workspace/{project_id}/location {path, confirm:true}` copies a
+workspace to a new or empty absolute directory, verifies SHA-256 manifests
+including Git metadata and `.glossx` checkpoints, then updates project metadata.
+The old directory is preserved. Running sessions and concurrent workspace access
+are blocked while relocation runs; nested or overlapping destinations are rejected.
+
 - When a paper is added to the library (upload or import job completion), a
   project is created for it automatically: `{name: <paper title, trimmed>,
   kind: "paper", paper_ids: [paper_id]}` with its workspace directory

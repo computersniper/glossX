@@ -48,3 +48,28 @@
 - `bbe73d4` 的 [CI](https://github.com/computersniper/glossX/actions/runs/38047734814)：前端通过；后端 183 passed / 10 skipped / 1 failed。唯一失败是 `test_installed_browser_cdp_and_process_cleanup`，Linux runner 检测到 Chromium 后自动启动，进程退出码 -6；stderr 当时被丢弃，不能认定具体启动失败原因。
 - 可选真实浏览器测试改为显式开启：`GLOSS_TEST_BROWSER=1` 或设置 `GLOSS_TEST_BROWSER_PATH`；默认 CI 继续跑离线 CDP/快照/URL 测试，不自动依赖宿主浏览器。没有关闭生产浏览器 sandbox，也没有把启动异常当成通过。
 - 未跑新的本地测试，遵守用户额度要求。Linux 真浏览器的 -6 原因仍需下一轮保留 stderr 后排查，再显式运行该用例；本修复只纠正默认 CI 的环境依赖。
+
+## 恢复完整交付（最新状态，进行中）
+
+用户恢复 agent team 全力完成，前面的免测试/暂停记录仅为历史，不再限制本轮。接手工作区干净，基线 `6b15b9c` 的 CI 已通过；未覆盖其他 agent 的本地代码。
+
+- 浏览器后端：修复 autoAttach 重复 session 导致网页被关闭的问题；真实 Edge arXiv 打开/正文/快照已经运行通过，完整验收继续。新增引擎离线测试、通用 DOI 安全导入、运行中设置重载、详细变化信息由后端 agent 完成。
+- 缓存：31 项定向测试通过，真实 3 用户回合 / 6 调用通过，92.47% 会话缓存率。修复 Codex resume 返回累计 thread 计数造成重复计量，持久保存基线并按调用差分。固定输入独立对照 22047→10997（50.12%），仅在 harness 调用中覆盖 native 扩展说明配置，不改用户 CLI 配置/认证。完整证据见 cache-backend 日志及两个 JSON 报告。
+- 可自定义工作目录：新增 settings.paper_workspace_root（仅新论文项目）；POST /api/workspace/{id}/location {path,confirm:true} 复制完整工作区，三次 SHA-256 清单核对后原子切换元数据，旧目录保留。拒绝非空/嵌套/跨项目/应用数据目的地，迁移中拒绝启动新会话任务，保持 Git 历史和 .glossx 检查点。五项迁移测试通过；旧 workspace/unicode 13 项通过。前端对应入口已实现，真实 UI 验证由前端 agent 续作。
+- 打包：恢复 --browser-smoke REPORT 诊断及 Preview 对真实 exe 的 CDP 检查。源码诊断已通过真实 Edge AX 树、截图及浏览器退出；发现 stderr 双 reader 竞争并由后端修复。产物结果待新提交 Preview，不能以源码结果替代。
+- 协调者新增持久 scripts/dev/verify_codex_browser.py，隔离服务真实 Codex 通过 API 打开/读取/审批导入论文流程正在运行；结果写 codex-browser-verification.json，失败也保留证据。
+
+仍需完成：真实浏览器完整动作/安全/接管/关闭验收、深浅截图与目录迁移 UI、最终全量检查、Git 提交推送、按新 SHA 核验 CI/Preview。其他 provider 的真实账户与 Linux/macOS 实机均未运行，明确保留环境限制，不把合同测试当真实账户证明。
+
+## 协调者最终本地复核
+
+- 后端全量：219 passed / 11 skipped（252.78 秒）；其中 1 真浏览器、7 真 LLM、3 网络用例按开关跳过。后端最后新增的两个取消合同另由浏览器 agent 定向集合验证；项目迁移中列表读取修正单项再次通过。不能把 opt-in skip 说成已实测；真实浏览器/Codex验收另有报告。
+- 前端最终源码：tsc 通过、28 测试通过、生产 build 通过。真实浏览器 UI 11 项、工作目录 UI 7 项、视口/活动栏 24 项均通过。root 自查3张精选图，浅主题卡片对比及主题状态修正后正常。
+- 真 Codex 浏览器流程：browser_open/read/import_paper 都 done，library:write 一次审批，论文及工作区读回成功；4 calls，input81401/cached68864/output491/reasoning187，exact。服务关闭后从 SQLite 再读原始累计，与 session 四字段和调用数全部相同；证据 codex-browser-verification.json 中 ledger_totals。
+- 8803 协调者隔离服务已正常 lifespan shutdown；OS 查询未见该 profile 的 Edge 或服务器，端口无监听。前端8798也正常关闭。真实数据/个人 CLI 配置均未迁移或改写；验收临时目录留作证据，不递归删除。
+- compileall backend/app、packaging/windows_launcher.py、scripts/dev 通过。最终 BrowserJob 源码下 bundle smoke 再次通过。Preview 将运行同一诊断检查冻结产物，当前还不声称 exe 已验收。
+- 原暂停状态已从 PROGRESS 第4节更新；环境未覆盖项单独列出。没有新增产品依赖。rgit store 不存在，未创建 capsule；依仓库交互规则先由用户运行 rgit init。
+
+本地授权范围内功能和验收完成，待本功能提交的远程 CI/Preview 核验。远程结果会按实际 SHA 追加，禁止沿用旧提交绿灯。
+
+浏览器 agent 最终冻结补充：公网/控页19项、API4项（5真实工具和一次审批）、lifecycle5项成功；最终28个engine合同与23个真实Edge primitives各自通过（累计51用例），覆盖取消与ask/plan显式allow仍拒绝发送敏感数据。真正出版社的OA DOI未做公网实测，guarded Crossref/PDF导入合同已测；Linux/macOS亦未实机验证。三份browser-verification*.json为真实结果，所有自有进程已按OS PID核对清理。

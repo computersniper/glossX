@@ -39,10 +39,30 @@ CHECKPOINTS_REL = f"{CONFIG_DIR}/checkpoints"         # never listed, never writ
 _lock = threading.RLock()
 _cp_migrated: set[str] = set()
 logger = logging.getLogger(__name__)
+_relocating: set[str] = set()
 
 
 class WorkspaceError(ValueError):
     """Invalid workspace path or content (shown to the model / API caller)."""
+
+
+class WorkspaceBusyError(WorkspaceError):
+    """A workspace copy is in progress; callers must retry after it finishes."""
+
+
+def is_relocating(project_id: str | None) -> bool:
+    return key_for(project_id) in _relocating
+
+
+def begin_relocation(project_id: str) -> None:
+    key = key_for(project_id)
+    if key in _relocating:
+        raise WorkspaceBusyError("Workspace relocation is in progress")
+    _relocating.add(key)
+
+
+def end_relocation(project_id: str) -> None:
+    _relocating.discard(key_for(project_id))
 
 
 def key_for(project_id: str | None) -> str:
@@ -53,10 +73,18 @@ def key_for(project_id: str | None) -> str:
 
 
 def root_for(project_id: str | None) -> Path:
+    if is_relocating(project_id):
+        raise WorkspaceBusyError("Workspace relocation is in progress")
     base = config.WORKSPACES_DIR.resolve()
-    path = (base / key_for(project_id)).resolve()
-    if path.parent != base:
-        raise WorkspaceError("workspace escapes the workspaces directory")
+    path = None
+    if project_id:
+        from ..agent import projects
+
+        path = projects.workspace_path(project_id)
+    if path is None:
+        path = (base / key_for(project_id)).resolve()
+        if path.parent != base:
+            raise WorkspaceError("workspace escapes the workspaces directory")
     path.mkdir(parents=True, exist_ok=True)
     from . import home
 

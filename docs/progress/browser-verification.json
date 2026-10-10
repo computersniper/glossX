@@ -1,0 +1,49 @@
+{
+  "data_dir": "C:\\Users\\CAIJIE~1\\AppData\\Local\\Temp\\glossx-browser-acceptance-7ci817my",
+  "checks": [
+    "installed browser",
+    "public arxiv navigation",
+    "arxiv readability",
+    "AX refs and link URLs",
+    "workspace screenshot",
+    "find text",
+    "guarded PDF download",
+    "arxiv import and workspace",
+    "JPEG viewer frame",
+    "viewer survives tab closure",
+    "session context isolation",
+    "foreign tab refused",
+    "agent blocked during takeover",
+    "all public browser descendants stopped",
+    "private URL blocked by default",
+    "ref typing and select",
+    "ref click and navigation history",
+    "navigation invalidates old refs",
+    "local browser process tree stopped"
+  ],
+  "public_browser_pids": [
+    10900,
+    29152,
+    32224,
+    40204,
+    50064,
+    70796,
+    77564,
+    82760,
+    90932
+  ],
+  "local_browser_pids": [
+    41600,
+    48076,
+    55540,
+    64752,
+    76792,
+    80908,
+    83304,
+    86732,
+    87732,
+    88980
+  ],
+  "direct_success": true,
+  "success": true
+}

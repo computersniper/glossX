@@ -46,6 +46,15 @@ jobs:
       - name: Smoke test Windows executable
         shell: pwsh
         run: ./dist/GlossX.exe --version
+      - name: Verify bundled browser transport
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'glossx-bundled-browser.json'
+          $process = Start-Process -FilePath ./dist/GlossX.exe -ArgumentList @('--browser-smoke', $report) -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(60000)) { Stop-Process -Id $process.Id; throw 'Bundled browser diagnostic timed out' }
+          $process.Refresh()
+          Get-Content -LiteralPath $report
+          if ($process.ExitCode -ne 0) { throw 'Bundled browser diagnostic failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: GlossX-windows-x64

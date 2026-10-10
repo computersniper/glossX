@@ -85,23 +85,32 @@ class OpenAIProvider(Provider):
             "stream_options": {"include_usage": True},
         }
         async with httpx.AsyncClient(timeout=c.get("timeout", 300), trust_env=False) as client:
-            async with client.stream(
-                "POST", self._url(), headers=self._headers(), json=body
-            ) as r:
-                r.raise_for_status()
-                async for line in r.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[5:].strip()
-                    if not payload or payload == "[DONE]":
-                        continue
-                    try:
-                        evt = json.loads(payload)
-                    except json.JSONDecodeError:
-                        continue
-                    if evt.get("usage"):
-                        report_stream_usage(_usage(evt["usage"]))
-                    delta = (evt.get("choices") or [{}])[0].get("delta", {})
-                    piece = delta.get("content")
-                    if piece:
-                        yield piece
+            for attempt in range(2):
+                async with client.stream(
+                    "POST", self._url(), headers=self._headers(), json=body
+                ) as r:
+                    if attempt == 0 and r.status_code in (400, 422):
+                        error_body = await r.aread()
+                        if b"stream_options" in error_body:
+                            # Older compatible servers can still stream; label
+                            # missing usage as estimated rather than break chat.
+                            body.pop("stream_options", None)
+                            continue
+                    r.raise_for_status()
+                    async for line in r.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if not payload or payload == "[DONE]":
+                            continue
+                        try:
+                            evt = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        if evt.get("usage"):
+                            report_stream_usage(_usage(evt["usage"]))
+                        delta = (evt.get("choices") or [{}])[0].get("delta", {})
+                        piece = delta.get("content")
+                        if piece:
+                            yield piece
+                    break

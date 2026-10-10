@@ -9,6 +9,7 @@ import { useStore } from "../../store";
 import { EmptyState, Segmented, Spinner } from "../ui";
 import { revertCheckpoint, useCheckpointMarks } from "../session/DiffView";
 import { relativeTime } from "../session/toolMeta";
+import { WorkspaceLocation } from "./WorkspaceLocation";
 
 type Node = { name: string; path: string; type: "dir" | "file"; children: Node[] };
 
@@ -274,6 +275,7 @@ export function WorkspaceView() {
           ]}
         />
       </div>
+      <WorkspaceLocation projectId={projectId} />
       <div className="gx-ws-body" role={tab === "files" ? "tree" : undefined}>
         {state === "loading" ? (
           <div className="gx-chat-loading"><div className="gx-skel w60" /><div className="gx-skel w75" /><div className="gx-skel w40" /><div className="gx-skel w60" /></div>

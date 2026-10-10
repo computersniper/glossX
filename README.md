@@ -119,6 +119,7 @@ Switch between them with the toggle at the top left.
 | **Context management** | Token meter, auto-compaction at 80% of the context limit, large tool results stored by reference. |
 | **Built-in agent browser** | Uses installed Edge/Chrome over CDP with accessibility element refs, browser tabs, a live view and user takeover. Downloads and paper imports require approval; private destinations are blocked by default. |
 | **Prompt cache usage** | Provider-reported input, cached and output tokens, session and turn cache indicators, usage history, and incremental Codex/Claude sessions with full-transcript fallback. Missing token counts remain labelled estimates. |
+| **Workspace locations** | Choose a default folder for new paper workspaces or move one existing workspace explicitly. GlossX verifies copied files, Git history and checkpoints before switching, and preserves the original directory. |
 | **Plugins (manifest v2)** | Kinds: `tool`, `command`, `agent`, `skill`, `hook`, `mcp`, `workflow`, `loop`, `decider`, `provider`, `view`. Third-party manifests are declarative only; tool output is always treated as untrusted data. |
 
 Plugin authors: see the [Gloss Plugin Authoring specification](docs/plugin-authoring.md).

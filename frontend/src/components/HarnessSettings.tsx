@@ -273,6 +273,10 @@ export function HarnessSettings() {
         <input className="gx-input" aria-label={zh ? "浏览器可执行文件" : "Browser executable"} placeholder={zh ? "自动检测浏览器" : "Detect browser automatically"} value={cfg.browser?.path || ""} onChange={(e) => patch({ browser: { ...cfg.browser, path: e.target.value || null } })} />
         <Switch checked={cfg.browser?.headed ?? false} onChange={(v) => patch({ browser: { ...cfg.browser, headed: v } })} label={zh ? "显示浏览器窗口" : "Show browser window"} />
         <Switch checked={cfg.browser?.allow_private ?? false} onChange={(v) => patch({ browser: { ...cfg.browser, allow_private: v } })} label={zh ? "允许访问本机及私有网络" : "Allow local and private network pages"} />
+        <div className="gx-browser-setting-numbers">
+          <label>{zh ? "空闲关闭（秒）" : "Idle timeout (seconds)"}<input className="gx-input" type="number" min={1} max={10000} value={cfg.browser?.idle_timeout ?? 300} onChange={(e) => patch({ browser: { ...cfg.browser, idle_timeout: Math.min(10000, Math.max(1, Math.round(Number(e.target.value) || 300))) } })} /></label>
+          <label>{zh ? "每轮导航上限" : "Navigation budget per turn"}<input className="gx-input" type="number" min={1} max={10000} value={cfg.browser?.navigation_budget ?? 60} onChange={(e) => patch({ browser: { ...cfg.browser, navigation_budget: Math.min(10000, Math.max(1, Math.round(Number(e.target.value) || 60))) } })} /></label>
+        </div>
         <p className="gx-set-hint">{zh ? "默认阻止私有地址。修改后在下一次浏览器启动时生效。" : "Private addresses are blocked by default. Changes apply when the browser next starts."}</p>
       </section>
 
