@@ -47,3 +47,18 @@
 3. 把终端和运行轨迹接完并实测。
 4. 复现并修顶部错位。
 5. 给出项目 / 论文 / 工作区的新方案，用户确认后再实现第 6、7 项。
+
+## 续作结果（2026-10-10 晚，分支 `claude/project-thread-9wr8k7`）
+
+在 Linux 上用 `ui_browser_server.py` 起真实后端、用 Chromium 实测；Windows 部分靠 CI 的 Preview build（含 `--browser-smoke`）。
+
+| 项 | 结果 | 提交 |
+|---|---|---|
+| 1 浏览器打不开 | 根因无法在 Linux 复现。按"code 0 秒退 = 启动被转交给另一个浏览器进程"处理：每次启动用全新 profile；code 0 退出时换新 profile 重试一次，仍失败就换下一个已安装浏览器（Edge→Chrome）；子进程不再继承 WebView2/PyInstaller 环境变量；`--enable-logging=stderr` 让报错带上浏览器自己的原因；一天以上的残留 profile 自动清理。打包冒烟检查改为和应用一样走 guard proxy，windows-latest 上通过。**仍需用户在自己的电脑和真实数据目录里用新 exe 实测。** | `8001699` |
+| 2 浏览器放右边 | 实测通过（`ui_browser.cjs` 全部检查）。 | — |
+| 3 顶部错位 | 已复现并修复：pdf.js 往 body 里插的隐藏画布把页面撑高 20px，任何聚焦/滚轮都会把整页上推。现在隐藏该画布并禁止整页滚动；`ui_browser.cjs` 加了回归断言。 | `5a93896` |
+| 4 运行轨迹 | 面板已接好；标签改名"执行记录 / Activity log"，顶部加一句说明。 | `36f224a` |
+| 5 终端 | 修复：打包后的服务器跑在 uvloop 上，PTY 控制终端设置失败（ENOTTY），终端永远连不上。实测可输入命令、切换标签保持会话。Windows 的 PowerShell 管道路径未实测。 | `36f224a` |
+| 6 切换论文中间不跟着变 | 两处修复：PDF 查看器在切换到已缓存论文时仍显示上一篇的页面（`4243242`，`ui_paper_switch.cjs` 回归）；切换项目/对话时中间论文不跟随（`5a7bf75`）。 | |
+| 7 项目/论文/工作区重设计 | 用户已确认方案（`projects-redesign.md`）。"对话"和"项目"合并为一个可展开的项目列表，`store.selectProject` 是唯一入口。 | `3522f57` |
+| 8 插件窄栏 | `ui_narrow_plugins.cjs` 三种宽度通过。 | — |
