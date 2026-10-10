@@ -58,6 +58,11 @@ export function normalizeTodos(raw) {
     .filter((t) => t && t.text);
 }
 
+function normalizeInput(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  return { ...raw, question: String(raw.question ?? ""), choices: Array.isArray(raw.choices) ? raw.choices.map(String) : [] };
+}
+
 function upsert(messages, msg) {
   const i = messages.findIndex((m) => m.id === msg.id);
   if (i < 0) return [...messages, msg];
@@ -81,13 +86,14 @@ export function applySessionEvent(state, name, payload) {
       const next = { ...state, session: { ...(state.session || {}), ...summary }, loaded: true };
       if (summary.status) next.status = summary.status;
       if (summary.context) next.context = { ...state.context, ...summary.context };
-      if (Array.isArray(messages)) next.messages = messages.map(normalizeMessage).filter(Boolean);
+      // `messages` comes only on replay and after /clear: it replaces the list (an unacknowledged local echo survives)
+      if (Array.isArray(messages)) next.messages = [...messages.map(normalizeMessage).filter(Boolean), ...state.messages.filter((m) => m.pending)];
       if (Array.isArray(todos)) next.todos = normalizeTodos(todos);
       if (Array.isArray(pending_approvals)) next.approvals = pending_approvals;
-      if (pending_input !== undefined) next.input = pending_input || null;
+      if (pending_input !== undefined) next.input = normalizeInput(pending_input);
       if (next.status === "idle") {
         next.approvals = Array.isArray(pending_approvals) ? pending_approvals : [];
-        next.input = pending_input || null;
+        next.input = normalizeInput(pending_input);
       }
       return next;
     }
@@ -95,9 +101,10 @@ export function applySessionEvent(state, name, payload) {
       const m = normalizeMessage(unwrap(p, "message"));
       if (!m) return state;
       if (m.type === "assistant" && m.streaming === undefined) m.streaming = true;
-      // a locally echoed user message is replaced by the server's copy
-      const messages = state.messages.filter((x) => !(x.local && m.type === "user"));
-      return { ...state, messages: upsert(messages, m), error: null };
+      // a locally echoed user message (`pending`) is replaced by the server's copy.
+      // NB: the server's own `local: true` marks a slash command that ran without a model turn.
+      const messages = m.type === "user" ? state.messages.filter((x) => !x.pending) : state.messages;
+      return { ...state, messages: upsert(messages, m), error: m.type === "user" ? null : state.error };
     }
     case "message.delta": {
       const id = String(p.id ?? p.message_id ?? "");
@@ -123,7 +130,7 @@ export function applySessionEvent(state, name, payload) {
       if (i < 0) return full && full.text ? { ...state, messages: [...state.messages, { ...full, streaming: false }] } : state;
       const messages = state.messages.slice();
       const prev = messages[i];
-      messages[i] = { ...prev, ...full, text: full.text || prev.text, type: prev.type, streaming: false };
+      messages[i] = { ...prev, ...full, text: typeof raw?.text === "string" ? full.text : prev.text, type: prev.type, streaming: false };
       return { ...state, messages };
     }
     case "tool.updated": {
@@ -154,7 +161,7 @@ export function applySessionEvent(state, name, payload) {
     case "input.resolved":
       return state.input && (!p.tool_call_id || String(state.input.tool_call_id) === String(p.tool_call_id)) ? { ...state, input: null } : state;
     case "input.requested":
-      return { ...state, status: "awaiting_input", input: { ...p, choices: Array.isArray(p.choices) ? p.choices : [] } };
+      return { ...state, status: "awaiting_input", input: normalizeInput(p) };
     case "context.updated": {
       const c = unwrap(p, "context");
       return { ...state, context: { ...state.context, ...c } };
@@ -163,7 +170,8 @@ export function applySessionEvent(state, name, payload) {
       const messages = state.messages.some((m) => m.streaming)
         ? state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m))
         : state.messages;
-      const next = { ...state, messages, status: "idle", approvals: [], input: null };
+      const next = { ...state, messages, status: "idle", approvals: [], input: null, stop: { reason: p.stop_reason || "completed", rounds: p.rounds ?? null } };
+      if (p.stop_reason === "error" && p.error && !state.error) next.error = String(p.error);
       if (p.usage && state.session) next.session = { ...state.session, usage: p.usage };
       if (p.context) next.context = { ...state.context, ...p.context };
       return next;

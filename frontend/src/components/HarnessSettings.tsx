@@ -1,7 +1,7 @@
 // Settings → Agent harness: default mode, context limit, permission rules, hooks,
 // and read-only lists of the registered tools, commands and subagent types.
 import { useEffect, useMemo, useState } from "react";
-import { Bot, ChevronRight, Plus, RefreshCw, ShieldAlert, ShieldCheck, ShieldQuestion, Slash, Trash2, Webhook, Wrench, X } from "lucide-react";
+import { Bot, ChevronRight, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck, ShieldQuestion, Slash, Trash2, Webhook, Wrench, X } from "lucide-react";
 import {
   HOOK_EVENTS, harnessApi, isMissing,
   type HarnessAgentType, type HarnessCommand, type HarnessSettings as Settings, type HarnessTool, type HookEvent, type SessionMode,
@@ -67,17 +67,94 @@ function RuleList({ kind, rules, onChange, zh }: { kind: (typeof RULES)[number];
   );
 }
 
-function ReadOnlyList({ icon, title, count, children }: { icon: React.ReactNode; title: string; count: number; children: React.ReactNode }) {
+const SOURCE_ORDER = ["harness", "builtin", "project", "user", "plugin", "mcp", "skill"];
+const SOURCE_LABEL: Record<string, { en: string; zh: string }> = {
+  harness: { en: "Agent tools", zh: "智能体工具" },
+  builtin: { en: "Built-in", zh: "内置" },
+  project: { en: "Project", zh: "项目" },
+  user: { en: "User", zh: "用户" },
+  plugin: { en: "Plugins", zh: "插件" },
+  mcp: { en: "MCP servers", zh: "MCP 服务器" },
+  skill: { en: "Skills", zh: "技能" },
+};
+const GROUP_CAP = 12;
+
+type RegItem = { name: string; description?: string; source?: string };
+
+/**
+ * A read-only registry list that stays usable with a hundred entries: search,
+ * groups by source, and long groups (e.g. every installed skill) fold to a few rows.
+ */
+function ReadOnlyList<T extends RegItem>({ icon, title, items, zh, filters, row }: {
+  icon: React.ReactNode;
+  title: string;
+  items: T[];
+  zh: boolean;
+  /** Optional quick filters shown next to the search box. */
+  filters?: { id: string; label: string; test: (item: T) => boolean }[];
+  row: (item: T) => React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const needle = q.trim().toLowerCase();
+  const active = filters?.find((f) => f.id === filter);
+  const shown = useMemo(
+    () => items.filter((it) => (!active || active.test(it)) && (!needle || it.name.toLowerCase().includes(needle) || (it.description || "").toLowerCase().includes(needle))),
+    [items, needle, active],
+  );
+  const groups = useMemo(() => {
+    const by = new Map<string, T[]>();
+    for (const it of shown) by.set(it.source || "other", [...(by.get(it.source || "other") || []), it]);
+    const rank = (s: string) => (SOURCE_ORDER.indexOf(s) + 1 || 99);
+    return [...by.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
+  }, [shown]);
   return (
     <div className={`gx-fold${open ? " open" : ""}`}>
       <button type="button" className="gx-fold-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ChevronRight size={13} className="gx-fold-caret" />
         {icon}
         <strong>{title}</strong>
-        <span className="gx-count">{count}</span>
+        <span className="gx-count">{items.length}</span>
       </button>
-      {open && <div className="gx-fold-body">{children}</div>}
+      {open && (
+        <>
+          {items.length > 8 && (
+            <div className="gx-reg-tools">
+              <label className="gx-reg-search">
+                <Search size={12} />
+                <input value={q} placeholder={zh ? `筛选 ${items.length} 项…` : `Filter ${items.length} entries…`} onChange={(e) => setQ(e.target.value)} />
+                {q && <button type="button" aria-label="Clear" onClick={() => setQ("")}><X size={11} /></button>}
+              </label>
+              {filters?.map((f) => (
+                <button key={f.id} type="button" className={`gx-reg-filter${filter === f.id ? " on" : ""}`} onClick={() => setFilter(filter === f.id ? null : f.id)}>
+                  {f.label} <i>{items.filter(f.test).length}</i>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="gx-fold-body">
+            {shown.length === 0 && <div className="gx-picker-empty">{items.length ? (zh ? "没有匹配项" : "No matches") : zh ? "暂无" : "Nothing registered"}</div>}
+            {groups.map(([source, list]) => {
+              const all = !!needle || expanded[source] || list.length <= GROUP_CAP + 2;
+              const visible = all ? list : list.slice(0, GROUP_CAP);
+              const label = SOURCE_LABEL[source];
+              return (
+                <div key={source} className="gx-reg-group">
+                  {groups.length > 1 && <div className="gx-reg-group-head">{label ? (zh ? label.zh : label.en) : source}<i>{list.length}</i></div>}
+                  {visible.map((it) => <div key={it.name} className="gx-reg-row">{row(it)}</div>)}
+                  {!all && (
+                    <button type="button" className="gx-link gx-reg-more" onClick={() => setExpanded({ ...expanded, [source]: true })}>
+                      {zh ? `显示其余 ${list.length - visible.length} 项` : `Show ${list.length - visible.length} more`}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -105,9 +182,10 @@ export function HarnessSettings() {
       setState(isMissing(e) || e?.status === 0 ? "missing" : "error");
       setError(String(e?.message || e));
     }
-    void harnessApi.tools().then(setTools).catch(() => setTools([]));
-    void harnessApi.commands().then(setCommands).catch(() => setCommands([]));
-    void harnessApi.agents().then(setAgents).catch(() => setAgents([]));
+    const scope = { projectId: useStore.getState().agentProjectId };
+    void harnessApi.tools(undefined, scope).then(setTools).catch(() => setTools([]));
+    void harnessApi.commands(scope).then(setCommands).catch(() => setCommands([]));
+    void harnessApi.agents(scope).then(setAgents).catch(() => setAgents([]));
   }
   useEffect(() => {
     void load();
@@ -120,15 +198,18 @@ export function HarnessSettings() {
     if (!cfg) return;
     setSaving(true);
     try {
-      const clean: Settings = {
-        ...cfg,
+      // partial update: send only the keys this panel edits (unknown keys are rejected)
+      const clean: Pick<Settings, "default_mode" | "context_limit" | "permissions" | "hooks"> = {
+        default_mode: cfg.default_mode,
+        context_limit: Math.max(4000, cfg.context_limit),
+        permissions: cfg.permissions,
         hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, cfg.hooks[e].filter((h) => h.command.trim()).map((h) => ({ ...h, matcher: h.matcher.trim() || "*", command: h.command.trim() }))])) as Settings["hooks"],
       };
       const next = await harnessApi.putSettings(clean);
       setSaved(next);
       setCfg(next);
       notify(zh ? "智能体设置已保存" : "Harness settings saved");
-      void harnessApi.tools().then(setTools).catch(() => {});
+      void harnessApi.tools(undefined, { projectId: useStore.getState().agentProjectId }).then(setTools).catch(() => {});
     } catch (e: any) {
       notify(String(e?.message || e));
     } finally {
@@ -244,34 +325,51 @@ export function HarnessSettings() {
       <section className="gx-set">
         <h4>{zh ? "已注册" : "Registered"}</h4>
         <p>{zh ? "来自内置能力、技能、MCP 服务器和插件，只读。" : "From built-ins, skills, MCP servers and plugins. Read-only."}</p>
-        <ReadOnlyList icon={<Wrench size={13} />} title={zh ? "工具" : "Tools"} count={tools.length}>
-          {tools.map((t) => (
-            <div key={t.name} className="gx-reg" title={t.permission_reason || t.description}>
+        <ReadOnlyList
+          icon={<Wrench size={13} />}
+          title={zh ? `工具 · ${(() => { const m = MODES.find((x) => x.id === saved?.default_mode); return m ? (zh ? m.zh : m.en) : ""; })()}模式下的权限` : `Tools · permission in ${MODES.find((x) => x.id === saved?.default_mode)?.en || ""} mode`}
+          items={tools}
+          zh={zh}
+          filters={[
+            { id: "allow", label: zh ? "允许" : "allow", test: (t) => t.permission === "allow" },
+            { id: "ask", label: zh ? "询问" : "ask", test: (t) => t.permission === "ask" },
+            { id: "blocked", label: zh ? "不可用" : "blocked", test: (t) => t.permission === "deny" || t.permission === "unavailable" },
+          ]}
+          row={(t) => (
+            <div className="gx-reg" title={[t.permission_reason, t.description].filter(Boolean).join("\n")}>
               <code>{t.name}</code>
+              {t.category && <span className="gx-reg-cat">{t.category}</span>}
               <span className={`gx-tag ${permBadge(t)}`}>{t.permission || "—"}</span>
               {t.description && <p>{t.description}</p>}
             </div>
-          ))}
-        </ReadOnlyList>
-        <ReadOnlyList icon={<Slash size={13} />} title={zh ? "命令" : "Commands"} count={commands.length}>
-          {commands.map((c) => (
-            <div key={c.name} className="gx-reg">
+          )}
+        />
+        <ReadOnlyList
+          icon={<Slash size={13} />}
+          title={zh ? "命令" : "Commands"}
+          items={commands}
+          zh={zh}
+          row={(c) => (
+            <div className="gx-reg">
               <code>/{c.name}{c.argument_hint ? ` ${c.argument_hint}` : ""}</code>
-              {c.source && <span className="gx-tag muted">{c.source}</span>}
               {c.description && <p>{c.description}</p>}
             </div>
-          ))}
-        </ReadOnlyList>
-        <ReadOnlyList icon={<Bot size={13} />} title={zh ? "子智能体类型" : "Subagent types"} count={agents.length}>
-          {agents.map((a) => (
-            <div key={a.name} className="gx-reg">
+          )}
+        />
+        <ReadOnlyList
+          icon={<Bot size={13} />}
+          title={zh ? "子智能体类型" : "Subagent types"}
+          items={agents}
+          zh={zh}
+          row={(a) => (
+            <div className="gx-reg">
               <code>{a.name}</code>
-              {a.source && <span className="gx-tag muted">{a.source}</span>}
+              {a.model && <span className="gx-tag muted">{a.model}</span>}
               {a.description && <p>{a.description}</p>}
-              {!!a.tools?.length && <p className="tools">{a.tools.slice(0, 12).join(" · ")}{a.tools.length > 12 ? ` +${a.tools.length - 12}` : ""}</p>}
+              {!!a.tools?.length && <p className="tools">{a.tools[0] === "*" ? (zh ? "全部工具" : "all tools") : `${a.tools.slice(0, 12).join(" · ")}${a.tools.length > 12 ? ` +${a.tools.length - 12}` : ""}`}</p>}
             </div>
-          ))}
-        </ReadOnlyList>
+          )}
+        />
       </section>
 
       <div className={`gx-savebar${dirty ? " show" : ""}`}>

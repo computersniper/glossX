@@ -7,9 +7,9 @@ export type SessionMode = "ask" | "agent" | "auto" | "plan";
 export type SessionStatus = "idle" | "running" | "awaiting_approval" | "awaiting_input";
 export type ToolStatus = "pending" | "awaiting_approval" | "running" | "done" | "error" | "denied";
 export type AttachmentKind = "paper" | "span" | "file" | "run";
-export type Attachment = { kind: AttachmentKind; ref: string; label?: string; text?: string };
+export type Attachment = { kind: AttachmentKind; ref: string; label?: string; text?: string; ok?: boolean; error?: string };
 
-export type SessionContext = { tokens_est: number; limit: number; compactions: number };
+export type SessionContext = { tokens_est: number; limit: number; compactions: number; percent?: number; system_tokens_est?: number; compacted_through?: string | null };
 export type SessionSummary = {
   id: string;
   title: string;
@@ -30,8 +30,13 @@ export type SessionSummary = {
 export type CheckpointRef = { id: string; path: string; lines_added?: number; lines_removed?: number };
 export type SpanRef = { id: string; paper_id: string; title?: string; page?: number | null; bbox?: [number, number, number, number] | null; text?: string };
 
-export type UserMessage = { id: string; type: "user"; text: string; attachments?: Attachment[]; created_at?: number; local?: boolean };
-export type AssistantMessage = { id: string; type: "assistant"; text: string; streaming?: boolean; interrupted?: boolean; created_at?: number };
+export type UserMessage = { id: string; type: "user"; text: string; attachments?: Attachment[]; created_at?: number; command?: string | null; compacted?: boolean;
+  /** Server flag: a slash command that ran locally, without a model turn. */
+  local?: boolean;
+  /** Client flag: echoed optimistically, not acknowledged by the server yet. */
+  pending?: boolean;
+};
+export type AssistantMessage = { id: string; type: "assistant"; text: string; streaming?: boolean; interrupted?: boolean; error?: string | null; compacted?: boolean; created_at?: number };
 export type ToolCallMessage = {
   id: string;
   type: "tool_call";
@@ -47,10 +52,22 @@ export type ToolCallMessage = {
   spans?: SpanRef[];
   citations?: SpanRef[];
   session_id?: string | null;
-  parent_id?: string | null;
+  assistant_id?: string | null;
+  parent_tool_call_id?: string | null;
+  category?: string | null;
+  source?: string | null;
+  result_chars?: number | null;
+  approval_reason?: string | null;
+  /** What an fs edit would do, sent while the call waits for approval. */
+  preview?: { path?: string; existed_before?: boolean; diff?: string } | null;
+  subagent?: { session_id?: string; type?: string; description?: string; status?: string; tool_calls?: number; rounds?: number } | null;
+  exit_code?: number | null;
+  run_id?: string | null;
+  path?: string | null;
+  compacted?: boolean;
   [extra: string]: any;
 };
-export type SystemNote = { id: string; type: "system_note"; kind?: string; text: string; created_at?: number };
+export type SystemNote = { id: string; type: "system_note"; kind?: string; text: string; created_at?: number; compacted?: boolean };
 export type SessionMessage = UserMessage | AssistantMessage | ToolCallMessage | SystemNote;
 
 export type Todo = { id: string; text: string; active?: string; status: "pending" | "in_progress" | "completed" | (string & {}) };
@@ -75,7 +92,11 @@ export type SessionState = {
   input: InputRequest | null;
   error: string | null;
   loaded: boolean;
+  /** How the last turn ended (turn.completed). */
+  stop?: { reason: "completed" | "budget" | "interrupted" | "error" | "compacted" | "noop" | (string & {}); rounds: number | null };
 };
+export type SendResult = { started: boolean; command?: string | null; message?: UserMessage; note?: SystemNote; session?: SessionSummary; cleared?: boolean; mode?: SessionMode; [extra: string]: any };
+export type CompactResult = { compacted: boolean; reason?: string; tokens_before?: number; tokens_after?: number; session?: SessionSummary };
 
 export type HarnessTool = {
   name: string;
@@ -98,7 +119,7 @@ export type HarnessSettings = {
   default_mode: SessionMode;
   [extra: string]: any;
 };
-export type Mention = { kind: AttachmentKind; ref: string; label: string; detail?: string };
+export type Mention = { kind: AttachmentKind; ref: string; label: string; detail?: string; insert?: string };
 
 export type TreeEntry = { path: string; type: "dir" | "file"; size?: number; mtime?: number };
 export type WorkspaceFile = { path: string; content: string; mtime?: number; truncated?: boolean };
@@ -176,17 +197,18 @@ const S = (id: string) => `/api/sessions/${enc(id)}`;
 const W = (projectId?: string | null) => `/api/workspace/${enc(projectId || "default")}`;
 
 export const sessionsApi = {
-  list: (projectId?: string | null) =>
-    request<any>(`/api/sessions${projectId ? `?project_id=${enc(projectId)}` : ""}`).then((r) => listOf<SessionSummary>(r, "sessions", "items")),
+  list: (projectId?: string | null, includeSubagents = false) =>
+    request<any>(`/api/sessions${query({ project_id: projectId, include_subagents: includeSubagents ? "true" : undefined })}`).then((r) => listOf<SessionSummary>(r, "sessions", "items")),
   create: (body: { title?: string; project_id?: string | null; mode?: SessionMode; provider?: string | null; model?: string | null }) =>
     request<SessionSummary>("/api/sessions", { method: "POST", json: clean(body) }),
   get: (id: string) => request<SessionSummary & { messages?: SessionMessage[]; todos?: unknown[] }>(S(id)),
-  patch: (id: string, body: { title?: string; mode?: SessionMode; model?: { provider?: string | null; model?: string | null } }) =>
+  patch: (id: string, body: { title?: string; mode?: SessionMode; model?: string | { provider?: string | null; model?: string | null } }) =>
     request<SessionSummary>(S(id), { method: "PATCH", json: body }),
   remove: (id: string) => request<unknown>(S(id), { method: "DELETE" }),
-  fork: (id: string, messageId: string) => request<SessionSummary>(`${S(id)}/fork`, { method: "POST", json: { message_id: messageId } }),
+  /** Copy the session up to and including `messageId` (the whole session when omitted). */
+  fork: (id: string, messageId?: string | null) => request<SessionSummary>(`${S(id)}/fork`, { method: "POST", json: messageId ? { message_id: messageId } : {} }),
   send: (id: string, text: string, attachments?: Attachment[]) =>
-    request<unknown>(`${S(id)}/messages`, {
+    request<SendResult>(`${S(id)}/messages`, {
       method: "POST",
       json: attachments?.length
         ? { text, attachments: attachments.map(({ kind, ref, label, text: quote }) => clean({ kind, ref, label: label?.slice(0, 300), text: kind === "span" ? quote?.slice(0, 8000) : undefined })) }
@@ -195,10 +217,20 @@ export const sessionsApi = {
   interrupt: (id: string) => request<unknown>(`${S(id)}/interrupt`, { method: "POST", json: {} }),
   approve: (id: string, toolCallId: string, decision: "once" | "always" | "deny", feedback?: string) =>
     request<unknown>(`${S(id)}/approvals/${enc(toolCallId)}`, { method: "POST", json: feedback ? { decision, feedback } : { decision } }),
-  input: (id: string, answer: string) => request<unknown>(`${S(id)}/input`, { method: "POST", json: { answer } }),
+  input: (id: string, answer: string, toolCallId?: string | null) =>
+    request<unknown>(`${S(id)}/input`, { method: "POST", json: toolCallId ? { answer, tool_call_id: toolCallId } : { answer } }),
   result: (id: string, ref: string) => request<{ text: string }>(`${S(id)}/results/${enc(ref)}`).then((r) => String(r?.text ?? "")),
-  compact: (id: string) => request<unknown>(`${S(id)}/compact`, { method: "POST", json: {} }),
+  compact: (id: string, focus?: string) => request<CompactResult>(`${S(id)}/compact`, { method: "POST", json: focus ? { focus } : {} }),
 };
+
+function query(params: Record<string, string | number | null | undefined>): string {
+  const parts = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => `${k}=${enc(String(v))}`);
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
+/** Which registry to look at: a session's (its project and mode) or a project's. */
+export type HarnessScope = { sessionId?: string | null; projectId?: string | null };
+const scopeParams = (s?: HarnessScope) => (s?.sessionId ? { session_id: s.sessionId } : { project_id: s?.projectId });
 
 function clean<T extends Record<string, any>>(body: T): T {
   return Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined && v !== null && v !== "")) as T;
@@ -212,6 +244,7 @@ function normalizeMentions(raw: any): Mention[] {
         ref: String(m.ref ?? m.id ?? m.path ?? ""),
         label: String(m.label ?? m.title ?? m.name ?? m.goal ?? m.path ?? m.ref ?? m.id ?? ""),
         detail: m.detail ?? m.description ?? undefined,
+        insert: typeof m.insert === "string" ? m.insert : undefined,
       }))
       .filter((m) => m.ref);
   }
@@ -226,13 +259,15 @@ function normalizeMentions(raw: any): Mention[] {
 }
 
 export const harnessApi = {
-  tools: (mode?: SessionMode) => request<any>(`/api/harness/tools${mode ? `?mode=${mode}` : ""}`).then((r) => listOf<HarnessTool>(r, "tools", "items")),
-  commands: () => request<any>("/api/harness/commands").then((r) => listOf<HarnessCommand>(r, "commands", "items")),
-  agents: () => request<any>("/api/harness/agents").then((r) => listOf<HarnessAgentType>(r, "agents", "items")),
+  tools: (mode?: SessionMode, scope?: HarnessScope) =>
+    request<any>(`/api/harness/tools${query({ mode, ...scopeParams(scope) })}`).then((r) => listOf<HarnessTool>(r, "tools", "items")),
+  commands: (scope?: HarnessScope) => request<any>(`/api/harness/commands${query(scopeParams(scope))}`).then((r) => listOf<HarnessCommand>(r, "commands", "items")),
+  agents: (scope?: HarnessScope) => request<any>(`/api/harness/agents${query(scopeParams(scope))}`).then((r) => listOf<HarnessAgentType>(r, "agents", "items")),
   getSettings: () => request<any>("/api/harness/settings").then((r) => normalizeSettings(r?.settings ?? r)),
-  putSettings: (body: HarnessSettings) => request<any>("/api/harness/settings", { method: "PUT", json: body }).then((r) => normalizeSettings(r?.settings ?? r ?? body)),
-  mentions: (q: string, projectId?: string | null) =>
-    request<any>(`/api/harness/mentions?q=${enc(q)}${projectId ? `&project_id=${enc(projectId)}` : ""}`).then(normalizeMentions),
+  /** Partial update: only the top-level keys that are present are replaced (unknown keys are a 400). */
+  putSettings: (body: Partial<HarnessSettings>) => request<any>("/api/harness/settings", { method: "PUT", json: body }).then((r) => normalizeSettings(r?.settings ?? r ?? body)),
+  mentions: (q: string, scope?: HarnessScope, limit = 8) =>
+    request<any>(`/api/harness/mentions${query({ q: q || undefined, ...scopeParams(scope), limit })}`).then(normalizeMentions),
 };
 
 export const HOOK_EVENTS: HookEvent[] = ["pre_tool_use", "post_tool_use", "session_start", "stop"];
@@ -273,9 +308,9 @@ export const workspaceApi = {
       typeof r === "string" ? { path, content: r } : { ...r, path: r?.path || path, content: String(r?.content ?? r?.text ?? "") }),
   write: (projectId: string | null | undefined, path: string, content: string) =>
     request<any>(`${W(projectId)}/file?path=${enc(path)}`, { method: "PUT", json: { content } }),
-  checkpoints: (projectId?: string | null) =>
-    request<any>(`${W(projectId)}/checkpoints`).then((r) => listOf<Checkpoint>(r, "checkpoints", "items")),
-  /** Not in §7 but the natural detail route; callers fall back to list data when it is missing. */
+  checkpoints: (projectId?: string | null, filter?: { sessionId?: string | null; path?: string | null; limit?: number }) =>
+    request<any>(`${W(projectId)}/checkpoints${query({ session_id: filter?.sessionId, path: filter?.path, limit: filter?.limit })}`).then((r) => listOf<Checkpoint>(r, "checkpoints", "items")),
+  /** One checkpoint with `before` / `after` and a unified `diff`. */
   checkpoint: (projectId: string | null | undefined, id: string) =>
     request<any>(`${W(projectId)}/checkpoints/${enc(id)}`).then((r) => (r?.checkpoint ?? r) as Checkpoint),
   revert: (projectId: string | null | undefined, id: string) =>

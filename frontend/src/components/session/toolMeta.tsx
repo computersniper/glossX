@@ -55,22 +55,33 @@ export function toolMeta(tool: string, zh: boolean): { icon: LucideIcon; family:
 
 const PRIMARY = ["path", "file_path", "command", "query", "pattern", "url", "question", "description", "workflow", "goal", "prompt", "task", "script", "text", "name"];
 
+const PROSE = new Set(["question", "description", "goal", "prompt", "task", "text"]);
+
 const clip = (s: string, n = 120) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** One-line summary of what the call is about. */
 export function argSummary(call: Pick<ToolCallMessage, "tool" | "args">): string {
   const args = call.args || {};
   const papers = useStore.getState().papers;
+  const zh = useStore.getState().uiLang === "zh";
   const title = (id: unknown) => papers.find((p) => p.id === id)?.title || String(id);
   const parts: string[] = [];
   if (typeof args.paper_id === "string") parts.push(clip(title(args.paper_id), 60));
   if (Array.isArray(args.paper_ids) && args.paper_ids.length) {
-    parts.push(args.paper_ids.length === 1 ? clip(title(args.paper_ids[0]), 60) : `${args.paper_ids.length} papers`);
+    parts.push(args.paper_ids.length === 1 ? clip(title(args.paper_ids[0]), 60) : zh ? `${args.paper_ids.length} 篇论文` : `${args.paper_ids.length} papers`);
   }
-  if (call.tool === "todo_write" && Array.isArray(args.todos)) return `${args.todos.length} items`;
+  if (call.tool === "todo_write" && Array.isArray(args.todos)) return zh ? `${args.todos.length} 项` : `${args.todos.length} item${args.todos.length === 1 ? "" : "s"}`;
   if (call.tool === "task" && args.subagent_type) parts.push(String(args.subagent_type));
+  if (call.tool === "plan_submit" && typeof args.plan === "string") {
+    return clip((args.plan.split("\n").find((l: string) => l.trim()) || "").replace(/^[#>\s]+/, "").replace(/[*_`]+/g, ""), 80);
+  }
   const key = PRIMARY.find((k) => typeof args[k] === "string" && args[k].trim());
-  if (key) parts.push(clip(String(args[key]).replace(/\s+/g, " ").trim()));
+  if (key) {
+    let value = String(args[key]);
+    // prose arguments may carry markdown emphasis; paths, globs and commands must stay verbatim
+    if (PROSE.has(key)) value = value.replace(/\*\*|__|`/g, "");
+    parts.push(clip(value.replace(/\s+/g, " ").trim()));
+  }
   else if (!parts.length) {
     const first = Object.entries(args).find(([, v]) => typeof v === "string" || typeof v === "number");
     if (first) parts.push(clip(`${first[0]}: ${String(first[1]).replace(/\s+/g, " ")}`));
@@ -101,10 +112,16 @@ export function callSpans(call: ToolCallMessage): SpanRef[] {
   return [...out.values()];
 }
 
-export function spanLabel(span: SpanRef): string {
+/** Chip label. When every chip of a card is from one paper (`samePaper`) the title is noise: show the passage instead. */
+export function spanLabel(span: SpanRef, samePaper = false): string {
+  const where = span.page != null ? `p.${span.page + 1}` : `#${span.id.slice(span.id.lastIndexOf("#") + 1)}`;
+  if (samePaper && span.text) {
+    const words = span.text.replace(/\s+/g, " ").trim();
+    return `${where} · ${words.length > 20 ? `${words.slice(0, 19)}…` : words}`;
+  }
   const title = span.title || useStore.getState().papers.find((p) => p.id === span.paper_id)?.title || span.paper_id;
-  const short = title.length > 28 ? `${title.slice(0, 27)}…` : title;
-  return span.page != null ? `${short} · p.${span.page + 1}` : `${short} · #${span.id.slice(span.id.lastIndexOf("#") + 1)}`;
+  const short = title.length > 20 ? `${title.slice(0, 19)}…` : title;
+  return `${short} · ${where}`;
 }
 
 /** Open the paper tab for a span and flash it when we know where it is. */

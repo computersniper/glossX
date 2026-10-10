@@ -4,14 +4,17 @@ import { sessionsApi, type ApprovalRequest, type CheckpointRef, type ToolCallMes
 import { diffLines } from "../../harness/diff.mjs";
 import { useStore } from "../../store";
 import { useSessions } from "../../sessionStore";
+import { Markdown } from "../Markdown";
 import { Spinner } from "../ui";
-import { DiffView, revertCheckpoint, statsOf, useCheckpoint, useCheckpointMarks, useDiffRows, type DiffRow } from "./DiffView";
-import { argSummary, callSpans, formatDuration, openSpan, spanLabel, toolMeta } from "./toolMeta";
+import { DiffView, revertCheckpoint, rowsForCheckpoint, statsOf, useCheckpoint, useCheckpointMarks, useDiffRows, type DiffRow } from "./DiffView";
+import { argSummary, callSpans, formatDuration, formatTokens, openSpan, spanLabel, toolMeta } from "./toolMeta";
 
 const EDIT_TOOLS = new Set(["fs_edit", "fs_write"]);
 
 function argsDiff(call: ToolCallMessage): DiffRow[] | null {
   const a = call.args || {};
+  // while the call waits for approval the server sends the real diff against the file on disk
+  if (call.preview?.diff) return rowsForCheckpoint({ id: "", path: call.preview.path || "", diff: call.preview.diff });
   if (call.tool === "fs_edit" && (typeof a.old_string === "string" || typeof a.new_string === "string")) {
     return diffLines(a.old_string ?? a.old ?? "", a.new_string ?? a.new ?? "", 3) as DiffRow[];
   }
@@ -19,8 +22,8 @@ function argsDiff(call: ToolCallMessage): DiffRow[] | null {
   return null;
 }
 
-function ArgsTable({ args }: { args: Record<string, any> }) {
-  const entries = Object.entries(args || {});
+function ArgsTable({ args, omit }: { args: Record<string, any>; omit?: string[] }) {
+  const entries = Object.entries(args || {}).filter(([k]) => !omit?.includes(k));
   if (!entries.length) return null;
   return (
     <dl className="gx-kv">
@@ -166,14 +169,36 @@ export function ApprovalBar({ approval, zh }: { approval: ApprovalRequest; zh: b
   );
 }
 
-export function ToolCard({ call, approval, project, sub }: { call: ToolCallMessage; approval?: ApprovalRequest; project: string; sub?: boolean }) {
+export type ToolCardProps = {
+  call: ToolCallMessage;
+  project: string;
+  sub?: boolean;
+  /** Pending approval for a call id (also used for nested subagent calls). */
+  approvalFor: (id: string) => ApprovalRequest | undefined;
+  /** Calls made by a subagent, keyed by the `task` call that spawned it. */
+  kidsOf?: (id: string) => ToolCallMessage[];
+};
+
+const hasWaiting = (calls: ToolCallMessage[], kidsOf?: (id: string) => ToolCallMessage[]): boolean =>
+  calls.some((c) => c.status === "awaiting_approval" || hasWaiting(kidsOf?.(c.id) || [], kidsOf));
+
+export function ToolCard({ call, project, sub, approvalFor, kidsOf }: ToolCardProps) {
   const zh = useStore((s) => s.uiLang) === "zh";
   const meta = toolMeta(call.tool, zh);
+  const approval = approvalFor(call.id);
   const isEdit = EDIT_TOOLS.has(call.tool);
+  const isPlan = call.tool === "plan_submit" && typeof call.args?.plan === "string";
+  const kids = kidsOf?.(call.id) || [];
+  const isTask = call.tool === "task" || kids.length > 0 || !!call.subagent;
   const waiting = call.status === "awaiting_approval";
   const [toggled, setToggled] = useState<boolean | null>(null);
-  const open = toggled ?? (waiting || (isEdit && call.status !== "denied"));
+  const kidWaiting = hasWaiting(kids, kidsOf);
+  const liveNow = call.status === "running" || call.status === "pending";
+  // a nested approval must never hide behind a collapsed card
+  const open = kidWaiting || (toggled ?? (waiting || (isEdit && call.status !== "denied") || (isPlan && call.status !== "denied") || (isTask && liveNow)));
   const spans = call.status === "done" ? callSpans(call) : [];
+  const onePaper = spans.length > 1 && spans.every((s) => s.paper_id === spans[0].paper_id);
+  const paperTitle = onePaper ? spans[0].title || useStore.getState().papers.find((p) => p.id === spans[0].paper_id)?.title || "" : "";
   const Glyph = meta.icon;
   const summary = argSummary(call);
   const duration = formatDuration(call.started_at, call.finished_at);
@@ -201,6 +226,12 @@ export function ToolCard({ call, approval, project, sub }: { call: ToolCallMessa
             <span className="gx-diffstat"><b>+{stat.added}</b><i>−{stat.removed}</i></span>
           )}
           {spans.length > 0 && <span className="gx-tool-count"><Quote size={11} />{spans.length}</span>}
+          {isTask && (kids.length > 0 || !!call.subagent?.tool_calls) && (
+            <span className="gx-tool-count" title={zh ? "子智能体的工具调用" : "Tool calls made by the subagent"}>
+              {zh ? `${Math.max(kids.length, call.subagent?.tool_calls || 0)} 次调用` : `${Math.max(kids.length, call.subagent?.tool_calls || 0)} tool${Math.max(kids.length, call.subagent?.tool_calls || 0) === 1 ? "" : "s"}`}
+            </span>
+          )}
+          {call.exit_code != null && call.exit_code !== 0 && <span className="gx-tool-count bad">exit {call.exit_code}</span>}
           {duration && !live && <span className="gx-tool-time">{duration}</span>}
           {live && <Spinner size={13} />}
           {waiting && <ShieldQuestion size={14} className="gx-warn" />}
@@ -215,14 +246,15 @@ export function ToolCard({ call, approval, project, sub }: { call: ToolCallMessa
 
       {spans.length > 0 && (
         <div className="gx-cites">
-          {spans.slice(0, open ? 24 : 5).map((s) => (
+          {paperTitle && <span className="gx-cites-paper" title={paperTitle}>{paperTitle}</span>}
+          {spans.slice(0, open ? 24 : 4).map((s) => (
             <button key={s.id} type="button" className="gx-cite" title={s.text ? s.text.slice(0, 400) : s.id} onClick={() => openSpan(s)}>
               <Quote size={10} />
-              <span>{spanLabel(s)}</span>
+              <span>{spanLabel(s, onePaper)}</span>
             </button>
           ))}
-          {!open && spans.length > 5 && (
-            <button type="button" className="gx-cite more" onClick={() => setToggled(true)}>+{spans.length - 5}</button>
+          {!open && spans.length > 4 && (
+            <button type="button" className="gx-cite more" onClick={() => setToggled(true)}>+{spans.length - 4}</button>
           )}
         </div>
       )}
@@ -231,14 +263,34 @@ export function ToolCard({ call, approval, project, sub }: { call: ToolCallMessa
         <div className="gx-tool-body">
           {isEdit ? (
             <EditBody call={call} project={project} zh={zh} />
+          ) : isPlan ? (
+            <>
+              <div className="gx-plan gx-prose"><Markdown text={String(call.args.plan)} /></div>
+              {call.status === "denied" && (call.error || call.result_preview) && <pre className="gx-result">{call.error || call.result_preview}</pre>}
+            </>
           ) : (
             <>
-              <ArgsTable args={call.args} />
-              {(call.result_preview || call.error) && (
-                <pre className={`gx-result${call.status === "error" ? " bad" : ""}`}>{call.error && call.status === "error" ? call.error : full ?? call.result_preview}</pre>
+              {isTask && typeof call.args?.prompt === "string" ? (
+                <div className="gx-task-prompt" title={zh ? "交给子智能体的任务" : "The brief handed to the subagent"}>{call.args.prompt}</div>
+              ) : (
+                <ArgsTable args={call.args} />
               )}
-              {call.result_ref && call.status === "done" && full === null && (
-                <button type="button" className="gx-link" onClick={loadFull}>{zh ? "显示完整结果" : "Show the full result"}</button>
+              {kids.length > 0 && (
+                <div className="gx-tools gx-subtools">
+                  {kids.map((k) => (
+                    <ToolCard key={k.id} call={k} project={project} sub approvalFor={approvalFor} kidsOf={kidsOf} />
+                  ))}
+                </div>
+              )}
+              {(call.result_preview || call.error) && (
+                isTask && call.status === "done" && full === null
+                  ? <div className="gx-task-result gx-prose"><Markdown text={call.result_preview || ""} /></div>
+                  : <pre className={`gx-result${call.status === "error" ? " bad" : ""}`}>{call.error && call.status === "error" ? call.error : full ?? call.result_preview}</pre>
+              )}
+              {call.result_ref && call.status === "done" && full === null && (call.result_chars == null || call.result_chars > (call.result_preview || "").length) && (
+                <button type="button" className="gx-link" onClick={loadFull}>
+                  {zh ? "显示完整结果" : "Show the full result"}{call.result_chars ? ` · ${formatTokens(call.result_chars)} ${zh ? "字符" : "chars"}` : ""}
+                </button>
               )}
               {(call.checkpoints || []).map((c) => (
                 <div key={c.id} className="gx-cp-extra">

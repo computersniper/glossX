@@ -1,7 +1,7 @@
 // Agent sessions: list, active session, live per-session state fed by SSE.
 import { create } from "zustand";
 import {
-  ApiError, isMissing, openSessionStream, sessionsApi,
+  ApiError, harnessApi, isMissing, openSessionStream, sessionsApi,
   type Attachment, type SessionMode, type SessionState, type SessionSummary,
 } from "./api/harness";
 import { applySessionEvent, emptySessionState } from "./harness/sessionReducer.mjs";
@@ -52,18 +52,28 @@ interface SessionsStore {
   send: (text: string, attachments?: Attachment[]) => Promise<boolean>;
   interrupt: () => Promise<void>;
   approve: (toolCallId: string, decision: "once" | "always" | "deny", feedback?: string) => Promise<void>;
-  answer: (text: string) => Promise<void>;
+  answer: (text: string, toolCallId?: string | null) => Promise<void>;
   setMode: (mode: SessionMode) => Promise<void>;
   setModel: (model: ModelChoice) => Promise<void>;
   rename: (id: string, title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
-  fork: (messageId: string) => Promise<void>;
-  compact: () => Promise<void>;
+  /** Fork the active chat up to and including `messageId` (whole chat when omitted); `prefill` lands in the composer. */
+  fork: (messageId?: string | null, prefill?: { text: string; attachments?: Attachment[] }) => Promise<void>;
+  compact: (focus?: string) => Promise<void>;
   compose: (p: { text?: string; attachments?: Attachment[]; send?: boolean }) => void;
   clearError: () => void;
 }
 
 const fail = (e: unknown) => useStore.getState().notify(String((e as any)?.message || e));
+const isZh = () => useStore.getState().uiLang === "zh";
+const hadDraft = (() => {
+  try {
+    return localStorage.getItem(DRAFT_KEY) !== null;
+  } catch {
+    return true;
+  }
+})();
+let defaultModeAsked = hadDraft;
 
 export const useSessions = create<SessionsStore>((set, get) => {
   const patchState = (id: string, fn: (s: SessionState) => SessionState) =>
@@ -98,6 +108,8 @@ export const useSessions = create<SessionsStore>((set, get) => {
           }
         }
         if (name === "turn.completed") {
+          // a background chat that finished no longer needs its stream (browsers cap connections per host)
+          if (id !== get().activeId) unwatch(id);
           void get().refresh();
           // edits may have touched workspace files / checkpoints
           window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
@@ -112,6 +124,11 @@ export const useSessions = create<SessionsStore>((set, get) => {
       },
     );
     streams.set(id, close);
+    // keep at most a few live streams: drop the oldest background ones
+    for (const other of [...streams.keys()]) {
+      if (streams.size <= 4) break;
+      if (other !== id && other !== get().activeId) unwatch(other);
+    }
   }
 
   function unwatch(id: string) {
@@ -133,6 +150,11 @@ export const useSessions = create<SessionsStore>((set, get) => {
     refresh: async () => {
       set({ loadingList: true });
       try {
+        if (!defaultModeAsked) {
+          // first run: a new chat starts in the harness' configured default mode
+          defaultModeAsked = true;
+          void harnessApi.getSettings().then((s) => !get().activeId && set((st) => ({ draft: { ...st.draft, mode: s.default_mode } }))).catch(() => {});
+        }
         const all = await sessionsApi.list();
         const list = all.filter((s) => !s.parent_id).sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
         const { activeId } = get();
@@ -186,11 +208,39 @@ export const useSessions = create<SessionsStore>((set, get) => {
           ...s,
           error: null,
           status: "running",
-          messages: [...s.messages, { id: localId, type: "user", text: body, attachments, local: true }],
+          messages: [...s.messages, { id: localId, type: "user", text: body, attachments, pending: true }],
         }));
         watch(sid);
         try {
-          await sessionsApi.send(sid, body, attachments);
+          const res = await sessionsApi.send(sid, body, attachments);
+          patchState(sid, (s) => {
+            // the response is authoritative: swap the echo for the stored message (the stream may also deliver it)
+            let next = { ...s, messages: s.messages.filter((m) => m.id !== localId) };
+            if (res?.message) next = applySessionEvent(next, "message.created", res.message) as SessionState;
+            if (res?.note) next = applySessionEvent(next, "message.created", res.note) as SessionState;
+            if (res?.session) {
+              // status and pending prompts belong to the event stream: a short turn may already be over by now
+              const { status: _status, pending_approvals: _pa, pending_input: _pi, messages: _m, ...summary } = res.session as Record<string, any>;
+              next = applySessionEvent({ ...next, status: "running" }, "session.updated", summary) as SessionState;
+              next = { ...next, status: s.status };
+            }
+            // a local slash command (/help, /mode, /clear…) starts no turn
+            if (res && res.started === false) next = { ...next, status: res.session?.status || "idle" };
+            return next;
+          });
+          if (res?.session) {
+            syncSummary(sid);
+            const mode = res.session.mode;
+            if (mode && mode !== get().draft.mode) set((st) => ({ draft: { ...st.draft, mode } }));
+            const model = res.session.model;
+            if (res.command === "model" && model) set((st) => ({ draft: { ...st.draft, model: { provider: model.provider ?? null, model: model.model ?? null } } }));
+          }
+          const missing = (res?.message?.attachments || []).filter((a) => a.ok === false);
+          if (missing.length) {
+            const names = missing.map((a) => a.label || a.ref).join(", ");
+            useStore.getState().notify(isZh() ? `无法附加：${names}` : `Could not attach: ${names}`);
+          }
+          if (res?.command === "compact" && res.started === false) reportCompaction(res);
         } catch (e) {
           patchState(sid, (s) => ({
             ...s,
@@ -231,11 +281,11 @@ export const useSessions = create<SessionsStore>((set, get) => {
       }
     },
 
-    answer: async (text) => {
+    answer: async (text, toolCallId) => {
       const id = get().activeId;
       if (!id || !text.trim()) return;
       try {
-        await sessionsApi.input(id, text.trim());
+        await sessionsApi.input(id, text.trim(), toolCallId);
         patchState(id, (s) => ({ ...s, input: null }));
       } catch (e) {
         fail(e);
@@ -299,24 +349,31 @@ export const useSessions = create<SessionsStore>((set, get) => {
       }
     },
 
-    fork: async (messageId) => {
+    fork: async (messageId, prefill) => {
       const id = get().activeId;
       if (!id) return;
       try {
         const forked = await sessionsApi.fork(id, messageId);
         set((st) => ({ list: [forked, ...st.list.filter((s) => s.id !== forked.id)] }));
         get().select(forked.id);
+        if (prefill) set({ prefill: { ...prefill, id: Date.now() } });
+        useStore.getState().notify(isZh() ? "已分叉出新对话" : "Forked into a new chat");
       } catch (e) {
         fail(e);
       }
     },
 
-    compact: async () => {
+    compact: async (focus) => {
       const id = get().activeId;
       if (!id) return;
+      patchState(id, (s) => ({ ...s, status: "running" }));
       try {
-        await sessionsApi.compact(id);
+        const res = await sessionsApi.compact(id, focus);
+        if (res?.session) patchState(id, (s) => applySessionEvent(s, "session.updated", res.session) as SessionState);
+        reportCompaction(res);
       } catch (e) {
+        // 409 = a turn is running: leave its status alone
+        if (!(e instanceof ApiError && e.status === 409)) patchState(id, (s) => ({ ...s, status: "idle" }));
         fail(e);
       }
     },
@@ -332,5 +389,16 @@ export const useSessions = create<SessionsStore>((set, get) => {
     },
   };
 });
+
+function reportCompaction(res: { compacted?: boolean; reason?: string; tokens_before?: number; tokens_after?: number; [k: string]: any } | undefined) {
+  if (!res) return;
+  const k = (n?: number) => (n == null ? "?" : n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
+  const zh = isZh();
+  useStore.getState().notify(
+    res.compacted
+      ? zh ? `上下文已压缩：${k(res.tokens_before)} → ${k(res.tokens_after)} tokens` : `Context compacted: ${k(res.tokens_before)} → ${k(res.tokens_after)} tokens`
+      : zh ? `没有可压缩的内容${res.reason ? `（${res.reason}）` : ""}` : `Nothing to compact${res.reason ? ` (${res.reason})` : ""}`,
+  );
+}
 
 export const useActiveSession = (): SessionState => useSessions((s) => (s.activeId && s.states[s.activeId]) || EMPTY);

@@ -19,9 +19,35 @@ test("replay then streaming assistant text", () => {
 });
 
 test("a locally echoed user message is replaced by the server copy", () => {
-  const start = { ...emptySessionState(), messages: [{ id: "local-1", type: "user", text: "q", local: true }] };
+  const start = { ...emptySessionState(), messages: [{ id: "local-1", type: "user", text: "q", pending: true }] };
   const s = run([["message.created", { message: { id: "u9", type: "user", text: "q" } }]], start);
   assert.deepEqual(s.messages.map((m) => m.id), ["u9"]);
+});
+
+test("server-side local commands (local: true) are kept; replay keeps an unacknowledged echo", () => {
+  const s = run([
+    ["message.created", { id: "u1", type: "user", text: "/help", local: true, command: "help" }],
+    ["message.created", { id: "n1", type: "system_note", kind: "command", text: "Available commands" }],
+    ["message.created", { id: "u2", type: "user", text: "/mode plan", local: true, command: "mode" }],
+  ]);
+  assert.deepEqual(s.messages.map((m) => m.id), ["u1", "n1", "u2"]);
+  const echo = { ...s, messages: [...s.messages, { id: "local-9", type: "user", text: "next", pending: true }] };
+  const replay = run([["session.updated", { id: "s", status: "idle", messages: [{ id: "u1", type: "user", text: "/help" }] }]], echo);
+  assert.deepEqual(replay.messages.map((m) => m.id), ["u1", "local-9"]);
+  const cleared = run([["session.updated", { id: "s", status: "idle", messages: [] }]], s);
+  assert.equal(cleared.messages.length, 0);
+});
+
+test("message.completed text is authoritative; turn.completed records the stop reason", () => {
+  const s = run([
+    ["message.created", { id: "a1", type: "assistant", text: "" }],
+    ["message.delta", { id: "a1", text: "<tool_call>{", offset: 0 }],
+    ["message.completed", { id: "a1", type: "assistant", text: "", tool_calls: ["t1"] }],
+    ["turn.completed", { session_id: "s", stop_reason: "budget", rounds: 25, status: "idle" }],
+  ]);
+  assert.equal(s.messages[0].text, "");
+  assert.equal(s.status, "idle");
+  assert.deepEqual(s.stop, { reason: "budget", rounds: 25 });
 });
 
 test("tool updates upsert and resolve approvals", () => {

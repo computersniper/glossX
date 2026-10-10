@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleDot, Copy, FileCode, FileText, FlaskConical,
+  ArrowDown, Archive, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleDot, Copy, FileCode, FileText, FlaskConical,
   GitFork, History, Layers, ListChecks, MessageCircleQuestion, NotebookPen, Pencil, Quote, RefreshCw, Scale, ScrollText,
   Search, Shrink, SquarePen, Telescope, TextSelect, Trash2, WifiOff, X, type LucideIcon,
 } from "lucide-react";
@@ -10,7 +10,7 @@ import { useActiveSession, useSessions } from "../../sessionStore";
 import { Markdown } from "../Markdown";
 import { MenuButton, MenuItem, MenuSep, Popover, Spinner } from "../ui";
 import { Composer } from "./Composer";
-import { ApprovalBar, ToolCard } from "./ToolCard";
+import { ToolCard } from "./ToolCard";
 import { callSpans, openSpan, relativeTime } from "./toolMeta";
 
 const SPAN_MARK = /\[S:([^\]\s]+#\d+)\]/g;
@@ -54,7 +54,7 @@ function copy(text: string, zh: boolean) {
 
 const ATTACH_ICON: Record<string, LucideIcon> = { paper: FileText, file: FileCode, run: ScrollText, span: Quote, selection: TextSelect };
 
-function UserMessage({ m, zh, canFork }: { m: Extract<SessionMessage, { type: "user" }>; zh: boolean; canFork: boolean }) {
+function UserMessage({ m, zh, canFork, prevId }: { m: Extract<SessionMessage, { type: "user" }>; zh: boolean; canFork: boolean; prevId: string | null }) {
   const papers = useStore((s) => s.papers);
   const fork = useSessions((s) => s.fork);
   const openPaper = useStore((s) => s.openPaper);
@@ -63,13 +63,23 @@ function UserMessage({ m, zh, canFork }: { m: Extract<SessionMessage, { type: "u
   const label = (a: { kind: string; ref: string; label?: string }) =>
     a.label || (a.kind === "paper" ? papers.find((p) => p.id === a.ref)?.title : "") || a.ref;
   return (
-    <div className={`gx-msg user${m.local ? " pending" : ""}`}>
+    <div className={`gx-msg user${m.pending ? " pending" : ""}${m.command ? " command" : ""}`}>
       {!!m.attachments?.length && (
         <div className="gx-msg-attachments">
           {m.attachments.map((a) => {
             const I = ATTACH_ICON[a.kind] || FileText;
             return (
-              <button key={`${a.kind}:${a.ref}`} type="button" className="gx-chip" title={label(a)} onClick={() => a.kind === "paper" && void openPaper(a.ref).catch(() => {})}>
+              <button
+                key={`${a.kind}:${a.ref}`}
+                type="button"
+                className={`gx-chip${a.ok === false ? " missing" : ""}`}
+                title={a.ok === false ? `${zh ? "未找到，未附加" : "Not found — not attached"}: ${a.ref}` : label(a)}
+                onClick={() => {
+                  if (a.ok === false) return;
+                  if (a.kind === "paper") void openPaper(a.ref).catch(() => {});
+                  else if (a.kind === "file") useStore.getState().openFileTab(useSessions.getState().states[useSessions.getState().activeId || ""]?.session?.workspace?.key || "default", a.ref);
+                }}
+              >
                 <I size={12} /><span>{label(a)}</span>
               </button>
             );
@@ -82,10 +92,43 @@ function UserMessage({ m, zh, canFork }: { m: Extract<SessionMessage, { type: "u
       )}
       <div className="gx-msg-actions">
         <button type="button" title={zh ? "复制" : "Copy"} onClick={() => copy(m.text, zh)}><Copy size={12} /></button>
-        {canFork && !m.local && (
-          <button type="button" title={zh ? "从这里分叉出新对话" : "Fork a new chat from here"} onClick={() => void fork(m.id)}><GitFork size={12} /></button>
+        {canFork && !m.pending && !m.command && (
+          <button
+            type="button"
+            title={zh ? "从这里分叉：在新对话中改写这条消息" : "Fork from here: rewrite this message in a new chat"}
+            onClick={() => {
+              const prefill = { text: m.text, attachments: m.attachments?.filter((a) => a.ok !== false).map(({ kind, ref, label: l, text }) => ({ kind, ref, label: l, text })) };
+              // the fork keeps everything before this message; the message itself goes back into the composer
+              if (prevId) void fork(prevId, prefill);
+              else {
+                useSessions.getState().newChat();
+                useSessions.getState().compose(prefill);
+              }
+            }}
+          >
+            <GitFork size={12} />
+          </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function AssistantMessage({ m, zh, spans, canFork, old }: { m: Extract<SessionMessage, { type: "assistant" }>; zh: boolean; spans: Map<string, SpanRef>; canFork: boolean; old: boolean }) {
+  const fork = useSessions((s) => s.fork);
+  return (
+    <div className={`gx-msg assistant${m.streaming ? " streaming" : ""}${old ? " compacted" : ""}`}>
+      {m.text && <Prose text={m.text} spans={spans} />}
+      {m.interrupted && <div className="gx-msg-flag">{zh ? "已中断" : "Interrupted"}</div>}
+      {m.error && !m.interrupted && <div className="gx-msg-flag bad">{m.error}</div>}
+      {!m.streaming && m.text && (
+        <div className="gx-msg-actions">
+          <button type="button" title={zh ? "复制" : "Copy"} onClick={() => copy(m.text, zh)}><Copy size={12} /></button>
+          {canFork && (
+            <button type="button" title={zh ? "从这条回复分叉出新对话" : "Fork a new chat from this reply"} onClick={() => void fork(m.id)}><GitFork size={12} /></button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -94,14 +137,17 @@ function SystemNote({ m, zh }: { m: Extract<SessionMessage, { type: "system_note
   const [open, setOpen] = useState(false);
   const first = (m.text || "").split("\n")[0];
   const kind = m.kind || "";
-  const title = kind.includes("compact") ? (zh ? "上下文已压缩" : "Context compacted")
-    : kind.includes("mode") ? first
+  const title = kind.includes("compact") ? (zh ? "上下文已压缩 · 查看摘要" : "Context compacted · view summary")
+    : kind === "interrupt" ? (zh ? "你中断了这一轮" : "You stopped this turn")
+    : kind === "budget" ? (zh ? "已达到本轮的工具调用上限" : "Stopped at this turn’s tool-round limit")
     : kind.includes("hook") ? (zh ? "钩子输出" : "Hook output")
-    : first.slice(0, 80);
-  const hasMore = (m.text || "").trim() !== title.trim();
+    : first.replace(/[*_`#]+/g, "").slice(0, 90);
+  const hasMore = kind.includes("compact") || kind === "budget" || kind.includes("hook") || (m.text || "").trim() !== first.trim() || first.length > 90;
+  const NoteIcon = kind.includes("compact") ? Archive : kind === "error" || kind === "budget" ? CircleAlert : null;
   return (
-    <div className={`gx-note${open ? " open" : ""}`}>
+    <div className={`gx-note kind-${kind || "note"}${open ? " open" : ""}`}>
       <button type="button" disabled={!hasMore} onClick={() => setOpen(!open)}>
+        {NoteIcon && <NoteIcon size={11} />}
         <span>{title}</span>
         {hasMore && <ChevronRight size={11} />}
       </button>
@@ -117,7 +163,7 @@ function InputCard({ input, zh }: { input: InputRequest; zh: boolean }) {
   const go = async (value: string) => {
     if (!value.trim() || busy) return;
     setBusy(true);
-    await answer(value);
+    await answer(value, input.tool_call_id);
     setBusy(false);
   };
   return (
@@ -147,8 +193,14 @@ function InputCard({ input, zh }: { input: InputRequest; zh: boolean }) {
   );
 }
 
-function TodoDock({ todos, zh }: { todos: Todo[]; zh: boolean }) {
-  const [open, setOpen] = useState(true);
+function TodoDock({ todos, zh, running }: { todos: Todo[]; zh: boolean; running: boolean }) {
+  // open while the agent works through the list; folds to one line once the turn is over
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? running;
+  const setOpen = (v: boolean) => setToggled(v);
+  useEffect(() => {
+    if (running) setToggled(null);
+  }, [running]);
   if (!todos.length) return null;
   const done = todos.filter((t) => t.status === "completed").length;
   const current = todos.find((t) => t.status === "in_progress");
@@ -159,7 +211,7 @@ function TodoDock({ todos, zh }: { todos: Todo[]; zh: boolean }) {
         <ListChecks size={14} />
         <strong>{zh ? "任务" : "Tasks"}</strong>
         <span className="gx-todos-count">{done}/{todos.length}</span>
-        <span className="gx-todos-now">{!open && (current ? current.active || current.text : allDone ? (zh ? "全部完成" : "All done") : "")}</span>
+        <span className="gx-todos-now">{!open && (current ? current.active || current.text : allDone ? (zh ? "全部完成" : "All done") : todos.find((t) => t.status !== "completed")?.text || "")}</span>
         <span className="gx-todos-bar"><i style={{ width: `${(done / todos.length) * 100}%` }} /></span>
         <ChevronDown size={13} className="gx-todos-caret" />
       </button>
@@ -356,22 +408,58 @@ function SessionBar({ zh }: { zh: boolean }) {
   );
 }
 
+/** A run of tool calls. Long finished runs fold their middle so twenty identical steps do not bury the answer. */
+function ToolGroup({ calls, className, zh, live, children }: { calls: ToolCallMessage[]; className: string; zh: boolean; live: boolean; children: (c: ToolCallMessage) => React.ReactNode }) {
+  const [all, setAll] = useState(false);
+  const HEAD = 3, TAIL = 3;
+  const needsAttention = calls.some((c) => c.status === "awaiting_approval");
+  const fold = !all && !live && !needsAttention && calls.length > HEAD + TAIL + 2;
+  if (!fold) return <div className={className}>{calls.map(children)}</div>;
+  const hidden = calls.slice(HEAD, calls.length - TAIL);
+  const failed = hidden.filter((c) => c.status === "error").length;
+  return (
+    <div className={className}>
+      {calls.slice(0, HEAD).map(children)}
+      <button type="button" className="gx-tools-more" onClick={() => setAll(true)}>
+        <ChevronRight size={11} />
+        {zh ? `还有 ${hidden.length} 次工具调用` : `${hidden.length} more tool calls`}
+        {failed > 0 && <i>{zh ? `${failed} 次失败` : `${failed} failed`}</i>}
+      </button>
+      {calls.slice(calls.length - TAIL).map(children)}
+    </div>
+  );
+}
+
 type Block =
-  | { kind: "msg"; m: Exclude<SessionMessage, ToolCallMessage> }
+  | { kind: "msg"; m: Exclude<SessionMessage, ToolCallMessage>; prevId: string | null }
   | { kind: "tools"; id: string; calls: ToolCallMessage[] };
 
-function groupMessages(messages: SessionMessage[]): Block[] {
-  const out: Block[] = [];
-  for (const m of messages) {
+/** Thread blocks. Subagent calls are pulled out of the flow and nested under their `task` call. */
+function groupMessages(messages: SessionMessage[], compactedThrough?: string | null): { blocks: Block[]; kids: Map<string, ToolCallMessage[]>; compacted: number } {
+  const ids = new Set(messages.map((m) => m.id));
+  // stored messages carry `compacted`; on a live stream only context.compacted_through tells us
+  const throughIndex = compactedThrough ? messages.findIndex((m) => m.id === compactedThrough) : -1;
+  const kids = new Map<string, ToolCallMessage[]>();
+  const blocks: Block[] = [];
+  let compacted = 0;
+  let prevId: string | null = null;
+  for (const [index, m] of messages.entries()) {
     if (m.type === "tool_call") {
-      const last = out[out.length - 1];
+      const parent = m.parent_tool_call_id ? String(m.parent_tool_call_id) : "";
+      if (parent && ids.has(parent)) {
+        kids.set(parent, [...(kids.get(parent) || []), m]);
+        continue;
+      }
+      const last = blocks[blocks.length - 1];
       if (last?.kind === "tools") last.calls.push(m);
-      else out.push({ kind: "tools", id: m.id, calls: [m] });
-    } else if (m.type === "assistant" && !m.text && !m.streaming) {
-      continue; // an assistant turn that was only tool calls
-    } else out.push({ kind: "msg", m });
+      else blocks.push({ kind: "tools", id: m.id, calls: [m] });
+    } else if (m.type === "assistant" && !m.text && !m.streaming && !m.interrupted) {
+      // an assistant turn that was only tool calls
+    } else blocks.push({ kind: "msg", m, prevId });
+    if (m.compacted || index <= throughIndex) compacted = blocks.length;
+    prevId = m.id;
   }
-  return out;
+  return { blocks, kids, compacted };
 }
 
 export function SessionChat() {
@@ -397,8 +485,12 @@ export function SessionChat() {
     for (const m of messages) if (m.type === "tool_call") for (const s of callSpans(m)) map.set(s.id, s);
     return map;
   }, [messages]);
-  const blocks = useMemo(() => groupMessages(messages), [messages]);
+  const { blocks, kids, compacted } = useMemo(() => groupMessages(messages, state.context.compacted_through), [messages, state.context.compacted_through]);
+  const [showCompacted, setShowCompacted] = useState(false);
+  useEffect(() => setShowCompacted(false), [activeId]);
   const approvalFor = (id: string): ApprovalRequest | undefined => approvals.find((a) => a.tool_call_id === id);
+  const kidsOf = (id: string) => kids.get(id) || [];
+  const hiddenCount = showCompacted ? 0 : compacted;
   const orphanApprovals = approvals.filter((a) => !messages.some((m) => m.id === a.tool_call_id));
   const last = messages[messages.length - 1];
   const thinking = status === "running" && !(last?.type === "assistant" && last.streaming && last.text) && !(last?.type === "tool_call" && (last.status === "running" || last.status === "pending"));
@@ -436,32 +528,30 @@ export function SessionChat() {
           <EmptyChat zh={zh} unavailable={available === false} onRetry={() => void refresh()} />
         ) : (
           <div className="gx-thread">
-            {blocks.map((b) =>
-              b.kind === "tools" ? (
-                <div key={b.id} className="gx-tools">
-                  {b.calls.map((c) => (
-                    <ToolCard key={c.id} call={c} approval={approvalFor(c.id)} project={project} sub={!!c.session_id && c.session_id !== activeId} />
-                  ))}
-                </div>
+            {compacted > 0 && (
+              <button type="button" className={`gx-compacted-toggle${showCompacted ? " open" : ""}`} onClick={() => setShowCompacted(!showCompacted)}>
+                <Archive size={12} />
+                <span>{showCompacted ? (zh ? "隐藏已压缩的早期对话" : "Hide the earlier, summarized conversation") : zh ? `更早的 ${compacted} 段对话已被总结压缩 · 点击查看` : `${compacted} earlier block${compacted > 1 ? "s" : ""} summarized to free context · show`}</span>
+                <ChevronRight size={11} />
+              </button>
+            )}
+            {blocks.slice(hiddenCount).map((b, i) => {
+              const old = i + hiddenCount < compacted ? " compacted" : "";
+              return b.kind === "tools" ? (
+                <ToolGroup key={b.id} calls={b.calls} className={`gx-tools${old}`} zh={zh} live={status !== "idle" && i + hiddenCount === blocks.length - 1}>
+                  {(c) => <ToolCard key={c.id} call={c} approvalFor={approvalFor} kidsOf={kidsOf} project={project} sub={!!c.parent_tool_call_id} />}
+                </ToolGroup>
               ) : b.m.type === "user" ? (
-                <UserMessage key={b.m.id} m={b.m} zh={zh} canFork={status === "idle"} />
+                <div key={b.m.id} className={`gx-msg-wrap${old}`}><UserMessage m={b.m} zh={zh} canFork={status === "idle"} prevId={b.prevId} /></div>
               ) : b.m.type === "system_note" ? (
                 <SystemNote key={b.m.id} m={b.m} zh={zh} />
               ) : (
-                <div key={b.m.id} className={`gx-msg assistant${b.m.streaming ? " streaming" : ""}`}>
-                  <Prose text={b.m.text} spans={spans} />
-                  {b.m.interrupted && <div className="gx-msg-flag">{zh ? "已中断" : "Interrupted"}</div>}
-                  {!b.m.streaming && b.m.text && (
-                    <div className="gx-msg-actions">
-                      <button type="button" title={zh ? "复制" : "Copy"} onClick={() => copy(b.m.text, zh)}><Copy size={12} /></button>
-                    </div>
-                  )}
-                </div>
-              ),
-            )}
+                <AssistantMessage key={b.m.id} m={b.m} zh={zh} spans={spans} canFork={status === "idle"} old={!!old} />
+              );
+            })}
             {orphanApprovals.map((a) => (
               <div key={a.tool_call_id} className="gx-tools">
-                <ToolCard call={{ id: a.tool_call_id, type: "tool_call", tool: a.tool, args: a.args || {}, status: "awaiting_approval" }} approval={a} project={project} sub />
+                <ToolCard call={{ id: a.tool_call_id, type: "tool_call", tool: a.tool, args: a.args || {}, status: "awaiting_approval" }} approvalFor={() => a} project={project} sub />
               </div>
             ))}
             {input && <InputCard key={input.tool_call_id || input.question} input={input} zh={zh} />}
@@ -496,7 +586,7 @@ export function SessionChat() {
       )}
       <div className="gx-chat-foot">
         {conn === "reconnecting" && status !== "idle" && <div className="gx-conn"><Spinner size={11} /> {zh ? "正在重新连接…" : "Reconnecting…"}</div>}
-        <TodoDock todos={todos} zh={zh} />
+        <TodoDock todos={todos} zh={zh} running={status !== "idle"} />
         <Composer disabled={available === false} />
       </div>
     </div>

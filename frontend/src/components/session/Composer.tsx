@@ -34,6 +34,12 @@ const KIND_ICON: Record<string, LucideIcon> = { paper: FileText, file: FileCode,
 type Chip = Omit<Attachment, "kind"> & { kind: Attachment["kind"] | "selection" };
 type Picker = { type: "mention"; query: string; start: number } | { type: "command"; query: string } | null;
 
+/** The command list can be long (every installed skill is a command): group it and cap what is rendered. */
+const COMMAND_CAP = 40;
+const commandGroup = (c: HarnessCommand) => (c.kind === "builtin" || c.source === "builtin" ? 0 : c.kind === "skill" || c.source === "skill" ? 2 : 1);
+const GROUP_LABEL = [{ en: "Built-in", zh: "内置" }, { en: "Custom & plugins", zh: "自定义与插件" }, { en: "Skills", zh: "技能" }];
+const KIND_LABEL: Record<string, { en: string; zh: string }> = { paper: { en: "Papers", zh: "论文" }, file: { en: "Workspace files", zh: "工作区文件" }, run: { en: "Runs", zh: "运行" } };
+
 function ContextMeter({ zh }: { zh: boolean }) {
   const { context, status } = useActiveSession();
   const hasSession = useSessions((s) => !!s.activeId);
@@ -197,8 +203,8 @@ export function Composer({ disabled }: { disabled?: boolean }) {
 
   const busy = status !== "idle";
   const T = zh
-    ? { ph: "提问、布置研究任务，@ 引用论文或文件，/ 使用命令", phBusy: "智能体正在工作…", send: "发送 (Enter)", stop: "停止", paper: "当前论文", sel: "选中文本", mention: "引用论文、文件或运行", cmd: "命令", none: "没有匹配项", hint: "Enter 发送 · Shift+Enter 换行" }
-    : { ph: "Ask, or hand over a research task — @ to reference, / for commands", phBusy: "The agent is working…", send: "Send (Enter)", stop: "Stop", paper: "Current paper", sel: "Selection", mention: "Reference a paper, file or run", cmd: "Commands", none: "No matches", hint: "Enter to send · Shift+Enter for a new line" };
+    ? { ph: "提问或布置任务 · @ 引用 · / 命令", phBusy: "智能体正在工作…", send: "发送 (Enter)", stop: "停止", paper: "当前论文", sel: "选中文本", mention: "引用论文、文件或运行", cmd: "命令", none: "没有匹配项", hint: "Enter 发送 · Shift+Enter 换行" }
+    : { ph: "Ask or delegate — @ to reference, / for commands", phBusy: "The agent is working…", send: "Send (Enter)", stop: "Stop", paper: "Current paper", sel: "Selection", mention: "Reference a paper, file or run", cmd: "Commands", none: "No matches", hint: "Enter to send · Shift+Enter for a new line" };
 
   // text queued from elsewhere (welcome page, palette, library context menu, suggestions)
   useEffect(() => {
@@ -225,11 +231,11 @@ export function Composer({ disabled }: { disabled?: boolean }) {
 
   useEffect(() => {
     let live = true;
-    harnessApi.commands().then((c) => live && c.length && setCommands(c)).catch(() => {});
+    harnessApi.commands({ sessionId: activeId, projectId }).then((c) => live && c.length && setCommands(c)).catch(() => {});
     return () => {
       live = false;
     };
-  }, [activeId]);
+  }, [activeId, projectId]);
 
   // auto-grow
   useEffect(() => {
@@ -247,7 +253,7 @@ export function Composer({ disabled }: { disabled?: boolean }) {
     setMentionBusy(true);
     const timer = window.setTimeout(() => {
       harnessApi
-        .mentions(mentionQuery, projectId)
+        .mentions(mentionQuery, { sessionId: activeId, projectId })
         .catch(() => localMentions(mentionQuery))
         .then((list) => {
           if (!live) return;
@@ -259,7 +265,7 @@ export function Composer({ disabled }: { disabled?: boolean }) {
       live = false;
       window.clearTimeout(timer);
     };
-  }, [mentionQuery, projectId]);
+  }, [mentionQuery, projectId, activeId]);
 
   function localMentions(q: string): Mention[] {
     const needle = q.toLowerCase();
@@ -271,14 +277,22 @@ export function Composer({ disabled }: { disabled?: boolean }) {
     ];
   }
 
-  const commandItems = useMemo(() => {
+  const commandMatches = useMemo(() => {
     if (picker?.type !== "command") return [];
     const q = picker.query.toLowerCase();
-    return commands.filter((c) => c.name.toLowerCase().includes(q)).sort((a, b) => Number(b.name.startsWith(q)) - Number(a.name.startsWith(q)));
+    const rank = (c: HarnessCommand) => (c.name.toLowerCase() === q ? 0 : c.name.toLowerCase().startsWith(q) ? 1 : c.name.toLowerCase().includes(q) ? 2 : 3);
+    return commands
+      .filter((c) => !q || c.name.toLowerCase().includes(q) || (q.length >= 3 && (c.description || "").toLowerCase().includes(q)))
+      // with a query the best match comes first; without one the list reads built-in → custom → skills
+      .sort((a, b) => (q ? rank(a) - rank(b) : 0) || commandGroup(a) - commandGroup(b) || a.name.localeCompare(b.name));
   }, [picker, commands]);
+  const commandItems = useMemo(() => commandMatches.slice(0, COMMAND_CAP), [commandMatches]);
 
   const items = picker?.type === "mention" ? mentions : commandItems;
   useEffect(() => setIndex(0), [picker?.type, picker?.query, items.length]);
+  useEffect(() => {
+    document.querySelector(".gx-picker .gx-menu-item.active")?.scrollIntoView({ block: "nearest" });
+  }, [index, picker?.type]);
 
   function focusEnd() {
     setTimeout(() => {
@@ -352,7 +366,9 @@ export function Composer({ disabled }: { disabled?: boolean }) {
         setIndex((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length);
         return;
       }
-      if (e.key === "Enter" || e.key === "Tab") {
+      // "/help⏎" runs the command as typed; Enter only completes when the name is still partial
+      const typedWhole = picker.type === "command" && commandItems[index]?.name === picker.query;
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !typedWhole)) {
         e.preventDefault();
         pick(index);
         return;
@@ -388,25 +404,38 @@ export function Composer({ disabled }: { disabled?: boolean }) {
           {picker?.type === "mention" &&
             mentions.map((m, i) => {
               const I = KIND_ICON[m.kind] || FileText;
+              const head = (i === 0 || mentions[i - 1].kind !== m.kind) && KIND_LABEL[m.kind];
               return (
-                <button key={`${m.kind}:${m.ref}`} type="button" className={`gx-menu-item${i === index ? " active" : ""}`} onMouseEnter={() => setIndex(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)}>
+                <div key={`${m.kind}:${m.ref}`} className="gx-picker-row">
+                {head && <div className="gx-menu-heading">{zh ? head.zh : head.en}</div>}
+                <button type="button" className={`gx-menu-item${i === index ? " active" : ""}`} onMouseEnter={() => setIndex(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)}>
                   <span className="gx-menu-icon"><I size={14} /></span>
                   <span className="gx-menu-text"><span className="gx-menu-label">{m.label}</span>{m.detail && <span className="gx-menu-detail">{m.detail}</span>}</span>
-                  <span className="gx-menu-hint">{m.kind}</span>
                 </button>
+                </div>
               );
             })}
           {picker?.type === "command" &&
             commandItems.map((c, i) => (
-              <button key={c.name} type="button" className={`gx-menu-item${i === index ? " active" : ""}`} onMouseEnter={() => setIndex(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)}>
+              <div key={c.name} className="gx-picker-row">
+              {!picker.query && (i === 0 || commandGroup(commandItems[i - 1]) !== commandGroup(c)) && (
+                <div className="gx-menu-heading">{zh ? GROUP_LABEL[commandGroup(c)].zh : GROUP_LABEL[commandGroup(c)].en}</div>
+              )}
+              <button type="button" className={`gx-menu-item${i === index ? " active" : ""}`} onMouseEnter={() => setIndex(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)}>
                 <span className="gx-menu-icon"><Slash size={13} /></span>
                 <span className="gx-menu-text">
                   <span className="gx-menu-label"><code>/{c.name}</code>{c.argument_hint && <i> {c.argument_hint}</i>}</span>
                   {c.description && <span className="gx-menu-detail">{c.description}</span>}
                 </span>
-                {c.source && c.source !== "builtin" && <span className="gx-menu-hint">{c.source}</span>}
+                {!!picker.query && c.source && c.source !== "builtin" && <span className="gx-menu-hint">{c.source}</span>}
               </button>
+              </div>
             ))}
+          {picker?.type === "command" && commandMatches.length > commandItems.length && (
+            <div className="gx-picker-more">
+              {zh ? `还有 ${commandMatches.length - commandItems.length} 个命令 · 继续输入以筛选` : `${commandMatches.length - commandItems.length} more — keep typing to filter`}
+            </div>
+          )}
         </div>
       </Popover>
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { create } from "zustand";
-import { workspaceApi, type Checkpoint } from "../../api/harness";
+import { ApiError, workspaceApi, type Checkpoint } from "../../api/harness";
 import { diffLines, diffStats, parseUnifiedDiff } from "../../harness/diff.mjs";
 
 export type DiffRow = { kind: "hunk" | "add" | "del" | "ctx"; text: string; a?: number; b?: number };
@@ -104,7 +104,13 @@ export const useCheckpointMarks = create<{ marks: Record<string, Mark>; mark: (i
 
 /** Revert a checkpoint, remember it locally and tell workspace views to refresh. */
 export async function revertCheckpoint(project: string, id: string) {
-  const result = await workspaceApi.revert(project, id);
+  let result: unknown;
+  try {
+    result = await workspaceApi.revert(project, id);
+  } catch (e) {
+    // 409: this checkpoint was already reverted (elsewhere) — just record that
+    if (!(e instanceof ApiError && e.status === 409)) throw e;
+  }
   detailCache.delete(`${project}|${id}`);
   useCheckpointMarks.getState().mark(id, "reverted");
   window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
