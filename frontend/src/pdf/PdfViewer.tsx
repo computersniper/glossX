@@ -103,16 +103,16 @@ export function PdfViewer() {
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
   const zoomAnchorRef = useRef<{ ratio: number; top: number; left: number; anchorY: number; anchorX: number } | null>(null);
-  const [rendered, setRendered] = useState(false);
+  const [loaded, setLoaded] = useState<{ id: string; doc: any } | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [retry, setRetry] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const docRef = useRef<any>(null);
   const [popover, setPopover] = useState<{ x: number; y: number } | null>(null);
   const [showHighlights, setShowHighlights] = useState(() => localStorage.getItem("gloss.layer.highlights") !== "0");
   const [showNotes, setShowNotes] = useState(() => localStorage.getItem("gloss.layer.notes") !== "0");
   const [showInk, setShowInk] = useState(() => localStorage.getItem("gloss.layer.ink") !== "0");
   const [dispOpen, setDispOpen] = useState(false);
-  const renderTasksRef = useRef<any[]>([]);
   const restoreRef = useRef<string | null>(null);
   const [drawTool, setDrawTool] = useState<DrawTool>("select");
   const [brushType, setBrushType] = useState<DrawingTool>(savedBrush);
@@ -128,19 +128,18 @@ export function PdfViewer() {
   useEffect(() => {
     if (!current) return;
     let cancelled = false;
-    setRendered(false);
+    setLoaded(null);
+    setLoadError("");
     restoreRef.current = current.id;
     // documents are owned by the shared cache (evicted when the tab closes)
     getPdfDoc(current.id).then((doc: any) => {
       if (cancelled) return;
-      docRef.current = doc;
-      setRendered(true);
-    }).catch(() => {});
-    return () => {
-      cancelled = true;
-      docRef.current = null;
-    };
-  }, [current?.id]);
+      setLoaded({ id: current.id, doc });
+    }).catch((error) => {
+      if (!cancelled) setLoadError(String(error?.message || error));
+    });
+    return () => { cancelled = true; };
+  }, [current?.id, retry]);
 
   // Ctrl+wheel zooms the PDF (not the app). Pages re-render once the wheel
   // settles; the scroll position keeps the same spot under the pointer.
@@ -186,17 +185,10 @@ export function PdfViewer() {
 
   // Render all pages whenever the doc is ready or the scale changes.
   useEffect(() => {
-    const doc = docRef.current;
-    if (!doc || !rendered) return;
+    if (!loaded || loaded.id !== current?.id) return;
+    const doc = loaded.doc;
     let cancelled = false;
-    // cancel any in-flight renders from a previous scale so they don't collide
-    // with the new ones on the same canvas (which makes PDF.js throw).
-    renderTasksRef.current.forEach((t) => {
-      try {
-        t.cancel();
-      } catch {}
-    });
-    renderTasksRef.current = [];
+    const tasks: any[] = [];
     // supersample: render the bitmap at >=2x the display size so text is crisp
     // even on 1x monitors, then let CSS downscale it to the layout size.
     const quality = Math.max(2, window.devicePixelRatio || 1);
@@ -212,6 +204,7 @@ export function PdfViewer() {
           continue;
         }
         const page = await doc.getPage(i);
+        if (cancelled) return;
         const vp = page.getViewport({ scale });
         holder.style.width = `${vp.width}px`;
         holder.style.height = `${vp.height}px`;
@@ -244,21 +237,39 @@ export function PdfViewer() {
         canvas.height = Math.floor(rvp.height);
         canvas.style.width = `${vp.width}px`;
         canvas.style.height = `${vp.height}px`;
-        const ctx = canvas.getContext("2d")!;
+        // Render offscreen: an old paper/zoom must never paint into a reused canvas.
+        const bitmap = document.createElement("canvas");
+        bitmap.width = canvas.width;
+        bitmap.height = canvas.height;
+        const ctx = bitmap.getContext("2d")!;
         try {
           const task = page.render({ canvasContext: ctx, viewport: rvp });
-          renderTasksRef.current.push(task);
-          await task.promise;
-          if (textLayer) await renderTextLayer(page, vp, textLayer);
-        } catch {
-          /* render cancelled (scale changed) or failed — leave this page for the next pass */
+          tasks.push(task);
+          try { await task.promise; } finally { tasks.pop(); }
+          if (cancelled) return;
+          canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+          if (textLayer) {
+            const text = document.createElement("div");
+            text.className = "textLayer";
+            await renderTextLayer(page, vp, text);
+            if (cancelled) return;
+            textLayer.style.cssText = text.style.cssText;
+            const rotation = text.getAttribute("data-main-rotation");
+            if (rotation !== null) textLayer.setAttribute("data-main-rotation", rotation);
+            textLayer.replaceChildren(...Array.from(text.childNodes));
+          }
+        } catch (error) {
+          if (!cancelled) setLoadError(String((error as any)?.message || error));
         }
       }
-    })();
+    })().catch((error) => {
+      if (!cancelled) setLoadError(String(error?.message || error));
+    });
     return () => {
       cancelled = true;
+      tasks.forEach((task) => { try { task.cancel(); } catch {} });
     };
-  }, [rendered, scale, current?.id]);
+  }, [loaded, scale, current?.id]);
 
   // Scroll to a requested page/section.
   useEffect(() => {
@@ -528,6 +539,12 @@ export function PdfViewer() {
 
   return (
     <div className="pdf-wrap">
+      {loadError && <div role="alert" className="pdf-load-error">
+        {uiLang === "zh" ? "PDF 打开失败：" : "Could not open PDF: "}{loadError}
+        <button onClick={() => { setLoadError(""); setRetry((value) => value + 1); }}>
+          {uiLang === "zh" ? "重试" : "Retry"}
+        </button>
+      </div>}
       <div className="pdf-toolbar">
         <span className="paper-title" title={current.title}>
           {current.title || "Untitled"}
@@ -663,7 +680,7 @@ export function PdfViewer() {
           const scaleFromPdf = pinfo ? scale : scale;
           return (
             <div
-              key={i}
+              key={`${current.id}:${i}`}
               className="pdf-page"
               data-page-index={i}
               ref={(el) => (pageRefs.current[i] = el)}

@@ -15,7 +15,10 @@ export function getPdfDoc(id: string): Promise<any> {
   }
   doc = pdfjsLib.getDocument(api.pdfUrl(id)).promise;
   docs.set(id, doc);
-  doc.catch(() => docs.delete(id));
+  doc.catch(() => {
+    // A closed tab may already have started a new load for the same paper.
+    if (docs.get(id) === doc) docs.delete(id);
+  });
   while (docs.size > MAX_DOCS) {
     const oldest = docs.keys().next().value as string;
     evictPdfDoc(oldest);
