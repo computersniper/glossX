@@ -33,6 +33,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
   const [text, setText] = useState("");
   const [actions, setActions] = useState<{ time: number; text: string }[]>([]);
   const image = useRef<HTMLImageElement>(null);
+  const pageArea = useRef<HTMLDivElement>(null);
   const addressField = useRef<HTMLInputElement>(null);
   const inputQueue = useRef<Promise<unknown>>(Promise.resolve());
   const pending = useRef(0);
@@ -58,6 +59,18 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
     return stop;
   }, [visible, sessionId, status?.available, current?.id]);
   useEffect(() => () => { if (scroll.current.timer) clearTimeout(scroll.current.timer); }, []);
+  // Size the remote viewport to this panel so pages use their own responsive
+  // layout rather than a fixed desktop page scaled down to fit.
+  useEffect(() => { const el = pageArea.current; if (!visible || !el || !current) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let sent = "";
+    const send = () => { const width = Math.floor(el.clientWidth), height = Math.floor(el.clientHeight); const size = `${width}x${height}`;
+      if (width < 50 || height < 50 || size === sent) return;
+      sent = size; void browserApi.input(sessionId, { type: "viewport", width, height }).catch(() => { sent = ""; }); };
+    const observer = new ResizeObserver(() => { if (timer) clearTimeout(timer); timer = setTimeout(send, 200); });
+    observer.observe(el); send();
+    return () => { observer.disconnect(); if (timer) clearTimeout(timer); };
+  }, [visible, sessionId, current?.id]);
   // Leaving this tab always gives control back, including when the editor tab closes.
   useEffect(() => { if (!visible && controlling) void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [visible, controlling, sessionId]);
   useEffect(() => () => { if (useBrowser.getState().states[sessionId]?.controlling === "user") void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [sessionId]);
@@ -131,7 +144,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
     </div>
     {status?.restart_pending && <div className="gx-browser-notice" role="status">{zh ? "浏览器设置已更改，将在浏览器重启后生效。可重启 GlossX，或等浏览器空闲关闭。" : "Browser settings changed and will apply after it restarts. Restart GlossX or wait for the idle browser to close."}</div>}
     {(error || sharedError) && <div className="gx-browser-error" role="alert"><span>{error || sharedError}</span><button type="button" className="gx-link" onClick={() => void openBrowser(undefined, sessionId)}>{zh ? "重试" : "Retry"}</button></div>}
-    <div className="gx-browser-page">
+    <div ref={pageArea} className="gx-browser-page">
       {status?.available === false ? <EmptyState icon={<Globe size={24} />} title={zh ? "没有找到浏览器" : "No browser found"} hint={zh ? "安装 Edge、Chrome 或 Chromium，或在智能体设置中指定浏览器路径。" : "Install Edge, Chrome or Chromium, or set its executable path in agent settings."} action={<button type="button" className="gx-btn" onClick={() => useStore.getState().setLayout({ activity: "settings", sideOpen: true })}>{zh ? "打开设置" : "Open settings"}</button>} />
       : !current || url === "about:blank" ? <EmptyState icon={<Globe size={30} />} title={zh ? "从一个网址开始" : "Start with a URL"} hint={zh ? "输入网址，或让智能体打开一篇论文。这个浏览器使用 GlossX 独立配置，不读取你的个人浏览器资料。" : "Enter a URL or ask the agent to open a paper. This browser uses a separate GlossX profile."} action={<button type="button" className="gx-btn" onClick={() => { setAddress(""); addressEdited.current = true; addressField.current?.focus(); }}>{zh ? "输入网址" : "Enter a URL"}</button>} />
       : frame ? <img ref={image} className={`gx-browser-frame${controlling ? " controlling" : ""}`} src={frame.data.startsWith("data:") ? frame.data : `data:image/jpeg;base64,${frame.data}`} alt={state?.title || current.title || (zh ? "实时浏览页面" : "Live browser page")} tabIndex={controlling ? 0 : -1} draggable={false}

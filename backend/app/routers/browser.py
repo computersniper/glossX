@@ -40,10 +40,16 @@ async def browser_input(sid: str, body: dict, request: Request):
     action = body.get("type") or body.get("action")
     allowed = {"navigate", "open", "click", "scroll", "key", "press", "text", "type",
                "back", "forward", "reload", "new_tab", "close_tab", "switch_tab", "takeover",
-               "read", "import_paper", "snapshot"}
+               "read", "import_paper", "snapshot", "viewport"}
     if action not in allowed:
         raise HTTPException(400, "Unknown browser input type")
     try:
+        if action == "viewport":
+            try:
+                width, height = int(body["width"]), int(body["height"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise HTTPException(400, "Viewport needs integer width and height") from error
+            return await manager(request, sid).set_viewport(sid, width, height)
         return await manager(request, sid).action(sid, action, body, user=True)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error

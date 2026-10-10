@@ -12,7 +12,7 @@ declare global {
   }
 }
 
-const EXIT_REQUEST_EVENT = "gloss:close-request";
+const EXIT_REQUEST_EVENT = "glossx:close-request";
 
 export function ExitConfirmDialog() {
   const uiLang = useStore((state) => state.uiLang);

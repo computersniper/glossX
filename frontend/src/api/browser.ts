@@ -2,7 +2,7 @@ export type BrowserTab = { id: string; url: string; title: string; active?: bool
 export type BrowserState = { tabs: BrowserTab[]; active?: string; url?: string; title?: string; loading?: boolean; controlling?: "agent" | "user"; log?: { action?: string; note?: string; text?: string; url?: string; at?: number; time?: number }[] };
 export type BrowserStatus = { available: boolean; browser?: string; path?: string; headed?: boolean; running?: boolean; reason?: string; restart_pending?: boolean };
 export type BrowserFrame = { data: string; width: number; height: number; session_id?: string };
-export type BrowserInput = { type: string; url?: string; x?: number; y?: number; delta_x?: number; delta_y?: number; key?: string; text?: string; id?: string; controlling?: "agent" | "user" };
+export type BrowserInput = { type: string; url?: string; x?: number; y?: number; delta_x?: number; delta_y?: number; key?: string; text?: string; id?: string; controlling?: "agent" | "user"; width?: number; height?: number };
 async function call<T>(url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const raw = await r.text();
