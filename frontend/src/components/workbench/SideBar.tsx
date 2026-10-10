@@ -233,7 +233,7 @@ function ProjectPapers({ projectId, paperIds, kind, zh }: { projectId: string; p
 function ProjectsView() {
   const projects = useStore((s) => s.projects);
   const projectId = useStore((s) => s.agentProjectId);
-  const setProjectId = useStore((s) => s.setAgentProjectId);
+  const setProjectId = useStore((s) => s.selectProject);
   const createProject = useStore((s) => s.createProject);
   const refreshProjects = useStore((s) => s.refreshProjects);
   const openRunTab = useStore((s) => s.openRunTab);

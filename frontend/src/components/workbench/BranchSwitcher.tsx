@@ -160,7 +160,7 @@ export function ProjectSwitcher({ className = "wb-project-switch", placement = "
   const zh = useStore((s) => s.uiLang) === "zh";
   const projects = useStore((s) => s.projects);
   const projectId = useStore((s) => s.agentProjectId);
-  const setProjectId = useStore((s) => s.setAgentProjectId);
+  const setProjectId = useStore((s) => s.selectProject);
   const openPalette = useStore((s) => s.openPalette);
   const setLayout = useStore((s) => s.setLayout);
   const current = useStore((s) => s.current);

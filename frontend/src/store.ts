@@ -145,6 +145,9 @@ interface State {
   agentPrefill: { goal?: string; paperIds?: string[]; id: number } | null;
   setAgentRunId: (id: string | null) => void;
   setAgentProjectId: (id: string | null) => void;
+  /** Make a project current and bring one of its papers to the center, so the
+   *  project, the open paper, the workspace and new threads always agree. */
+  selectProject: (id: string | null) => void;
   /** paper id → its own project id (GET /api/papers/{id}/project), false = the backend has no such route. */
   paperProjects: Record<string, string>;
   /** Resolve (and cache) a paper's project; null when the backend cannot say. */
@@ -398,6 +401,17 @@ export const useStore = create<State>((set, get) => ({
       /* ignore */
     }
     set({ agentProjectId: id });
+  },
+  selectProject: (id) => {
+    get().setAgentProjectId(id);
+    if (!id) return;
+    const st = get();
+    const ids = (st.projects.find((p) => p.id === id)?.paper_ids || []).filter((pid) => st.papers.some((p) => p.id === pid));
+    const shown = st.activeTabKey?.startsWith("paper:") ? st.activeTabKey.slice(6) : null;
+    if (!ids.length || (shown && ids.includes(shown))) return;
+    // reuse a paper of this project that is already open, else its first paper
+    const open = st.openTabs.find((t) => t.kind === "paper" && ids.includes(t.id));
+    void st.openPaper(open ? open.id : ids[0]).catch(() => {});
   },
   paperProjects: {},
   paperProject: async (paperId) => {

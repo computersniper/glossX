@@ -131,7 +131,7 @@ export function CommandPalette() {
           detail: p.kind === "paper" ? L("paper workspace", "论文工作区") : p.description || L("research project", "研究项目"),
           icon: p.kind === "paper" ? BookOpen : FolderKanban,
           checked: st.agentProjectId === p.id,
-          run: () => st.setAgentProjectId(p.id),
+          run: () => st.selectProject(p.id),
         })),
       ];
     }

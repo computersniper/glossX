@@ -209,7 +209,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
     pendingBranch: null,
 
     newThread: (opts) => {
-      if (opts && "projectId" in opts && opts.projectId !== useStore.getState().agentProjectId) useStore.getState().setAgentProjectId(opts.projectId || null);
+      if (opts && "projectId" in opts && opts.projectId !== useStore.getState().agentProjectId) useStore.getState().selectProject(opts.projectId || null);
       get().select(null);
       set({ pendingBranch: opts?.branch || null });
       useStore.getState().setLayout({ aiOpen: true, aiMode: "agent" });
@@ -221,8 +221,8 @@ export const useSessions = create<SessionsStore>((set, get) => {
       get().select(id);
       const st = useStore.getState();
       st.setLayout({ aiOpen: true, aiMode: "agent" });
-      // the explorer / source control follow the thread's project
-      if (sess?.project_id && sess.project_id !== st.agentProjectId) st.setAgentProjectId(sess.project_id);
+      // the explorer, source control and center paper follow the thread's project
+      if (sess?.project_id && sess.project_id !== st.agentProjectId) st.selectProject(sess.project_id);
       void get().markRead(id, true);
     },
 
