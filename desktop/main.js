@@ -12,6 +12,7 @@ const { BrowserBridge } = require("./bridge");
 
 const APP_NAME = "GlossX";
 const STARTUP_TIMEOUT_MS = 60_000;
+const TITLEBAR_HEIGHT = 40;
 const REPO_ROOT = path.resolve(__dirname, "..");
 const smokeArg = process.argv.find((arg) => arg.startsWith("--glossx-smoke="));
 const SMOKE_REPORT = smokeArg ? path.resolve(smokeArg.slice("--glossx-smoke=".length)) : null;
@@ -158,6 +159,44 @@ ipcMain.handle("glossx:exit-confirm", async (event, dontAskAgain) => {
   return true;
 });
 
+// The title bar follows the app theme; the page reports its colours.
+ipcMain.handle("glossx:titlebar", (event, colors) => {
+  if (!fromMainWindow(event) || process.platform === "darwin") return false;
+  const color = /^#[0-9a-f]{6}$/i.test(colors?.color) ? colors.color : "#111820";
+  const symbolColor = /^#[0-9a-f]{6}$/i.test(colors?.symbolColor) ? colors.symbolColor : "#c9d1d9";
+  mainWindow.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_HEIGHT });
+  return true;
+});
+
+const ZOOM_STEPS = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+
+function zoom(direction) {
+  const contents = mainWindow.webContents;
+  const current = contents.getZoomFactor();
+  const next = direction === 0 ? 1
+    : direction > 0 ? ZOOM_STEPS.find((step) => step > current + 0.001)
+      : [...ZOOM_STEPS].reverse().find((step) => step < current - 0.001);
+  contents.setZoomFactor(next ?? current);
+}
+
+// Menu commands that only the window itself can carry out.
+ipcMain.handle("glossx:window", (event, action) => {
+  if (!fromMainWindow(event)) return false;
+  const contents = mainWindow.webContents;
+  switch (action) {
+    case "undo": case "redo": case "cut": case "copy": case "paste": case "selectAll":
+      contents[action]();
+      return true;
+    case "zoomIn": zoom(1); return true;
+    case "zoomOut": zoom(-1); return true;
+    case "zoomReset": zoom(0); return true;
+    case "fullscreen": mainWindow.setFullScreen(!mainWindow.isFullScreen()); return true;
+    case "devtools": contents.toggleDevTools(); return true;
+    case "quit": mainWindow.close(); return true;
+    default: return false;
+  }
+});
+
 ipcMain.handle("glossx:browser-show", (event, targetId, rect) => {
   if (!fromMainWindow(event) || typeof targetId !== "string") return false;
   return bridge.show(targetId, rect, mainWindow.webContents.getZoomFactor());
@@ -178,6 +217,10 @@ function createWindow(url) {
     minHeight: 720,
     backgroundColor: "#111820",
     icon,
+    // The app draws its own title bar; the system keeps only its window
+    // buttons, drawn over the bar's right end (traffic lights on macOS).
+    titleBarStyle: "hidden",
+    ...(process.platform === "darwin" ? { trafficLightPosition: { x: 14, y: 13 } } : { titleBarOverlay: { color: "#00000000", symbolColor: "#c9d1d9", height: TITLEBAR_HEIGHT } }),
     show: !SMOKE_REPORT,
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });
@@ -186,6 +229,17 @@ function createWindow(url) {
   mainWindow.webContents.setWindowOpenHandler(({ url: target }) => { external(target); return { action: "deny" }; });
   mainWindow.webContents.on("will-navigate", (event, target) => {
     if (new URL(target).origin !== origin) { event.preventDefault(); external(target); }
+  });
+  // Without an application menu, the usual window shortcuts are wired here.
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const mod = input.control || input.meta;
+    if (input.key === "F11") mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    else if (mod && (input.key === "=" || input.key === "+")) zoom(1);
+    else if (mod && input.key === "-") zoom(-1);
+    else if (mod && input.key === "0") zoom(0);
+    else return;
+    event.preventDefault();
   });
   mainWindow.on("close", (event) => {
     if (allowClose || SMOKE_REPORT) return;

@@ -5,6 +5,7 @@ import { useBrowser, openBrowser } from "../../browserStore";
 import { useStore } from "../../store";
 import { useSessions } from "../../sessionStore";
 import { EmptyState, Spinner } from "../ui";
+import { desktop } from "../../desktop";
 
 export function BrowserView({ sessionId, visible }: { sessionId: string; visible: boolean }) {
   const zh = useStore((s) => s.uiLang) === "zh";
@@ -19,7 +20,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
   const [connected, setConnected] = useState(false);
   const [text, setText] = useState("");
   const [actions, setActions] = useState<{ time: number; text: string }[]>([]);
-  const native = window.glossxDesktop?.browser;
+  const native = desktop?.browser;
   const image = useRef<HTMLImageElement>(null);
   const pageArea = useRef<HTMLDivElement>(null);
   const addressField = useRef<HTMLInputElement>(null);
@@ -66,7 +67,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
     let last = "", frameId = 0;
     const place = () => {
       const r = el.getBoundingClientRect();
-      const blocked = !!document.querySelector('[aria-modal="true"]');
+      const blocked = !!document.querySelector('[aria-modal="true"], .wb-mb-list');
       const key = blocked ? "hidden" : `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)}`;
       if (key !== last) { last = key; void (blocked ? native.hide() : native.show(current.id, { x: r.x, y: r.y, width: r.width, height: r.height })); }
       frameId = requestAnimationFrame(place);

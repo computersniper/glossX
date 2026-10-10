@@ -13,6 +13,7 @@ import { Icon } from "./icons";
 import { aiPaneHasFocus, focusAiPane } from "./focus";
 import { DialogHost } from "./dialog";
 import { ProjectSwitcher } from "./BranchSwitcher";
+import { MenuBar } from "./MenuBar";
 import { InboxBell, inboxTitle } from "./ThreadsView";
 
 const NARROW = "(max-width: 1099px)";
@@ -161,9 +162,41 @@ export function Workbench() {
 
   return (
     <div className={`wb${narrow ? " narrow" : ""}`}>
+      <header className="wb-titlebar">
+        <button className="wb-title-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={20} x /></button>
+        <MenuBar />
+        <span className="wb-title-sep" />
+        <ModeToggle />
+        <ProjectSwitcher />
+        <span className="spacer" />
+        <button className="wb-title-search" onClick={() => openPalette("commands")}>
+          <Icon name="search" size={13} />
+          <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, threads…"}</span>
+          <kbd>Ctrl K</kbd>
+        </button>
+        <span className="spacer" />
+        <button
+          className={`wb-icon-btn wb-title-bell${blocking > 0 ? " blocking" : ""}`}
+          title={inboxTitle(zh, unread, blocking)}
+          aria-label={inboxTitle(zh, unread, blocking)}
+          onClick={() => useSessions.getState().openInbox()}
+        >
+          <InboxBell size={16} />
+        </button>
+        <div className="wb-title-toggles">
+          <button className={`wb-icon-btn${layout.sideOpen ? " on" : ""}`} title={zh ? "侧边栏 (Ctrl+B)" : "Side bar (Ctrl+B)"} onClick={() => setLayout({ sideOpen: !layout.sideOpen })}>
+            <Icon name="sidebar" size={16} />
+          </button>
+          <button className={`wb-icon-btn${layout.bottomOpen ? " on" : ""}`} title={zh ? "底部面板 (Ctrl+J)" : "Bottom panel (Ctrl+J)"} onClick={() => setLayout({ bottomOpen: !layout.bottomOpen })}>
+            <Icon name="panel" size={16} />
+          </button>
+          <button className={`wb-icon-btn${layout.aiOpen ? " on" : ""}`} title={zh ? "AI 面板 (Ctrl+L)" : "AI pane (Ctrl+L)"} onClick={() => setLayout({ aiOpen: !layout.aiOpen })}>
+            <Icon name="aipane" size={16} />
+          </button>
+        </div>
+      </header>
       <div className="wb-main">
         <nav className="wb-activity" aria-label="Activity bar">
-          <button className="wb-activity-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={24} x /></button>
           {ACTIVITIES.map((a) => (
             <button
               key={a.id}
@@ -181,36 +214,6 @@ export function Workbench() {
           </button>
         </nav>
         <div className="wb-column">
-          <header className="wb-titlebar">
-            <ModeToggle />
-            <ProjectSwitcher />
-            <span className="spacer" />
-            <button className="wb-title-search" onClick={() => openPalette("commands")}>
-              <Icon name="search" size={13} />
-              <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, threads…"}</span>
-              <kbd>Ctrl K</kbd>
-            </button>
-            <span className="spacer" />
-            <button
-              className={`wb-icon-btn wb-title-bell${blocking > 0 ? " blocking" : ""}`}
-              title={inboxTitle(zh, unread, blocking)}
-              aria-label={inboxTitle(zh, unread, blocking)}
-              onClick={() => useSessions.getState().openInbox()}
-            >
-              <InboxBell size={16} />
-            </button>
-            <div className="wb-title-toggles">
-            <button className={`wb-icon-btn${layout.sideOpen ? " on" : ""}`} title={zh ? "侧边栏 (Ctrl+B)" : "Side bar (Ctrl+B)"} onClick={() => setLayout({ sideOpen: !layout.sideOpen })}>
-              <Icon name="sidebar" size={16} />
-            </button>
-            <button className={`wb-icon-btn${layout.bottomOpen ? " on" : ""}`} title={zh ? "底部面板 (Ctrl+J)" : "Bottom panel (Ctrl+J)"} onClick={() => setLayout({ bottomOpen: !layout.bottomOpen })}>
-              <Icon name="panel" size={16} />
-            </button>
-            <button className={`wb-icon-btn${layout.aiOpen ? " on" : ""}`} title={zh ? "AI 面板 (Ctrl+L)" : "AI pane (Ctrl+L)"} onClick={() => setLayout({ aiOpen: !layout.aiOpen })}>
-              <Icon name="aipane" size={16} />
-            </button>
-            </div>
-          </header>
           <div className="wb-panes">
             {layout.sideOpen && (
               <>

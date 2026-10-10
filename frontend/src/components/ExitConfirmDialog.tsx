@@ -1,20 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
-
-declare global {
-  interface Window {
-    // Set by the Electron shell's preload script.
-    glossxDesktop?: {
-      shell: "electron";
-      cancelExit: () => Promise<boolean>;
-      confirmExit: (dontAskAgain: boolean) => Promise<boolean>;
-      browser: {
-        show: (targetId: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
-        hide: () => Promise<boolean>;
-      };
-    };
-  }
-}
+import { desktop } from "../desktop";
 
 const EXIT_REQUEST_EVENT = "glossx:close-request";
 
@@ -41,7 +27,7 @@ export function ExitConfirmDialog() {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setOpen(false);
-      void window.glossxDesktop?.cancelExit();
+      void desktop?.cancelExit();
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
@@ -51,13 +37,13 @@ export function ExitConfirmDialog() {
 
   const cancel = async () => {
     setOpen(false);
-    await window.glossxDesktop?.cancelExit();
+    await desktop?.cancelExit();
   };
 
   const confirm = async () => {
     setExiting(true);
     try {
-      await window.glossxDesktop?.confirmExit(dontAskAgain);
+      await desktop?.confirmExit(dontAskAgain);
     } catch {
       setExiting(false);
     }

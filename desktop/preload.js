@@ -7,6 +7,9 @@ ipcRenderer.on("glossx:close-request", () => window.dispatchEvent(new CustomEven
 
 contextBridge.exposeInMainWorld("glossxDesktop", {
   shell: "electron",
+  platform: process.platform,
+  command: (action) => ipcRenderer.invoke("glossx:window", String(action)),
+  setTitleBarColors: (color, symbolColor) => ipcRenderer.invoke("glossx:titlebar", { color: String(color), symbolColor: String(symbolColor) }),
   cancelExit: () => ipcRenderer.invoke("glossx:exit-cancel"),
   confirmExit: (dontAskAgain) => ipcRenderer.invoke("glossx:exit-confirm", dontAskAgain === true),
   browser: {

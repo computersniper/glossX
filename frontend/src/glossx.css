@@ -1191,3 +1191,26 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .gx-note-body .markdown h1, .gx-note-body .markdown h2, .gx-note-body .markdown h3 { margin: 10px 0 4px; font-size: var(--gx-fs-sm); font-weight: 600; font-family: inherit; letter-spacing: 0; border: 0; padding: 0; }
 .gx-note-body .markdown > :first-child { margin-top: 0; }
 .gx-note-body .markdown > :last-child { margin-bottom: 0; }
+
+/* ---- title bar menus ---- */
+.wb-title-logo { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 7px; background: none; cursor: pointer; }
+.wb-title-logo:hover { background: var(--gx-hover); }
+.wb-title-sep { flex: 0 0 1px; height: 18px; background: var(--gx-line); }
+.wb-menubar { display: flex; align-items: center; gap: 1px; }
+.wb-mb-item { position: relative; }
+.wb-mb-item > button { height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--gx-text-2); font-size: 12.5px; white-space: nowrap; cursor: default; }
+.wb-mb-item > button:hover, .wb-mb-item > button.on { background: var(--gx-hover); color: var(--gx-text); }
+.wb-mb-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 400; min-width: 220px; padding: 5px; display: flex; flex-direction: column; background: var(--gx-s2); border: 1px solid var(--gx-line); border-radius: 10px; box-shadow: var(--gx-shadow-pop); }
+.wb-mb-list > button { display: flex; align-items: center; gap: 24px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--gx-text); font-size: 12.5px; text-align: left; cursor: default; }
+.wb-mb-list > button:hover { background: var(--gx-accent-soft); }
+.wb-mb-list > button span { flex: 1; white-space: nowrap; }
+.wb-mb-list kbd { color: var(--gx-text-3, var(--gx-text-2)); font: inherit; font-size: 11px; background: none; border: 0; }
+.wb-mb-sep { height: 1px; margin: 4px 6px; background: var(--gx-line-soft); }
+.narrow .wb-menubar, .narrow .wb-title-sep { display: none; }
+
+/* ---- desktop app: the top bar is the window title bar ---- */
+.gx-desktop .wb-titlebar, .gx-desktop .topbar { -webkit-app-region: drag; user-select: none; padding-right: calc(var(--gx-controls-right, 0px) + 8px); }
+.gx-desktop .topbar { min-height: 40px; padding-top: 0; padding-bottom: 0; }
+.gx-desktop .wb-titlebar > :not(.spacer):not(.wb-title-sep),
+.gx-desktop .topbar > :not(.spacer) { -webkit-app-region: no-drag; }
+.gx-desktop-darwin .wb-titlebar, .gx-desktop-darwin .topbar { padding-left: 78px; }
