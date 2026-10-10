@@ -93,6 +93,40 @@ def test_takeover_blocks_agent_but_allows_explicit_user_and_serializes_context()
     asyncio.run(check())
 
 
+def test_viewport_follows_the_panel_and_is_clamped():
+    async def check():
+        manager = BrowserManager(Sessions())
+        state = BrowserSession('context')
+        for pid in ['a', 'b']:
+            state.pages[pid] = Page(pid, 'cdp-' + pid, 'context')
+        state.active = 'a'
+        state.controlling = 'agent'
+        manager.states['s'] = state
+        manager.browser = SimpleNamespace(acquire=lambda: None, release=lambda: None)
+        calls = []
+
+        async def start():
+            pass
+
+        async def call(page, method, params=None, **kwargs):
+            calls.append((page.id, method, params))
+            return {}
+
+        manager.start = start
+        manager.call = call
+        result = await manager.set_viewport('s', 420, 640)
+        assert result['viewport'] == {'width': 420, 'height': 640}
+        assert state.viewport == (420, 640)
+        assert sorted(c[0] for c in calls) == ['a', 'b']
+        assert all(c[1] == 'Emulation.setDeviceMetricsOverride' and c[2]['width'] == 420 and not c[2]['mobile'] for c in calls)
+        calls.clear()
+        await manager.set_viewport('s', 420, 640)
+        assert not calls
+        await manager.set_viewport('s', 10, 99999)
+        assert state.viewport == (320, 1200)
+    asyncio.run(check())
+
+
 def test_doi_import_reuses_importer_and_guarded_fetch(monkeypatch):
     from app.library import service
     from app.agent import projects

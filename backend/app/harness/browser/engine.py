@@ -41,6 +41,16 @@ class Page:
         self.frames = set()
         self.screencasting = False
 
+DEFAULT_VIEWPORT = (1280, 720)
+MIN_VIEWPORT = (320, 240)
+MAX_VIEWPORT = (1600, 1200)
+SCREENCAST = {'format': 'jpeg', 'quality': 65, 'maxWidth': MAX_VIEWPORT[0], 'maxHeight': MAX_VIEWPORT[1], 'everyNthFrame': 2}
+
+
+def _metrics(viewport):
+    return {'width': viewport[0], 'height': viewport[1], 'deviceScaleFactor': 1, 'mobile': False}
+
+
 class BrowserSession:
 
     def __init__(self, context):
@@ -51,6 +61,9 @@ class BrowserSession:
         self.navigations = 0
         self.lock = asyncio.Lock()
         self.log = []
+        # CSS viewport of every page, kept in step with the panel showing it so
+        # pages lay themselves out for that size instead of being scaled down.
+        self.viewport = DEFAULT_VIEWPORT
 
 class BrowserManager:
 
@@ -247,7 +260,7 @@ class BrowserManager:
             task = asyncio.create_task(listen(), name='glossx-browser-' + event)
             page.tasks.append(task)
             await ready.wait()
-        await self.call(page, 'Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 720, 'deviceScaleFactor': 1, 'mobile': False})
+        await self.call(page, 'Emulation.setDeviceMetricsOverride', _metrics(state.viewport))
         for domain in ['Page', 'DOM', 'Accessibility', 'Runtime', 'Network']:
             await self.call(page, domain + '.enable')
         await self.call(page, 'Network.setBypassServiceWorker', {'bypass': True})
@@ -289,7 +302,7 @@ class BrowserManager:
     async def _frame(self, sid, state, page, data):
         with suppress(CDPError):
             await self.call(page, 'Page.screencastFrameAck', {'sessionId': data['sessionId']})
-        frame = {'data': data['data'], 'width': data.get('metadata', {}).get('deviceWidth', 1280), 'height': data.get('metadata', {}).get('deviceHeight', 720), 'session_id': sid}
+        frame = {'data': data['data'], 'width': data.get('metadata', {}).get('deviceWidth', state.viewport[0]), 'height': data.get('metadata', {}).get('deviceHeight', state.viewport[1]), 'session_id': sid}
         for queue in list(page.frames):
             if queue.full():
                 queue.get_nowait()
@@ -351,6 +364,16 @@ class BrowserManager:
                 if info.get('submit') and name == 'browser_click':
                     return 'Submit a form that sends data to this site'
         return None
+
+    async def set_viewport(self, sid, width, height):
+        size = (max(MIN_VIEWPORT[0], min(int(width), MAX_VIEWPORT[0])), max(MIN_VIEWPORT[1], min(int(height), MAX_VIEWPORT[1])))
+        async with self.operation(sid, user=True) as (state, _):
+            if state.viewport != size:
+                state.viewport = size
+                for page in list(state.pages.values()):
+                    with suppress(CDPError):
+                        await self.call(page, 'Emulation.setDeviceMetricsOverride', _metrics(size))
+        return {**self.view(sid), 'viewport': {'width': size[0], 'height': size[1]}}
 
     async def action(self, sid, name, args, *, user=False):
         args = args or {}
@@ -619,11 +642,11 @@ class BrowserManager:
             async with self.operation(sid, user=True) as (state, page):
                 page.frames.add(queue)
                 if not page.screencasting:
-                    await self.call(page, 'Page.startScreencast', {'format': 'jpeg', 'quality': 65, 'maxWidth': 1280, 'maxHeight': 900, 'everyNthFrame': 2})
+                    await self.call(page, 'Page.startScreencast', SCREENCAST)
                     page.screencasting = True
                 # Guarantee an initial frame for a static page.
                 shot = await self.call(page, 'Page.captureScreenshot', {'format': 'jpeg', 'quality': 65})
-                initial = {'data': shot['data'], 'width': 1280, 'height': 720, 'session_id': sid}
+                initial = {'data': shot['data'], 'width': state.viewport[0], 'height': state.viewport[1], 'session_id': sid}
             yield initial
             while True:
                 try:
@@ -641,10 +664,10 @@ class BrowserManager:
                         page = state.pages[state.active]
                         page.frames.add(queue)
                         if not page.screencasting:
-                            await self.call(page, 'Page.startScreencast', {'format': 'jpeg', 'quality': 65, 'maxWidth': 1280, 'maxHeight': 900, 'everyNthFrame': 2})
+                            await self.call(page, 'Page.startScreencast', SCREENCAST)
                             page.screencasting = True
                         shot = await self.call(page, 'Page.captureScreenshot', {'format': 'jpeg', 'quality': 65})
-                        yield {'data': shot['data'], 'width': 1280, 'height': 720, 'session_id': sid}
+                        yield {'data': shot['data'], 'width': state.viewport[0], 'height': state.viewport[1], 'session_id': sid}
                     else:
                         yield None
                     continue
