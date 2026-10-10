@@ -32,6 +32,12 @@ from .base import (
     report_stream_usage,
 )
 
+async def _command() -> list[str]:
+    from ..cli_discovery import select_command
+    configured = str(load_config()["providers"]["local_claude"].get("cli_path") or "")
+    return await asyncio.to_thread(select_command, "claude", configured)
+
+
 CLAUDE_SHORT = ("sonnet", "opus", "haiku", "fable")
 
 
@@ -120,7 +126,8 @@ class LocalClaudeProvider(Provider):
 
     async def test_connection(self) -> str:
         """Check subscription login without launching a full Claude inference."""
-        cmd = resolve_cli_command("claude") + ["auth", "status", "--json"]
+        cmd = await _command()
+        cmd += ["auth", "status", "--json"]
         env, cwd = _sandbox_env()
         proc = None
         try:
@@ -194,7 +201,8 @@ class LocalClaudeProvider(Provider):
         image_dir, image_paths = _materialize_message_images(messages)
         prompt = render_transcript(messages) + _image_prompt_suffix(image_paths)
         model = _pick_model(model)
-        cmd = resolve_cli_command("claude") + [
+        cmd = await _command()
+        cmd += [
             "-p",
             "--output-format", "json",
             "--tools", "Read" if image_paths else "",
@@ -269,7 +277,8 @@ class LocalClaudeProvider(Provider):
         image_dir, image_paths = _materialize_message_images(messages)
         prompt = render_transcript(messages) + _image_prompt_suffix(image_paths)
         model = _pick_model(model)
-        cmd = resolve_cli_command("claude") + [
+        cmd = await _command()
+        cmd += [
             "-p",
             "--output-format", "stream-json",
             "--include-partial-messages",

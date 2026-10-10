@@ -1,6 +1,8 @@
 """Settings: view/update provider config (secrets masked on read)."""
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -15,6 +17,12 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 async def get_model_suggestions():
     """Current suggestions; choosing a model does not grant account access."""
     return suggestions()
+
+
+@router.get("/local-cli")
+async def get_local_cli(refresh: bool = False):
+    from ..cli_discovery import snapshot
+    return {"tools": await asyncio.to_thread(snapshot, refresh), "claude_executed": False}
 
 
 class SettingsPatch(BaseModel):

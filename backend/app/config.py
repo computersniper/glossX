@@ -146,6 +146,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "feature_settings": {},
     "providers": {
         "local_claude": {
+            "cli_path": "",  # blank auto-detects local installations
             # short names the claude CLI understands, or full claude model ids
             "model": "sonnet",
             # reasoning effort: "" (CLI default) | low | medium | high | xhigh | max
@@ -153,7 +154,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "timeout": 600,
         },
         "local_codex": {
-            "cli_path": "",  # blank uses PATH; set an executable/npm shim to select a CLI version
+            "cli_path": "",  # blank auto-detects; explicit executable/npm shim wins
             # empty model = use codex's own configured default
             "model": "",
             # codex reasoning effort: "" | minimal | low | medium | high

@@ -11,6 +11,8 @@
 
 > **本地 Codex 模型误拒绝**：实测 PATH 中 0.144.6 拒绝、桌面内置 0.160.1 接受同一 `gpt-6.1-sol`。已新增 CLI 路径设置并整理错误展示，见 `docs/progress/codex-cli-version.md`。
 
+> **本地 CLI 自动识别**：默认比较 Codex 安装版本，支持 Claude native npm shim、手动选择与重新扫描；Claude 检测不执行程序，见 `docs/progress/cli-autodetect.md`。
+
 ## 0. 一分钟了解现状
 
 - **项目**：GlossX —— 面向科研与学习的 agent harness，在 Gloss 论文阅读器基础上开发（课程项目，Group 35）。

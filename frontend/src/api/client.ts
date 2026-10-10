@@ -598,6 +598,7 @@ export const api = {
       body: JSON.stringify({ provider }),
     }).then((r) => j<ProviderTestResult>(r)),
 
+  detectLocalCli: (refresh = false) => fetch(`/api/settings/local-cli?refresh=${refresh}`).then((r) => j<{ tools: Record<string, {path: string; version: string | null; source: string}[]> }>(r)),
   getSettings: () =>
     fetch("/api/settings").then((r) => j<{
       config: any;

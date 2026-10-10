@@ -39,10 +39,11 @@ def _cfg() -> dict:
     return load_config()["providers"]["local_codex"]
 
 
-def _command() -> list[str]:
-    # Explicit executable or npm shim; blank preserves the user's PATH order.
+async def _command() -> list[str]:
+    # Manual selection wins; otherwise prefer the newest detected Codex CLI.
     configured = str(_cfg().get("cli_path") or "").strip()
-    return resolve_cli_command(configured or "codex")
+    from ..cli_discovery import select_command
+    return await asyncio.to_thread(select_command, "codex", configured)
 
 
 # Benign warnings the CLI prints on every run; they never explain a failure.
@@ -241,7 +242,8 @@ class LocalCodexProvider(Provider):
 
     async def test_connection(self) -> str:
         """Check subscription login without launching a full Codex inference."""
-        cmd = _command() + ["login", "status"]
+        cmd = await _command()
+        cmd += ["login", "status"]
         proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -315,7 +317,8 @@ class LocalCodexProvider(Provider):
         fd, out_path = tempfile.mkstemp(prefix="gloss-codex-", suffix=".txt")
         os.close(fd)
         image_paths = _materialize_message_images(messages)
-        cmd = _command() + ["exec"]
+        cmd = await _command()
+        cmd += ["exec"]
         if session_id:
             cmd += [
                 "resume",

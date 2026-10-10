@@ -38,6 +38,9 @@ export function SettingsPanel() {
   const [allProviders, setAllProviders] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [localTools, setLocalTools] = useState<Record<string, {path: string; version: string | null; source: string}[]>>({});
+  const [detecting, setDetecting] = useState(false);
+  const [detectionError, setDetectionError] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [usage, setUsage] = useState<AiUsageSummary | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
@@ -64,7 +67,16 @@ export function SettingsPanel() {
       setAllProviders(s.all_providers || s.available_providers);
     });
     void refreshUsage();
+    void detectCli();
   }, []);
+
+  async function detectCli(refresh = false) {
+    setDetecting(true);
+    setDetectionError("");
+    try { setLocalTools((await api.detectLocalCli(refresh)).tools); }
+    catch (error: any) { setDetectionError(String(error?.message || error)); }
+    finally { setDetecting(false); }
+  }
 
   async function refreshUsage() {
     setUsageLoading(true);
@@ -222,13 +234,35 @@ export function SettingsPanel() {
           <option key={p} value={p}>{PROVIDER_NAMES[p]?.[uiLang === "zh" ? 1 : 0] || p}</option>
         ))}
       </select>
-      {cfg.provider === "local_codex" && <>
-        <label>{uiLang === "zh" ? "Codex CLI 路径" : "Codex CLI path"}</label>
-        <input aria-label="Codex CLI path" value={cfg.providers?.local_codex?.cli_path || ""}
-          placeholder={uiLang === "zh" ? "留空使用 PATH；也可指定 codex.exe 或 codex.cmd" : "Blank uses PATH; or specify codex.exe / codex.cmd"}
-          onChange={(e) => setProv("local_codex", "cli_path", e.target.value)} />
-        <p className="usage-note">{uiLang === "zh" ? "安装了多个版本时，指定实际可用的 CLI。先保存，再测试；测试结果会显示调用路径。" : "If multiple versions are installed, choose the working CLI. Save before testing; the result shows the command path."}</p>
-      </>}
+      <section className="usage-card" aria-label={uiLang === "zh" ? "本地 CLI 识别" : "Local CLI detection"}>
+        <div className="usage-head">
+          <strong>{uiLang === "zh" ? "本地 CLI 自动识别" : "Detect local CLIs"}</strong>
+          <button className="small" type="button" disabled={detecting} onClick={() => void detectCli(true)}>
+            {detecting ? (uiLang === "zh" ? "识别中…" : "Detecting…") : uiLang === "zh" ? "重新识别" : "Scan again"}
+          </button>
+        </div>
+        <p className="usage-note">{uiLang === "zh" ? "Codex 自动选择检测到的最新版本；手动路径优先。Claude Code 仅检查文件与安装信息，不会执行。" : "Codex automatically uses the newest detected version; manual paths take priority. Claude Code detection reads files only and never runs it."}</p>
+        {detectionError && <p role="alert">{detectionError}</p>}
+        {[{name: "codex", provider: "local_codex", title: "Codex"}, {name: "claude", provider: "local_claude", title: "Claude Code"}].map(tool => {
+          const items = localTools[tool.name] || [];
+          const manual = cfg.providers?.[tool.provider]?.cli_path || "";
+          return <div key={tool.name}>
+            <label>{tool.title} CLI</label>
+            <select aria-label={`${tool.title} installation`} value={manual}
+              onChange={e => setProv(tool.provider, "cli_path", e.target.value)}>
+              <option value="">{uiLang === "zh" ? "自动识别" : "Auto-detect"}{items[0] ? ` · ${items[0].version || items[0].source}` : ""}</option>
+              {manual && !items.some(item => item.path === manual) && <option value={manual}>{uiLang === "zh" ? "手动路径" : "Manual path"} · {manual}</option>}
+              {items.map(item => <option key={item.path} value={item.path}>{item.version || (uiLang === "zh" ? "版本未知" : "Unknown version")} · {item.source} · {item.path}</option>)}
+            </select>
+            <input aria-label={`${tool.title} CLI path`} value={manual} placeholder={uiLang === "zh" ? "留空自动识别，或手动填写 CLI 路径" : "Blank auto-detects; or enter a CLI path"}
+              onChange={e => setProv(tool.provider, "cli_path", e.target.value)} />
+            <p className="usage-note" style={{overflowWrap: "anywhere"}}>{manual || items[0]?.path || (uiLang === "zh" ? "未找到本地安装" : "No local installation found")}</p>
+          </div>;
+        })}
+        {["gemini", "opencode"].filter(name => localTools[name]?.length).map(name => <p className="usage-note" key={name} style={{overflowWrap: "anywhere"}}>
+          {name}: {localTools[name][0].version || ""} · {localTools[name][0].path} · {uiLang === "zh" ? "已检测，暂未接入模型渠道" : "Detected; no model provider integration yet"}
+        </p>)}
+      </section>
 
       <div className="test-conn">
         <button className="small" onClick={testConn} disabled={testing}>

@@ -228,7 +228,7 @@ def _resolve_npm_node_shim(
     except OSError:
         return None
     match = re.search(
-        r'(?:%dp0%|\$basedir)[\\/]+([^"\r\n]+?\.js)', text, re.IGNORECASE
+        r'(?:%dp0%|\$basedir)[\\/]+([^"\r\n]+?\.(?:js|exe))', text, re.IGNORECASE
     )
     if not match:
         return None
@@ -236,6 +236,8 @@ def _resolve_npm_node_shim(
     script = shim_path.parent.joinpath(*relative_parts)
     if not script.is_file():
         return None
+    if script.suffix.lower() == ".exe":
+        return [str(script)]
     bundled_node = shim_path.parent / "node.exe"
     node = str(bundled_node) if bundled_node.is_file() else (which("node.exe") or which("node"))
     if not node:
