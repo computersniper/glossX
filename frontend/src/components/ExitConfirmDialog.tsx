@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
-
-declare global {
-  interface Window {
-    pywebview?: {
-      api?: {
-        cancel_exit?: () => Promise<boolean>;
-        confirm_exit?: (dontAskAgain: boolean) => Promise<boolean>;
-      };
-    };
-  }
-}
+import { desktop } from "../desktop";
 
 const EXIT_REQUEST_EVENT = "glossx:close-request";
 
@@ -37,7 +27,7 @@ export function ExitConfirmDialog() {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setOpen(false);
-      void window.pywebview?.api?.cancel_exit?.();
+      void desktop?.cancelExit();
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
@@ -47,13 +37,13 @@ export function ExitConfirmDialog() {
 
   const cancel = async () => {
     setOpen(false);
-    await window.pywebview?.api?.cancel_exit?.();
+    await desktop?.cancelExit();
   };
 
   const confirm = async () => {
     setExiting(true);
     try {
-      await window.pywebview?.api?.confirm_exit?.(dontAskAgain);
+      await desktop?.confirmExit(dontAskAgain);
     } catch {
       setExiting(false);
     }

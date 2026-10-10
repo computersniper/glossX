@@ -19,6 +19,12 @@ from .discovery import BrowserExecutable, discover_all
 logger = logging.getLogger(__name__)
 # Profiles of crashed or killed GlossX processes are removed after a day.
 STALE_PROFILE_SECONDS = 24 * 3600
+DESKTOP_BROWSER = "GlossX built-in browser"
+
+
+def desktop_endpoint() -> str | None:
+    """The CDP endpoint of the desktop app's own Chromium, when running inside it."""
+    return os.environ.get("GLOSSX_BROWSER_CDP") or None
 
 
 class BrowserProcess:
@@ -121,6 +127,14 @@ class BrowserProcess:
     async def start(self) -> CDPClient:
         async with self._lock:
             self.touch()
+            endpoint = desktop_endpoint()
+            if endpoint:
+                # The desktop app's pages are part of its window: there is no
+                # process to launch, and no idle shutdown under a page in view.
+                if self.client is None or self.client._closed:
+                    self.client = await CDPClient.open(endpoint)
+                    self.executable = BrowserExecutable(DESKTOP_BROWSER, Path("electron"))
+                return self.client
             if self.process is not None and self.process.returncode is None and self.client is not None and not self.client._closed:
                 return self.client
             await self._stop()

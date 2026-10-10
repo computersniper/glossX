@@ -5,6 +5,7 @@ import { useBrowser, openBrowser } from "../../browserStore";
 import { useStore } from "../../store";
 import { useSessions } from "../../sessionStore";
 import { EmptyState, Spinner } from "../ui";
+import { desktop } from "../../desktop";
 
 export function BrowserView({ sessionId, visible }: { sessionId: string; visible: boolean }) {
   const zh = useStore((s) => s.uiLang) === "zh";
@@ -19,6 +20,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
   const [connected, setConnected] = useState(false);
   const [text, setText] = useState("");
   const [actions, setActions] = useState<{ time: number; text: string }[]>([]);
+  const native = desktop?.browser;
   const image = useRef<HTMLImageElement>(null);
   const pageArea = useRef<HTMLDivElement>(null);
   const addressField = useRef<HTMLInputElement>(null);
@@ -40,7 +42,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
   }, [sessionId]);
   useEffect(() => { if (visible) void load(); }, [visible, load]);
   useEffect(() => { if (!addressEdited.current) setAddress(url); }, [url]);
-  useEffect(() => { if (!visible || !status?.available || !state?.tabs?.length) return;
+  useEffect(() => { if (native || !visible || !status?.available || !state?.tabs?.length) return;
     setConnected(false);
     const stop = browserApi.frames(sessionId, (f) => { setFrame(f); setConnected(true); }, (s) => put(sessionId, s), (message) => { setConnected(false); if (message) setError(message); });
     return stop;
@@ -48,7 +50,7 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
   useEffect(() => () => { if (scroll.current.timer) clearTimeout(scroll.current.timer); }, []);
   // Size the remote viewport to this panel so pages use their own responsive
   // layout rather than a fixed desktop page scaled down to fit.
-  useEffect(() => { const el = pageArea.current; if (!visible || !el || !current) return;
+  useEffect(() => { const el = pageArea.current; if (native || !visible || !el || !current) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let sent = "";
     const send = () => { const width = Math.floor(el.clientWidth), height = Math.floor(el.clientHeight); const size = `${width}x${height}`;
@@ -58,6 +60,24 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
     observer.observe(el); send();
     return () => { observer.disconnect(); if (timer) clearTimeout(timer); };
   }, [visible, sessionId, current?.id]);
+  // In the desktop app the real page sits over this pane. It is drawn above the
+  // app, so it follows the pane every frame and steps aside for modal dialogs.
+  const nativeShown = !!native && visible && !!current && url !== "about:blank" && status?.available !== false;
+  useEffect(() => { const el = pageArea.current; if (!native || !nativeShown || !el || !current) return;
+    let last = "", frameId = 0;
+    const place = () => {
+      const r = el.getBoundingClientRect();
+      const blocked = !!document.querySelector('[aria-modal="true"], .wb-mb-list');
+      const key = blocked ? "hidden" : `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)}`;
+      if (key !== last) { last = key; void (blocked ? native.hide() : native.show(current.id, { x: r.x, y: r.y, width: r.width, height: r.height })); }
+      frameId = requestAnimationFrame(place);
+    };
+    // With several windows open the page sits in one of them; focusing this one brings it here.
+    const claim = () => { last = ""; };
+    window.addEventListener("focus", claim);
+    place();
+    return () => { cancelAnimationFrame(frameId); window.removeEventListener("focus", claim); void native.hide(); };
+  }, [nativeShown, current?.id]);
   // Leaving this tab always gives control back, including when the editor tab closes.
   useEffect(() => { if (!visible && controlling) void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [visible, controlling, sessionId]);
   useEffect(() => () => { if (useBrowser.getState().states[sessionId]?.controlling === "user") void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [sessionId]);
@@ -134,13 +154,14 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
     <div ref={pageArea} className="gx-browser-page">
       {status?.available === false ? <EmptyState icon={<Globe size={24} />} title={zh ? "没有找到浏览器" : "No browser found"} hint={zh ? "安装 Edge、Chrome 或 Chromium，或在智能体设置中指定浏览器路径。" : "Install Edge, Chrome or Chromium, or set its executable path in agent settings."} action={<button type="button" className="gx-btn" onClick={() => useStore.getState().setLayout({ activity: "settings", sideOpen: true })}>{zh ? "打开设置" : "Open settings"}</button>} />
       : !current || url === "about:blank" ? <EmptyState icon={<Globe size={30} />} title={zh ? "从一个网址开始" : "Start with a URL"} hint={zh ? "输入网址，或让智能体打开一篇论文。这个浏览器使用 GlossX 独立配置，不读取你的个人浏览器资料。" : "Enter a URL or ask the agent to open a paper. This browser uses a separate GlossX profile."} action={<button type="button" className="gx-btn" onClick={() => { setAddress(""); addressEdited.current = true; addressField.current?.focus(); }}>{zh ? "输入网址" : "Enter a URL"}</button>} />
+      : native ? null
       : frame ? <img ref={image} className={`gx-browser-frame${controlling ? " controlling" : ""}`} src={frame.data.startsWith("data:") ? frame.data : `data:image/jpeg;base64,${frame.data}`} alt={state?.title || current.title || (zh ? "实时浏览页面" : "Live browser page")} tabIndex={controlling ? 0 : -1} draggable={false}
         onClick={(e) => { if (!controlling) return; e.currentTarget.focus(); const b = e.currentTarget.getBoundingClientRect(); void act({ type: "click", x: Math.round((e.clientX - b.x) * frame.width / b.width), y: Math.round((e.clientY - b.y) * frame.height / b.height) }); }}
         onWheel={(e) => { if (!controlling) return; e.stopPropagation(); scroll.current.x += e.deltaX; scroll.current.y += e.deltaY; if (!scroll.current.timer) scroll.current.timer = setTimeout(() => { const { x, y } = scroll.current; scroll.current = { x: 0, y: 0, timer: null }; void act({ type: "scroll", delta_x: x, delta_y: y }); }, 80); }}
         onKeyDown={key} onPaste={(e) => { if (controlling) { e.preventDefault(); void act({ type: "text", text: e.clipboardData.getData("text") }); } }} />
       : <div className="gx-browser-wait"><Spinner size={22} /><span>{zh ? "正在连接页面画面…" : "Connecting to the live page…"}</span></div>}
     </div>
-    {controlling && <form className="gx-browser-type" onSubmit={(e) => { e.preventDefault(); if (text) { void act({ type: "text", text }); setText(""); } }}><Hand size={13} /><input value={text} onChange={(e) => setText(e.target.value)} placeholder={zh ? "向页面当前焦点输入文字（支持中文）…" : "Type into the page’s focused field…"} /><button type="submit" className="gx-btn sm" disabled={!text}>{zh ? "输入" : "Type"}</button><button type="button" className="gx-btn ghost sm" onClick={() => void act({ type: "key", key: "Enter" })}>Enter</button></form>}
-    <footer className="gx-browser-foot"><span className={`gx-dot${connected ? " st-idle" : ""}`} /><span>{connected ? (zh ? "画面已连接" : "Live view connected") : (zh ? "等待画面" : "Waiting for live view")}</span><span className="spacer" /><details><summary>{zh ? "操作记录" : "Actions"} · {history.length}</summary><ol>{history.length ? history.map((a, i) => <li key={a.time + a.text + i}><time>{new Date(a.time).toLocaleTimeString()}</time>{a.text}</li>) : <li>{zh ? "你和智能体的操作会显示在这里。" : "Your actions and the agent’s actions appear here."}</li>}</ol></details></footer>
+    {controlling && !native && <form className="gx-browser-type" onSubmit={(e) => { e.preventDefault(); if (text) { void act({ type: "text", text }); setText(""); } }}><Hand size={13} /><input value={text} onChange={(e) => setText(e.target.value)} placeholder={zh ? "向页面当前焦点输入文字（支持中文）…" : "Type into the page’s focused field…"} /><button type="submit" className="gx-btn sm" disabled={!text}>{zh ? "输入" : "Type"}</button><button type="button" className="gx-btn ghost sm" onClick={() => void act({ type: "key", key: "Enter" })}>Enter</button></form>}
+    <footer className="gx-browser-foot"><span className={`gx-dot${connected || native ? " st-idle" : ""}`} /><span>{native ? (zh ? "内置浏览器" : "Built-in browser") : connected ? (zh ? "画面已连接" : "Live view connected") : (zh ? "等待画面" : "Waiting for live view")}</span><span className="spacer" /><details><summary>{zh ? "操作记录" : "Actions"} · {history.length}</summary><ol>{history.length ? history.map((a, i) => <li key={a.time + a.text + i}><time>{new Date(a.time).toLocaleTimeString()}</time>{a.text}</li>) : <li>{zh ? "你和智能体的操作会显示在这里。" : "Your actions and the agent’s actions appear here."}</li>}</ol></details></footer>
   </div>;
 }

@@ -66,3 +66,9 @@ jobs:
           npx tsc --noEmit -p .
           npm test
           npm run build
+
+      - name: Check the desktop shell scripts
+        run: |
+          node --check desktop/main.js
+          node --check desktop/bridge.js
+          node --check desktop/preload.js
