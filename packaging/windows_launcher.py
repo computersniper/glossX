@@ -268,10 +268,14 @@ def _browser_smoke(report_path: Path) -> int:
     import json
     import tempfile
     from app.harness.browser.process import BrowserProcess
+    from app.harness.browser.proxy import GuardProxy
 
     async def verify() -> dict:
         with tempfile.TemporaryDirectory(prefix="glossx-bundle-browser-") as temporary:
+            # Launch exactly as the app does, behind the guard proxy.
+            proxy = GuardProxy()
             browser = BrowserProcess(Path(temporary))
+            browser.proxy_port = await proxy.start()
             process = None
             try:
                 client = await browser.start()
@@ -287,6 +291,7 @@ def _browser_smoke(report_path: Path) -> int:
                 result = {"browser": browser.executable.browser, "ax_nodes": len(tree["nodes"]), "screenshot_bytes_base64": len(frame["data"])}
             finally:
                 await browser.close()
+                await proxy.close()
             assert process is not None and process.returncode is not None, "browser did not exit"
             result["process_exit_code"] = process.returncode
             return result

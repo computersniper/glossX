@@ -42,13 +42,20 @@ def _registry_paths():
 def discover(override: str | None = None, *, platform: str | None = None,
              env: Mapping[str, str] | None = None) -> BrowserExecutable | None:
     """An invalid override is an error, not a silent fallback to another browser."""
+    found = discover_all(override, platform=platform, env=env)
+    return found[0] if found else None
+
+
+def discover_all(override: str | None = None, *, platform: str | None = None,
+                 env: Mapping[str, str] | None = None) -> list[BrowserExecutable]:
+    """Every installed candidate in preference order; only the override if one is set."""
     platform = platform or sys.platform
     env = os.environ if env is None else env
     if override:
         path = Path(override).expanduser()
         if not path.is_file() or (not platform.startswith("win") and not os.access(path, os.X_OK)):
             raise ValueError("Browser executable not found or not executable; check browser.path")
-        return BrowserExecutable(_name(path), path.resolve())
+        return [BrowserExecutable(_name(path), path.resolve())]
     paths: list[Path] = []
     if platform.startswith("win"):
         if sys.platform.startswith("win"):
@@ -74,7 +81,10 @@ def discover(override: str | None = None, *, platform: str | None = None,
             path = shutil.which(executable, path=env.get("PATH", ""))
             if path:
                 paths.append(Path(path))
+    found: list[BrowserExecutable] = []
     for path in paths:
         if path.is_file() and (platform.startswith("win") or os.access(path, os.X_OK)):
-            return BrowserExecutable(_name(path), path.resolve())
-    return None
+            resolved = path.resolve()
+            if all(item.path != resolved for item in found):
+                found.append(BrowserExecutable(_name(path), resolved))
+    return found
