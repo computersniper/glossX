@@ -100,6 +100,9 @@ export function PdfViewer() {
   const addChatAttachment = useStore((s) => s.addChatAttachment);
 
   const [scale, setScale] = useState(1.35);
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
+  const zoomAnchorRef = useRef<{ ratio: number; top: number; left: number; anchorY: number; anchorX: number } | null>(null);
   const [rendered, setRendered] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -137,6 +140,39 @@ export function PdfViewer() {
       cancelled = true;
       docRef.current = null;
     };
+  }, [current?.id]);
+
+  // Ctrl+wheel zooms the PDF (not the app). Pages re-render once the wheel
+  // settles; the scroll position keeps the same spot under the pointer.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let pending: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let wheel = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      let step: number;
+      if (e.deltaMode !== 0 || Math.abs(e.deltaY) >= 50) { wheel = 0; step = Math.sign(e.deltaY); }
+      else { wheel += e.deltaY; if (Math.abs(wheel) < 50) return; step = Math.sign(wheel); wheel = 0; }
+      const base = pending ?? scaleRef.current;
+      pending = Math.round(Math.min(3, Math.max(0.6, base * (step < 0 ? 1.1 : 1 / 1.1))) * 100) / 100;
+      const rect = el.getBoundingClientRect();
+      const anchorY = e.clientY - rect.top;
+      const anchorX = e.clientX - rect.left;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const next = pending!;
+        const ratio = next / scaleRef.current;
+        pending = null;
+        zoomAnchorRef.current = { ratio, top: el.scrollTop + anchorY, left: el.scrollLeft + anchorX, anchorY, anchorX };
+        setScale(next);
+      }, 120);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => { el.removeEventListener("wheel", onWheel); if (timer) clearTimeout(timer); };
   }, [current?.id]);
 
   useEffect(() => {
@@ -186,6 +222,13 @@ export function PdfViewer() {
         containerRef.current.scrollTop = scrollMemo.get(restoreRef.current) || 0;
       }
       restoreRef.current = null;
+      // after a Ctrl+wheel zoom, keep the point under the pointer in place
+      const anchor = zoomAnchorRef.current;
+      zoomAnchorRef.current = null;
+      if (anchor && containerRef.current) {
+        containerRef.current.scrollTop = anchor.top * anchor.ratio - anchor.anchorY;
+        containerRef.current.scrollLeft = anchor.left * anchor.ratio - anchor.anchorX;
+      }
       // pass 2 — render each page's bitmap + text layer (a failure on one page
       // must not abort the others)
       for (let i = 1; i <= doc.numPages; i++) {

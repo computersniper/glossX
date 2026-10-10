@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, Archive, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleDot, Copy, FileCode, FileText, FlaskConical,
-  GitBranch, GitBranchPlus, GitCommitHorizontal, GitFork, Inbox, Layers, ListChecks, MessageCircleQuestion, MessagesSquare, NotebookPen, Pencil, Quote,
+  GitBranch, GitBranchPlus, GitCommitHorizontal, GitFork, Inbox, Layers, ListChecks, MessageCircleQuestion, MessagesSquare, NotebookPen, Pencil, Quote, Undo2,
   RefreshCw, Scale, ScrollText, Shrink, SquarePen, Telescope, TextSelect, Trash2, WifiOff, X, type LucideIcon,
 } from "lucide-react";
 import type { ApprovalRequest, InputRequest, SessionMessage, SpanRef, Todo, ToolCallMessage } from "../../api/harness";
@@ -9,7 +9,7 @@ import { useStore } from "../../store";
 import { activityOf, useActiveSession, useSessions } from "../../sessionStore";
 import { useVcsEntry } from "../../vcsStore";
 import { AttentionChip, BranchChip, attentionOf } from "../workbench/ThreadsView";
-import { ask } from "../workbench/dialog";
+import { ask, type DialogAction } from "../workbench/dialog";
 import { Markdown } from "../Markdown";
 import { MenuButton, MenuItem, MenuLabel, MenuSep, Popover, Spinner } from "../ui";
 import { Composer } from "./Composer";
@@ -54,6 +54,35 @@ function Prose({ text, spans }: { text: string; spans: Map<string, SpanRef> }) {
 
 function copy(text: string, zh: boolean) {
   void navigator.clipboard?.writeText(text).then(() => useStore.getState().notify(zh ? "已复制" : "Copied")).catch(() => {});
+}
+
+/** Go back to a message in place (like Claude Code's rewind). From a user
+ * message the chat returns to just before it and its text goes back into the
+ * composer; from a reply the chat continues right after it. */
+async function rewindTo(m: SessionMessage, zh: boolean) {
+  const st = useSessions.getState();
+  const messages = (st.activeId && st.states[st.activeId]?.messages) || [];
+  const index = messages.findIndex((x) => x.id === m.id);
+  if (index < 0) return;
+  const user = m.type === "user";
+  const later = messages.slice(user ? index : index + 1).filter((x) => x.type !== "system_note");
+  if (!later.length) return;
+  const edits = later.some((x) => x.type === "tool_call" && (x as ToolCallMessage).checkpoints?.length);
+  const actions: DialogAction[] = [{ id: "chat", label: zh ? "回退对话" : "Rewind chat", primary: true }];
+  if (edits) actions.push({ id: "files", label: zh ? "回退对话并撤销文件修改" : "Rewind chat and undo file edits", danger: true });
+  const choice = await ask({
+    title: zh ? "回到这条消息？" : "Go back to this message?",
+    body: user
+      ? zh ? `这条消息及之后的 ${later.length} 条记录会从对话中删除，消息内容会放回输入框。需要保留原对话请改用“分叉”。` : `This message and the ${later.length} entries after it are removed from the chat; its text goes back into the composer. Use Fork to keep the original.`
+      : zh ? `这条回复之后的 ${later.length} 条记录会从对话中删除。需要保留原对话请改用“分叉”。` : `The ${later.length} entries after this reply are removed from the chat. Use Fork to keep the original.`,
+    actions,
+    cancel: zh ? "取消" : "Cancel",
+  });
+  if (!choice) return;
+  const prefill = m.type === "user"
+    ? { text: m.text, attachments: m.attachments?.filter((a) => a.ok !== false).map(({ kind, ref, label, text }) => ({ kind, ref, label, text })) }
+    : undefined;
+  await st.rewind(m.id, { include: !user, restoreFiles: choice === "files", prefill });
 }
 
 const ATTACH_ICON: Record<string, LucideIcon> = { paper: FileText, file: FileCode, run: ScrollText, span: Quote, selection: TextSelect };
@@ -113,6 +142,9 @@ function UserMessage({ m, zh, canFork, prevId }: { m: Extract<SessionMessage, { 
             <GitFork size={12} />
           </button>
         )}
+        {canFork && !m.pending && (
+          <button type="button" title={zh ? "回到这里：撤回这条消息及之后的对话" : "Rewind: go back to before this message"} onClick={() => void rewindTo(m, zh)}><Undo2 size={12} /></button>
+        )}
       </div>
     </div>
   );
@@ -130,6 +162,9 @@ function AssistantMessage({ m, zh, spans, canFork, old }: { m: Extract<SessionMe
           <button type="button" title={zh ? "复制" : "Copy"} onClick={() => copy(m.text, zh)}><Copy size={12} /></button>
           {canFork && (
             <button type="button" title={zh ? "从这条回复分叉出新对话" : "Fork a new chat from this reply"} onClick={() => void fork(m.id)}><GitFork size={12} /></button>
+          )}
+          {canFork && (
+            <button type="button" title={zh ? "回到这里：删除这条回复之后的对话" : "Rewind: go back to right after this reply"} onClick={() => void rewindTo(m, zh)}><Undo2 size={12} /></button>
           )}
         </div>
       )}

@@ -8,6 +8,7 @@ import { formatTokens } from "../session/toolMeta";
 import { MenuButton, MenuItem, MenuLabel, Spinner } from "../ui";
 import { BranchSwitcher, ProjectSwitcher } from "./BranchSwitcher";
 import { CacheIndicator } from "../session/CacheUsage";
+import { useZoom, zoomReset } from "../../zoom";
 
 /** Three representative colors per theme for the picker swatches. */
 const SWATCH: Record<string, [string, string, string]> = {
@@ -36,6 +37,7 @@ export function StatusBar() {
   const setLayout = useStore((s) => s.setLayout);
   const aiRunning = useAllAiTasks().filter((t) => t.running).length;
   const zh = uiLang === "zh";
+  const appZoom = useZoom((s) => s.app);
   const liveSessions = useSessions((s) => s.list.filter((x) => x.status && x.status !== "idle").length);
   const hasSession = useSessions((s) => !!s.activeId);
   const blocking = useSessions((s) => s.inbox.blocking);
@@ -57,6 +59,7 @@ export function StatusBar() {
       {model && <span className="wb-status-item muted" title={`${provider} · ${model}`}>{model}</span>}
       <ProjectSwitcher className="wb-status-item" placement="top-start" />
       <BranchSwitcher />
+      {appZoom !== 1 && <button className="wb-status-item" title={zh ? "界面缩放，点击重置 (Ctrl+0)" : "Window zoom; click to reset (Ctrl+0)"} onClick={zoomReset}><span>{Math.round(appZoom * 100)}%</span></button>}
       <button className="wb-status-item" title={zh ? "打开当前工作区终端" : "Open workspace terminal"} onClick={() => setLayout({ bottomOpen: true, bottomTab: "terminal" })}><Terminal size={13} /><span>{zh ? "终端" : "Terminal"}</span></button>
       <CacheIndicator zh={zh} status />
       {waiting > 0 && (

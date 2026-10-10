@@ -1191,3 +1191,11 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .gx-note-body .markdown h1, .gx-note-body .markdown h2, .gx-note-body .markdown h3 { margin: 10px 0 4px; font-size: var(--gx-fs-sm); font-weight: 600; font-family: inherit; letter-spacing: 0; border: 0; padding: 0; }
 .gx-note-body .markdown > :first-child { margin-top: 0; }
 .gx-note-body .markdown > :last-child { margin-bottom: 0; }
+
+/* Ctrl+wheel content zoom (see zoom.ts): only the open file, diff or report grows. */
+.gx-file-body .gx-code-gutter, .gx-file-body .gx-code textarea { font-size: calc(12.5px * var(--gx-content-zoom, 1)); }
+.gx-file-body .gx-code.wrap textarea { font-size: calc(13.5px * var(--gx-content-zoom, 1)); }
+.gx-file-body .gx-diff-scroll, .gx-file-diff .gx-diff-scroll { font-size: calc(12.5px * var(--gx-content-zoom, 1)); }
+.gx-file-body .gx-prose.reading .markdown { font-size: calc(15px * var(--gx-content-zoom, 1)); }
+.gx-commit .gx-commit-file .gx-diff-scroll { font-size: calc(11.5px * var(--gx-content-zoom, 1)); }
+.wb-report-inner { zoom: var(--gx-content-zoom, 1); }
