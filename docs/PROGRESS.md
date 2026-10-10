@@ -88,8 +88,13 @@ packaging/GlossX.spec  scripts/  .github/workflows/（ci.yml, preview-build.yml,
 
 ## 4. 当前剩余工作
 
-- 本轮功能代码已完成，收尾时按新提交 SHA 核验 GitHub CI 和 Preview build，并把结果记录到 `docs/progress/integration.md`。
-- 可选的真实 `run_workflow literature-review` 未运行，不影响本轮工作区需求。
+- 本轮功能代码已完成并推送。远程核验（2026-10-10）：提交 `e7a2a5f` 的 **CI 通过**（Backend tests、Frontend build）、**Preview build 通过**（`GlossX.exe` 和 npm 包可在该次运行的 Artifacts 下载）。此前快照 `3391160` 的 CI 失败是半成品，属预期。
+- 本地复核（同日，`e7a2a5f`）：后端全量 **155 passed / 10 skipped**；前端 `tsc`、`npm test` 27 通过、`npm run build` 通过。
+- 仍未做：
+  - 浏览器里没有真实点击过"合并分支"和"删除分支"（接口层已用真实服务验证）；
+  - 没有在浏览器里用真实模型跑过对话（真实 Codex 只通过接口驱动验证）；
+  - 真实模型下的 `run_workflow literature-review`、MCP、SSH、Claude Code 代理执行；
+  - 中文界面下后端发来的文字（审批原因、系统提示、命令说明）仍是英文。
 
 ## 5. 各 agent 的详细记录
 

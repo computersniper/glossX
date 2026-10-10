@@ -38,3 +38,9 @@ Git 提交只注明实际参与的作者，不沿用旧交接文档中的 Claude
 - 真实模型23项检查证据已入仓库 `docs/progress/verification.json`；独立测试服务曾使用8793、前端假provider服务8797，均为隔离测试数据。续作按需重新启动服务，不能假定进程仍在。
 - **剩余顺序**：确认前端分支创建/切换交互（若需修复，补tsc/build）；核对最新diff与检查；提交完整成果、推送 `origin glossX-dev`；按新SHA确认CI/Preview build；更新最终远程结果。
 - `.rgit/` 未初始化，没有创建capsule；要启用research-git需用户运行 `rgit init`，没有静默初始化。
+
+## 远程核验结果（2026-10-10，限额恢复后）
+
+- 提交 `e7a2a5f`：GitHub **CI 通过**（run 38034164695），**Preview build 通过**（run 38034164646）。
+- 同一提交本地复核：后端全量 155 passed / 10 skipped；前端 tsc、27 tests、build 通过。
+- 上面"待完成"里的全量检查、推送、按 SHA 核对 CI 三项至此完成。浏览器内的"合并分支 / 删除分支"仍未真实点击，见 `docs/PROGRESS.md` 第 4 节。
