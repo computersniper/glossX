@@ -163,12 +163,13 @@ export function Workbench() {
   return (
     <div className={`wb${narrow ? " narrow" : ""}`}>
       <header className="wb-titlebar">
-        <button className="wb-title-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={20} x /></button>
+        <div className="wb-brand">
+          <button className="wb-title-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={16} x /></button>
+          <ModeToggle />
+        </div>
         <MenuBar />
         <span className="wb-title-sep" />
-        <ModeToggle />
         <ProjectSwitcher />
-        <span className="spacer" />
         <button className="wb-title-search" onClick={() => openPalette("commands")}>
           <Icon name="search" size={13} />
           <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, threads…"}</span>

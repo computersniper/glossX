@@ -23,13 +23,16 @@ app.commandLine.appendSwitch("disable-quic");
 app.commandLine.appendSwitch("host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost");
 app.commandLine.appendSwitch("force-webrtc-ip-handling-policy", "disable_non_proxied_udp");
 
-let mainWindow = null;
+const windows = new Set(); // every open app window, as in VS Code
 let backend = null;
 let backendUrl = null;
-let allowClose = false;
-let promptOpen = false;
 let quitting = false;
-const bridge = new BrowserBridge(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null));
+// New pages open in the window the user is working in.
+const activeWindow = () => {
+  const focused = BrowserWindow.getFocusedWindow();
+  return focused && windows.has(focused) ? focused : [...windows].pop() || null;
+};
+const bridge = new BrowserBridge(activeWindow);
 
 function logPath() {
   return path.join(app.getPath("logs"), "desktop.log");
@@ -122,97 +125,119 @@ async function settings() {
   return (await response.json()).config || {};
 }
 
-async function requestClose() {
-  if (promptOpen || !mainWindow) return;
-  let confirm = false;
-  try { confirm = mainWindow.webContents.isLoading() ? false : (await settings()).confirm_exit !== false; } catch (error) { log("Exit check failed:", error); }
-  if (!confirm) {
-    allowClose = true;
-    mainWindow.close();
+// Closing one of several windows just closes it; closing the last one quits
+// the app, which asks first when work could be interrupted.
+async function requestClose(win, all = false) {
+  if (win.glossx.promptOpen) return;
+  win.glossx.all = all;
+  if (windows.size > 1 && !all) {
+    closeNow(win);
     return;
   }
-  promptOpen = true;
+  let confirm = false;
+  try { confirm = win.webContents.isLoading() ? false : (await settings()).confirm_exit !== false; } catch (error) { log("Exit check failed:", error); }
+  if (!confirm) {
+    closeNow(win);
+    return;
+  }
+  win.glossx.promptOpen = true;
   // Native pages draw above the app; the dialog must not sit underneath one.
-  bridge.hide();
-  mainWindow.webContents.send("glossx:close-request");
+  bridge.hide(win);
+  win.webContents.send("glossx:close-request");
 }
 
-function fromMainWindow(event) {
-  return mainWindow && event.sender === mainWindow.webContents;
+function closeNow(win) {
+  if (win.glossx.all) for (const other of windows) if (other !== win) { other.glossx.allowClose = true; other.close(); }
+  win.glossx.allowClose = true;
+  win.close();
+}
+
+// The app window an IPC message came from (never a browsed page).
+function senderWindow(event) {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win && windows.has(win) && event.sender === win.webContents ? win : null;
 }
 
 ipcMain.handle("glossx:exit-cancel", (event) => {
-  if (fromMainWindow(event)) promptOpen = false;
+  const win = senderWindow(event);
+  if (win) win.glossx.promptOpen = false;
   return true;
 });
 
 ipcMain.handle("glossx:exit-confirm", async (event, dontAskAgain) => {
-  if (!fromMainWindow(event)) return false;
+  const win = senderWindow(event);
+  if (!win) return false;
   if (dontAskAgain === true) {
     try {
       await fetch(`${backendUrl}/api/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm_exit: false }) });
     } catch (error) { log("Could not save the exit preference:", error); }
   }
-  promptOpen = false;
-  allowClose = true;
-  mainWindow.close();
+  win.glossx.promptOpen = false;
+  closeNow(win);
   return true;
 });
 
-// The title bar follows the app theme; the page reports its colours.
-ipcMain.handle("glossx:titlebar", (event, colors) => {
-  if (!fromMainWindow(event) || process.platform === "darwin") return false;
-  const color = /^#[0-9a-f]{6}$/i.test(colors?.color) ? colors.color : "#111820";
-  const symbolColor = /^#[0-9a-f]{6}$/i.test(colors?.symbolColor) ? colors.symbolColor : "#c9d1d9";
-  mainWindow.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_HEIGHT });
+// The title bar follows the app theme and zoom; the page reports both.
+ipcMain.handle("glossx:titlebar", (event, bar) => {
+  const win = senderWindow(event);
+  if (!win || process.platform === "darwin") return false;
+  const color = /^#[0-9a-f]{6}$/i.test(bar?.color) ? bar.color : "#111820";
+  const symbolColor = /^#[0-9a-f]{6}$/i.test(bar?.symbolColor) ? bar.symbolColor : "#c9d1d9";
+  const height = Number.isFinite(bar?.height) ? Math.min(100, Math.max(20, Math.round(bar.height))) : TITLEBAR_HEIGHT;
+  win.setTitleBarOverlay({ color, symbolColor, height });
   return true;
 });
 
-const ZOOM_STEPS = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
-
-function zoom(direction) {
-  const contents = mainWindow.webContents;
-  const current = contents.getZoomFactor();
-  const next = direction === 0 ? 1
-    : direction > 0 ? ZOOM_STEPS.find((step) => step > current + 0.001)
-      : [...ZOOM_STEPS].reverse().find((step) => step < current - 0.001);
-  contents.setZoomFactor(next ?? current);
-}
-
-// Menu commands that only the window itself can carry out.
+// Menu commands that only the window itself can carry out. Zoom is the
+// app's own (frontend/src/zoom.ts), so the shell adds none of its own.
 ipcMain.handle("glossx:window", (event, action) => {
-  if (!fromMainWindow(event)) return false;
-  const contents = mainWindow.webContents;
+  const win = senderWindow(event);
+  if (!win) return false;
+  const contents = win.webContents;
   switch (action) {
     case "undo": case "redo": case "cut": case "copy": case "paste": case "selectAll":
       contents[action]();
       return true;
-    case "zoomIn": zoom(1); return true;
-    case "zoomOut": zoom(-1); return true;
-    case "zoomReset": zoom(0); return true;
-    case "fullscreen": mainWindow.setFullScreen(!mainWindow.isFullScreen()); return true;
+    case "newWindow": void openWindow(); return true;
+    case "fullscreen": win.setFullScreen(!win.isFullScreen()); return true;
     case "devtools": contents.toggleDevTools(); return true;
-    case "quit": mainWindow.close(); return true;
+    case "quit": void quit(win); return true;
     default: return false;
   }
 });
 
+// Quit from the menu: every window goes, after the same question as closing the last one.
+const quit = (win) => requestClose(win, true);
+
 ipcMain.handle("glossx:browser-show", (event, targetId, rect) => {
-  if (!fromMainWindow(event) || typeof targetId !== "string") return false;
-  return bridge.show(targetId, rect, mainWindow.webContents.getZoomFactor());
+  const win = senderWindow(event);
+  if (!win || typeof targetId !== "string") return false;
+  return bridge.show(win, targetId, rect, win.webContents.getZoomFactor());
 });
 
 ipcMain.handle("glossx:browser-hide", (event) => {
-  if (fromMainWindow(event)) bridge.hide();
+  const win = senderWindow(event);
+  if (win) bridge.hide(win);
   return true;
 });
 
+async function openWindow() {
+  if (!backendUrl) return null;
+  const win = createWindow(backendUrl);
+  await win.webContents.loadURL(backendUrl);
+  return win;
+}
+
 function createWindow(url) {
   const icon = app.isPackaged ? path.join(process.resourcesPath, "gloss.ico") : path.join(REPO_ROOT, "packaging", "gloss.ico");
-  mainWindow = new BrowserWindow({
+  // Each new window opens a little below and right of the current one.
+  const from = activeWindow();
+  const offset = from && !from.isMaximized() && !from.isFullScreen() ? from.getBounds() : null;
+  const win = new BrowserWindow({
     title: "GlossX · 旁注",
-    width: 1500,
-    height: 950,
+    width: offset?.width || 1500,
+    height: offset?.height || 950,
+    ...(offset ? { x: offset.x + 28, y: offset.y + 28 } : {}),
     minWidth: 1024,
     minHeight: 720,
     backgroundColor: "#111820",
@@ -224,35 +249,46 @@ function createWindow(url) {
     show: !SMOKE_REPORT,
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });
+  win.glossx = { allowClose: false, promptOpen: false, all: false };
+  windows.add(win);
   const origin = new URL(url).origin;
   const external = (target) => { if (/^https?:/i.test(target)) void shell.openExternal(target); };
-  mainWindow.webContents.setWindowOpenHandler(({ url: target }) => { external(target); return { action: "deny" }; });
-  mainWindow.webContents.on("will-navigate", (event, target) => {
+  win.webContents.setWindowOpenHandler(({ url: target }) => {
+    // The app opening itself (File > New window in a plain browser) is a new window here too.
+    if (new URL(target).origin === origin) void openWindow();
+    else external(target);
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (event, target) => {
     if (new URL(target).origin !== origin) { event.preventDefault(); external(target); }
   });
-  // Without an application menu, the usual window shortcuts are wired here.
-  mainWindow.webContents.on("before-input-event", (event, input) => {
+  // Pinch zoom would scale the page under the app's own zoom.
+  void win.webContents.setVisualZoomLevelLimits(1, 1);
+  // Without an application menu, the window shortcuts are wired here.
+  win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return;
     const mod = input.control || input.meta;
-    if (input.key === "F11") mainWindow.setFullScreen(!mainWindow.isFullScreen());
-    else if (mod && (input.key === "=" || input.key === "+")) zoom(1);
-    else if (mod && input.key === "-") zoom(-1);
-    else if (mod && input.key === "0") zoom(0);
+    if (input.key === "F11") win.setFullScreen(!win.isFullScreen());
+    else if (mod && input.shift && input.code === "KeyN") void openWindow();
     else return;
     event.preventDefault();
   });
-  mainWindow.on("close", (event) => {
-    if (allowClose || SMOKE_REPORT) return;
+  win.on("close", (event) => {
+    if (win.glossx.allowClose || SMOKE_REPORT || quitting) return;
     event.preventDefault();
-    void requestClose();
+    void requestClose(win);
   });
-  mainWindow.on("closed", () => { mainWindow = null; });
-  return mainWindow.loadURL(url);
+  win.on("closed", () => {
+    windows.delete(win);
+    const next = [...windows].pop();
+    if (next) bridge.adopt(win, next);
+  });
+  return win;
 }
 
 // A packaged-build check: drives the shared browser through the backend API,
 // exactly as the agent does, and writes what happened to a JSON report.
-async function smoke() {
+async function smoke(first) {
   const call = async (method, route, body) => {
     const response = await fetch(`${backendUrl}${route}`, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     const value = await response.json();
@@ -273,7 +309,7 @@ async function smoke() {
     const snapshot = await call("POST", `/api/sessions/${sid}/browser/input`, { type: "snapshot" });
     report.snapshot = String(snapshot.text || "").slice(0, 300);
     const tabs = snapshot.tabs || [];
-    const shown = bridge.show(tabs[0]?.id, { x: 0, y: 0, width: 400, height: 300 });
+    const shown = bridge.show(first, tabs[0]?.id, { x: 0, y: 0, width: 400, height: 300 });
     Object.assign(report, { ok: status.available === true && tabs.length === 1 && shown && bridge.targets.size === 1, browser: status.browser, tabs: tabs.length, native_pages: bridge.targets.size, electron: process.versions.electron });
   } catch (error) {
     report.error = String(error?.stack || error);
@@ -289,14 +325,15 @@ async function main() {
     const endpoint = await bridge.start();
     backendUrl = await startBackend(endpoint);
     log("Backend ready at", backendUrl);
-    await createWindow(backendUrl);
+    const first = createWindow(backendUrl);
+    await first.webContents.loadURL(backendUrl);
     if (SMOKE_REPORT) {
-      const code = await smoke();
+      const code = await smoke(first);
       quitting = true;
       // Close the pages and the window before exiting, as a normal quit does.
       bridge.close();
       stopBackend();
-      mainWindow?.destroy();
+      for (const win of windows) win.destroy();
       setTimeout(() => app.exit(code), 300);
     }
   } catch (error) {
@@ -320,11 +357,8 @@ if (process.argv.includes("--version")) {
 } else if (!SMOKE_REPORT && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  });
+  // Starting GlossX again opens another window on the running app.
+  app.on("second-instance", () => void openWindow());
   app.whenReady().then(main);
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", () => { quitting = true; });

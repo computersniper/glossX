@@ -72,8 +72,11 @@ export function BrowserView({ sessionId, visible }: { sessionId: string; visible
       if (key !== last) { last = key; void (blocked ? native.hide() : native.show(current.id, { x: r.x, y: r.y, width: r.width, height: r.height })); }
       frameId = requestAnimationFrame(place);
     };
+    // With several windows open the page sits in one of them; focusing this one brings it here.
+    const claim = () => { last = ""; };
+    window.addEventListener("focus", claim);
     place();
-    return () => { cancelAnimationFrame(frameId); void native.hide(); };
+    return () => { cancelAnimationFrame(frameId); window.removeEventListener("focus", claim); void native.hide(); };
   }, [nativeShown, current?.id]);
   // Leaving this tab always gives control back, including when the editor tab closes.
   useEffect(() => { if (!visible && controlling) void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [visible, controlling, sessionId]);

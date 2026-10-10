@@ -23,10 +23,9 @@ class BrowserBridge {
     this.getWindow = getWindow;
     this.token = id();
     this.contexts = new Map(); // browserContextId -> { partition, session }
-    this.targets = new Map(); // targetId -> { view, contextId, sessionId }
+    this.targets = new Map(); // targetId -> { view, window, contextId, sessionId }
     this.sessions = new Map(); // sessionId -> targetId
     this.socket = null;
-    this.shown = null;
   }
 
   start() {
@@ -149,7 +148,7 @@ class BrowserBridge {
     contents.debugger.on("detach", () => {
       if (this.targets.has(targetId)) this.closeTarget(targetId);
     });
-    this.targets.set(targetId, { view, contextId, sessionId });
+    this.targets.set(targetId, { view, window, contextId, sessionId });
     this.sessions.set(sessionId, targetId);
     this.send({ method: "Target.attachedToTarget", params: { sessionId, targetInfo: this.info(targetId), waitingForDebugger: false } });
     await contents.loadURL(params.url || "about:blank").catch(() => {});
@@ -161,10 +160,9 @@ class BrowserBridge {
     if (!target) return;
     this.targets.delete(targetId);
     this.sessions.delete(target.sessionId);
-    if (this.shown === targetId) this.shown = null;
     const contents = target.view.webContents;
     try { if (contents.debugger.isAttached()) contents.debugger.detach(); } catch {}
-    this.getWindow()?.contentView.removeChildView(target.view);
+    if (!target.window.isDestroyed()) target.window.contentView.removeChildView(target.view);
     if (!contents.isDestroyed()) contents.close();
     this.send({ method: "Target.detachedFromTarget", params: { sessionId: target.sessionId, targetId } });
   }
@@ -175,20 +173,40 @@ class BrowserBridge {
     return { targetId, type: "page", title: contents.getTitle(), url: contents.getURL(), attached: true, browserContextId: target.contextId };
   }
 
-  // Place a page over the rectangle its pane reserves (CSS pixels of the app page).
-  show(targetId, rect, zoom = 1) {
+  // Place a page over the rectangle a window's pane reserves (CSS pixels of
+  // that window's app page). With several windows open, the page moves to
+  // whichever window shows it last.
+  show(window, targetId, rect, zoom = 1) {
+    this.hide(window, targetId);
     const target = this.targets.get(targetId);
-    for (const [other, { view }] of this.targets) if (other !== targetId) view.setVisible(false);
-    if (!target || !rect || rect.width < 1 || rect.height < 1) { this.shown = null; return false; }
+    if (!target || !rect || rect.width < 1 || rect.height < 1) return false;
+    if (target.window !== window) {
+      target.view.setVisible(false);
+      if (!target.window.isDestroyed()) target.window.contentView.removeChildView(target.view);
+      window.contentView.addChildView(target.view);
+      target.window = window;
+    }
     target.view.setBounds({ x: Math.round(rect.x * zoom), y: Math.round(rect.y * zoom), width: Math.round(rect.width * zoom), height: Math.round(rect.height * zoom) });
     target.view.setVisible(true);
-    this.shown = targetId;
     return true;
   }
 
-  hide() {
-    for (const { view } of this.targets.values()) view.setVisible(false);
-    this.shown = null;
+  // Hide the pages placed in a window (all windows when none is given).
+  hide(window = null, except = null) {
+    for (const [targetId, target] of this.targets) {
+      if (targetId !== except && (!window || target.window === window)) target.view.setVisible(false);
+    }
+  }
+
+  // A window is closing while others stay open: its pages live on in another.
+  adopt(from, to) {
+    for (const target of this.targets.values()) {
+      if (target.window !== from) continue;
+      target.view.setVisible(false);
+      if (!from.isDestroyed()) from.contentView.removeChildView(target.view);
+      to.contentView.addChildView(target.view);
+      target.window = to;
+    }
   }
 
   reset() {
