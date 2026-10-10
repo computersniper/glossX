@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import difflib
 import json
+import logging
 import os
+import posixpath
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -31,7 +34,11 @@ SNAPSHOT_FILE_BYTES = 256_000
 SNAPSHOT_TOTAL_BYTES = 20_000_000
 SNAPSHOT_MAX_FILES = 2_000
 MAX_CHECKPOINTS = 2_000
+CONFIG_DIR = config.WORKSPACE_CONFIG_DIRNAME          # <workspace>/.glossx
+CHECKPOINTS_REL = f"{CONFIG_DIR}/checkpoints"         # never listed, never writable by tools
 _lock = threading.RLock()
+_cp_migrated: set[str] = set()
+logger = logging.getLogger(__name__)
 
 
 class WorkspaceError(ValueError):
@@ -51,7 +58,44 @@ def root_for(project_id: str | None) -> Path:
     if path.parent != base:
         raise WorkspaceError("workspace escapes the workspaces directory")
     path.mkdir(parents=True, exist_ok=True)
+    from . import home
+
+    home.seed_workspace(path)  # one stat once the workspace has its .glossx
     return path
+
+
+def _norm_parts(rel: Any) -> list[str]:
+    """Lexically normalized, case-folded parts of a path argument."""
+    text = str(rel if rel is not None else "").strip().replace("\\", "/")
+    text = posixpath.normpath(text) if text else "."
+    return [p.casefold() for p in text.split("/") if p not in {"", "."}]
+
+
+def is_config_path(rel: Any) -> bool:
+    """True when a tool's path argument points into ``.glossx`` (writes there
+    always need the user's approval)."""
+    parts = _norm_parts(rel)
+    text = str(rel or "").strip().replace("\\", "/")
+    if PurePosixPath(text).is_absolute() or PureWindowsPath(text).drive:
+        return CONFIG_DIR in parts
+    return bool(parts) and parts[0] == CONFIG_DIR
+
+
+def is_checkpoint_rel(rel: str) -> bool:
+    """True for ``.glossx/checkpoints`` and anything below it (workspace-relative)."""
+    parts = _norm_parts(rel)
+    return parts[:2] == [CONFIG_DIR, "checkpoints"]
+
+
+def is_protected_rel(rel: str) -> str | None:
+    """Why a workspace-relative path must not be written through the file
+    tools / API, or ``None`` when writing is fine."""
+    parts = _norm_parts(rel)
+    if parts[:2] == [CONFIG_DIR, "checkpoints"]:
+        return f"{CHECKPOINTS_REL} is managed by GlossX and is not writable"
+    if parts[:1] == [".git"]:
+        return ".git is managed by version control and is not writable (use the vcs tools)"
+    return None
 
 
 def resolve(root: Path, rel: Any) -> Path:
@@ -131,6 +175,9 @@ def walk(root: Path, start: Path | None = None, *, max_entries: int = 5000,
                 return
             if child.is_dir() and child.name in SKIP_DIRS:
                 continue
+            if (child.name == "checkpoints" and directory.name.casefold() == CONFIG_DIR
+                    and directory.parent == root):
+                continue  # .glossx/checkpoints is internal
             if not include_hidden and child.name.startswith("."):
                 continue
             try:
@@ -159,9 +206,31 @@ def walk(root: Path, start: Path | None = None, *, max_entries: int = 5000,
 
 # -- checkpoints --------------------------------------------------------------
 def _cp_dir(key: str) -> Path:
-    path = config.CHECKPOINTS_DIR / key_for(key)
+    """``<workspace>/.glossx/checkpoints`` (checkpoints recorded before they moved
+    into the workspace are copied over once; the old files are left in place)."""
+    key = key_for(key)
+    path = root_for(None if key == "default" else key) / CONFIG_DIR / "checkpoints"
     path.mkdir(parents=True, exist_ok=True)
+    if key not in _cp_migrated:
+        _cp_migrated.add(key)
+        _migrate_checkpoints(key, path)
     return path
+
+
+def _migrate_checkpoints(key: str, target: Path) -> None:
+    legacy = config.LEGACY_CHECKPOINTS_DIR / key
+    marker = target / ".migrated"
+    try:
+        if marker.exists() or not legacy.is_dir():
+            return
+        for old in legacy.glob("*.json"):
+            new = target / old.name
+            if not new.exists():
+                shutil.copy2(old, new)
+        marker.write_text("checkpoints copied from the data directory
+", encoding="utf-8")
+    except OSError:
+        logger.warning("could not migrate the checkpoints of workspace %s", key, exc_info=True)
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
@@ -310,6 +379,9 @@ def write_text(
     target = resolve(root, rel)
     if target == root or target.is_dir():
         raise WorkspaceError("path is a directory")
+    blocked = is_protected_rel(relpath(root, target))
+    if blocked:
+        raise WorkspaceError(blocked)
     before = None
     if target.exists():
         before = _maybe_text(target, MAX_TEXT_BYTES * 2)
@@ -326,8 +398,10 @@ def snapshot(root: Path) -> dict[str, Any]:
     files: dict[str, str] = {}
     stats: dict[str, tuple[int, int]] = {}
     total = 0
+    config_dir = Path(root) / CONFIG_DIR
     for entry_root, dirs, names in os.walk(root):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS
+                   and not (d == "checkpoints" and Path(entry_root) == config_dir)]
         for name in names:
             path = Path(entry_root) / name
             try:

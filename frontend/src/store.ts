@@ -20,12 +20,13 @@ import { evictPdfDoc } from "./pdf/docCache";
 
 // ---- workbench layout + editor tabs ----
 export type UiMode = "gloss" | "glossx"; // classic reader | agent workbench
-export type Activity = "library" | "workspace" | "projects" | "search" | "capabilities" | "settings";
+export type Activity = "library" | "threads" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings";
 export type AiMode = "agent" | "chat" | "tools";
 export type BottomTab = "trace" | "runs" | "tasks";
-export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme";
-// file / checkpoint ids are `<workspace key>|<path or checkpoint id>`
-export type EditorTab = { kind: "paper" | "run" | "welcome" | "file" | "checkpoint"; id: string };
+export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme" | "branches" | "newBranch" | "commit" | "tryBranch";
+// file / checkpoint ids are `<workspace key>|<path or checkpoint id>`;
+// vcsdiff = `<key>|<path>` (working tree vs HEAD); commit = `<key>|<commit id>`
+export type EditorTab = { kind: "paper" | "run" | "welcome" | "file" | "checkpoint" | "vcsdiff" | "commit"; id: string };
 export const splitWorkspaceId = (id: string) => {
   const i = id.indexOf("|");
   return { project: i < 0 ? "default" : id.slice(0, i), ref: i < 0 ? id : id.slice(i + 1) };
@@ -88,6 +89,8 @@ const runRefetch = new Map<string, "busy" | "again">();
 
 const isLive = (r?: AgentRun | null) => r?.status === "running" || r?.status === "awaiting_approval";
 
+let paperProjectMissing = false;
+
 let importMutation = 0;
 let importRefreshInFlight: Promise<void> | null = null;
 let papersRequestSequence = 0;
@@ -126,6 +129,8 @@ interface State {
   openWelcome: () => void;
   openFileTab: (project: string | null | undefined, path: string) => void;
   openCheckpointTab: (project: string | null | undefined, checkpointId: string) => void;
+  openVcsDiffTab: (project: string | null | undefined, path: string) => void;
+  openCommitTab: (project: string | null | undefined, commitId: string) => void;
   restoreTabs: () => Promise<void>;
   openCitation: (span: AgentSpan) => Promise<void>;
   // agent
@@ -139,6 +144,12 @@ interface State {
   agentPrefill: { goal?: string; paperIds?: string[]; id: number } | null;
   setAgentRunId: (id: string | null) => void;
   setAgentProjectId: (id: string | null) => void;
+  /** paper id → its own project id (GET /api/papers/{id}/project), false = the backend has no such route. */
+  paperProjects: Record<string, string>;
+  /** Resolve (and cache) a paper's project; null when the backend cannot say. */
+  paperProject: (paperId: string) => Promise<AgentProject | null>;
+  /** Make a paper's project the active one (workspace explorer, new threads, chat scope). */
+  activatePaperProject: (paperId: string) => Promise<AgentProject | null>;
   bumpAgentTick: () => void;
   refreshRuns: () => Promise<void>;
   refreshProjects: () => Promise<void>;
@@ -257,8 +268,11 @@ export const useStore = create<State>((set, get) => ({
     if (!tab) return;
     set({ activeTabKey: key });
     persistTabs();
-    if (tab.kind === "paper") await showPaper(tab.id);
-    else if (tab.kind === "run") {
+    if (tab.kind === "paper") {
+      // GlossX: the workspace follows the paper in the active tab
+      if (get().mode === "glossx") void get().activatePaperProject(tab.id);
+      await showPaper(tab.id);
+    } else if (tab.kind === "run") {
       set({ agentRunId: tab.id });
       if (!get().runs[tab.id]) await get().loadRun(tab.id).catch(() => {});
     }
@@ -314,6 +328,16 @@ export const useStore = create<State>((set, get) => ({
     addTab({ kind: "checkpoint", id });
     void get().activateTab(`checkpoint:${id}`);
   },
+  openVcsDiffTab: (project, path) => {
+    const id = `${project || "default"}|${path}`;
+    addTab({ kind: "vcsdiff", id });
+    void get().activateTab(`vcsdiff:${id}`);
+  },
+  openCommitTab: (project, commitId) => {
+    const id = `${project || "default"}|${commitId}`;
+    addTab({ kind: "commit", id });
+    void get().activateTab(`commit:${id}`);
+  },
   restoreTabs: async () => {
     const saved = readJson<{ tabs: EditorTab[]; active: string | null }>(TABS_KEY, { tabs: [], active: null });
     const known = new Set(get().papers.map((p) => p.id));
@@ -366,6 +390,35 @@ export const useStore = create<State>((set, get) => ({
       /* ignore */
     }
     set({ agentProjectId: id });
+  },
+  paperProjects: {},
+  paperProject: async (paperId) => {
+    if (paperProjectMissing) return null;
+    const known = get().paperProjects[paperId];
+    const hit = known ? get().projects.find((p) => p.id === known) : undefined;
+    if (hit) return hit;
+    try {
+      const p = await agentApi.paperProject(paperId);
+      if (!p || !p.id) return null;
+      set((s) => ({
+        paperProjects: { ...s.paperProjects, [paperId]: p.id },
+        projects: s.projects.some((x) => x.id === p.id) ? s.projects.map((x) => (x.id === p.id ? { ...x, ...p } : x)) : [...s.projects, p],
+      }));
+      return p;
+    } catch (e: any) {
+      // older backend (no per-paper projects): keep whatever project is active and stop asking
+      const msg = String(e?.message || e);
+      if (/^(405|501)\b/.test(msg) || (/^404\b/.test(msg) && /"Not Found"/i.test(msg)) || e instanceof SyntaxError) paperProjectMissing = true;
+      return null;
+    }
+  },
+  activatePaperProject: async (paperId) => {
+    const p = await get().paperProject(paperId);
+    if (!p || get().activeTabKey !== `paper:${paperId}`) return p; // the user moved on while this resolved
+    const active = get().projects.find((x) => x.id === get().agentProjectId);
+    // a research project that already holds this paper stays active
+    if (active?.id !== p.id && !(active?.paper_ids || []).includes(paperId)) get().setAgentProjectId(p.id);
+    return p;
   },
   bumpAgentTick: () => set((s) => ({ agentTick: s.agentTick + 1 })),
   refreshRuns: async () => {

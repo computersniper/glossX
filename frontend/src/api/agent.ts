@@ -39,6 +39,10 @@ export type AgentProject = {
   memory?: AgentMemoryNote[];
   run_ids?: string[];
   runs?: Pick<AgentRun, "id" | "goal" | "status" | "created_at">[];
+  /** "paper" = created automatically for one paper; "research" = made by the user (may hold several papers). */
+  kind?: "paper" | "research" | (string & {});
+  paper_ids?: string[];
+  workspace?: { key: string; path: string; vcs?: { available?: boolean; branch?: string | null } | null } | null;
 };
 export type McpServerCfg = { name: string; command: string; args: string[]; env: Record<string, string>; enabled: boolean };
 export type SshHostCfg = { name: string; host: string; user: string; port: number; workdir: string; enabled?: boolean };
@@ -142,6 +146,18 @@ export const agentApi = {
   workflows: () => fetch("/api/agent/workflows").then((r) => j<AgentWorkflow[]>(r)),
   loops: () => fetch("/api/agent/loops").then((r) => j<AgentLoop[]>(r)),
   projects: () => fetch("/api/agent/projects").then((r) => j<AgentProject[]>(r)),
+  /** Projects that hold a paper. */
+  projectsForPaper: (paperId: string) => fetch(`/api/agent/projects?paper_id=${encodeURIComponent(paperId)}`).then((r) => j<AgentProject[]>(r)),
+  /** The paper's own project (created lazily by the backend for older papers). */
+  paperProject: (paperId: string) => fetch(`/api/papers/${encodeURIComponent(paperId)}/project`).then((r) => j<AgentProject>(r)),
+  addProjectPaper: (id: string, paperId: string) =>
+    fetch(`/api/agent/projects/${encodeURIComponent(id)}/papers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: paperId }),
+    }).then((r) => j<unknown>(r)),
+  removeProjectPaper: (id: string, paperId: string) =>
+    fetch(`/api/agent/projects/${encodeURIComponent(id)}/papers/${encodeURIComponent(paperId)}`, { method: "DELETE" }).then((r) => j<unknown>(r)),
   createProject: (name: string, description?: string) =>
     fetch("/api/agent/projects", {
       method: "POST",

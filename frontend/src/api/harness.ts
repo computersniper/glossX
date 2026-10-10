@@ -24,8 +24,21 @@ export type SessionSummary = {
   last_message?: string;
   usage?: { input_tokens_est: number; output_tokens_est: number; llm_calls: number };
   context?: SessionContext;
-  workspace?: { key: string; path: string } | null;
+  workspace?: { key: string; path: string; vcs?: { available?: boolean; branch?: string | null } | null } | null;
+  /** Threads + inbox (docs/glossx-workspaces.md §1). All optional: older backends omit them. */
+  last_activity_at?: number;
+  last_viewed_at?: number | null;
+  unread?: boolean;
+  attention?: Attention;
+  preview?: string;
+  project?: { id: string; name: string } | null;
+  /** The workspace branch this thread ran on (§3). */
+  branch?: string | null;
 };
+export type Attention = "approval" | "input" | "error" | "done" | null;
+export const isBlocking = (a: Attention | undefined) => a === "approval" || a === "input";
+export type InboxItem = { session_id: string; title: string; project?: { id: string; name: string } | null; attention?: Attention; last_activity_at?: number; preview?: string };
+export type InboxSummary = { unread: number; blocking: number; items: InboxItem[] };
 
 export type CheckpointRef = { id: string; path: string; lines_added?: number; lines_removed?: number };
 export type SpanRef = { id: string; paper_id: string; title?: string; page?: number | null; bbox?: [number, number, number, number] | null; text?: string };
@@ -117,6 +130,9 @@ export type HarnessSettings = {
   hooks: Record<HookEvent, HookRule[]>;
   context_limit: number;
   default_mode: SessionMode;
+  vcs?: { auto_commit?: boolean; [extra: string]: any };
+  /** Read-only: where the harness keeps its files (`~/.glossx`, `<workspace>/.glossx`). */
+  paths?: { home?: string; global_instructions?: string; workspace_config?: string; [extra: string]: any };
   [extra: string]: any;
 };
 export type Mention = { kind: AttachmentKind; ref: string; label: string; detail?: string; insert?: string };
@@ -197,9 +213,12 @@ const S = (id: string) => `/api/sessions/${enc(id)}`;
 const W = (projectId?: string | null) => `/api/workspace/${enc(projectId || "default")}`;
 
 export const sessionsApi = {
-  list: (projectId?: string | null, includeSubagents = false) =>
-    request<any>(`/api/sessions${query({ project_id: projectId, include_subagents: includeSubagents ? "true" : undefined })}`).then((r) => listOf<SessionSummary>(r, "sessions", "items")),
-  create: (body: { title?: string; project_id?: string | null; mode?: SessionMode; provider?: string | null; model?: string | null }) =>
+  list: (projectId?: string | null, includeSubagents = false, view?: "inbox") =>
+    request<any>(`/api/sessions${query({ project_id: projectId, include_subagents: includeSubagents ? "true" : undefined, view })}`).then((r) => listOf<SessionSummary>(r, "sessions", "items")),
+  /** Mark a thread as seen: clears `unread` and a non-blocking `attention`. */
+  read: (id: string) => request<SessionSummary | undefined>(`${S(id)}/read`, { method: "POST", json: {} }),
+  inboxSummary: () => request<any>("/api/sessions/inbox/summary").then(normalizeInbox),
+  create: (body: { title?: string; project_id?: string | null; mode?: SessionMode; provider?: string | null; model?: string | null; branch?: string | null }) =>
     request<SessionSummary>("/api/sessions", { method: "POST", json: clean(body) }),
   get: (id: string) => request<SessionSummary & { messages?: SessionMessage[]; todos?: unknown[] }>(S(id)),
   patch: (id: string, body: { title?: string; mode?: SessionMode; model?: string | { provider?: string | null; model?: string | null } }) =>
@@ -222,6 +241,57 @@ export const sessionsApi = {
   result: (id: string, ref: string) => request<{ text: string }>(`${S(id)}/results/${enc(ref)}`).then((r) => String(r?.text ?? "")),
   compact: (id: string, focus?: string) => request<CompactResult>(`${S(id)}/compact`, { method: "POST", json: focus ? { focus } : {} }),
 };
+
+export function normalizeInbox(raw: any): InboxSummary {
+  const items = listOf<InboxItem>(raw, "items").filter((i) => i && i.session_id);
+  return { unread: Number(raw?.unread) || 0, blocking: Number(raw?.blocking) || 0, items };
+}
+
+/**
+ * Live inbox badge: `inbox.updated` carries the summary whenever any thread's
+ * unread/attention changes (replayed on connect). Returns a close fn; gives up
+ * quietly when the endpoint does not exist.
+ */
+export function openInboxStream(onSummary: (s: InboxSummary) => void, onState?: (ok: boolean) => void): () => void {
+  let source: EventSource | null = null;
+  let closed = false;
+  let retry = 0;
+  let timer = 0;
+  const connect = () => {
+    if (closed) return;
+    source = new EventSource("/api/sessions/inbox/events");
+    const handle = (m: MessageEvent) => {
+      if (m.data === undefined) return;
+      try {
+        const parsed = JSON.parse(m.data);
+        const body = parsed?.type === "inbox.updated" || parsed?.event === "inbox.updated" ? parsed.data ?? parsed.payload ?? parsed : parsed;
+        if (body && typeof body === "object" && ("unread" in body || "items" in body)) onSummary(normalizeInbox(body));
+      } catch {
+        /* heartbeat */
+      }
+    };
+    source.addEventListener("inbox.updated", handle as EventListener);
+    source.onmessage = handle;
+    source.onopen = () => {
+      retry = 0;
+      onState?.(true);
+    };
+    source.onerror = () => {
+      source?.close();
+      if (closed) return;
+      retry += 1;
+      onState?.(false);
+      if (retry > 8) return; // endpoint missing or backend gone: the periodic list refresh takes over
+      timer = window.setTimeout(connect, Math.min(15000, 500 * 2 ** retry));
+    };
+  };
+  connect();
+  return () => {
+    closed = true;
+    window.clearTimeout(timer);
+    source?.close();
+  };
+}
 
 function query(params: Record<string, string | number | null | undefined>): string {
   const parts = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => `${k}=${enc(String(v))}`);
@@ -315,6 +385,91 @@ export const workspaceApi = {
     request<any>(`${W(projectId)}/checkpoints/${enc(id)}`).then((r) => (r?.checkpoint ?? r) as Checkpoint),
   revert: (projectId: string | null | undefined, id: string) =>
     request<any>(`${W(projectId)}/checkpoints/${enc(id)}/revert`, { method: "POST", json: {} }),
+};
+
+// ---- version control (docs/glossx-workspaces.md §3) ----
+export type VcsBranch = { name: string; current?: boolean; head?: string; updated_at?: number };
+export type VcsChange = { path: string; status: string; staged?: boolean };
+export type VcsStatus = {
+  available: boolean;
+  branch: string | null;
+  branches: VcsBranch[];
+  changes: VcsChange[];
+  ahead_of?: Record<string, any> | null;
+  clean: boolean;
+  /** Why git is unavailable, when the backend says. */
+  reason?: string;
+};
+export type VcsCommit = {
+  id: string;
+  short: string;
+  message: string;
+  author?: string;
+  time?: number;
+  parents: string[];
+  refs: string[];
+  files_changed?: number | string[] | { path: string; status?: string }[];
+  session_id?: string | null;
+};
+export type MergeResult = { merged: boolean; fast_forward?: boolean; conflicts: string[] };
+
+const V = (projectId?: string | null) => `${W(projectId)}/vcs`;
+const asText = (r: any): string => (typeof r === "string" ? r : String(r?.diff ?? r?.text ?? r?.content ?? ""));
+
+export function normalizeVcsStatus(raw: any): VcsStatus {
+  const branches = listOf<any>(raw?.branches).map((b) => (typeof b === "string" ? { name: b } : b)).filter((b) => b && b.name) as VcsBranch[];
+  const branch = (raw?.branch ?? branches.find((b) => b.current)?.name ?? null) as string | null;
+  const changes = listOf<any>(raw?.changes).filter((c) => c && c.path).map((c) => ({ path: String(c.path).replace(/\\/g, "/"), status: String(c.status || "M"), staged: !!c.staged }));
+  return {
+    available: raw?.available !== false,
+    branch,
+    branches: branches.map((b) => ({ ...b, current: b.current ?? b.name === branch })),
+    changes,
+    ahead_of: raw?.ahead_of ?? null,
+    clean: typeof raw?.clean === "boolean" ? raw.clean : changes.length === 0,
+    reason: typeof raw?.reason === "string" ? raw.reason : typeof raw?.message === "string" ? raw.message : undefined,
+  };
+}
+
+export function normalizeCommit(c: any): VcsCommit {
+  const id = String(c?.id ?? c?.sha ?? c?.hash ?? "");
+  const time = typeof c?.time === "number" ? c.time : c?.time ? Date.parse(c.time) / 1000 || undefined : undefined;
+  return {
+    ...c,
+    id,
+    short: String(c?.short ?? id.slice(0, 7)),
+    message: String(c?.message ?? c?.subject ?? ""),
+    author: typeof c?.author === "string" ? c.author : c?.author?.name,
+    time,
+    parents: listOf<string>(c?.parents).map(String),
+    refs: listOf<string>(c?.refs).map(String),
+  };
+}
+
+export const vcsApi = {
+  status: (projectId?: string | null) => request<any>(`${V(projectId)}/status`).then(normalizeVcsStatus),
+  log: (projectId: string | null | undefined, opts?: { branch?: string | null; limit?: number; path?: string | null }) =>
+    request<any>(`${V(projectId)}/log${query({ branch: opts?.branch, limit: opts?.limit, path: opts?.path })}`).then((r) => listOf<any>(r, "commits", "items", "log").map(normalizeCommit).filter((c) => c.id)),
+  /** Unified diff; the working tree is compared when `to` is empty. */
+  diff: (projectId: string | null | undefined, opts?: { from?: string | null; to?: string | null; path?: string | null }) =>
+    request<any>(`${V(projectId)}/diff${query({ from: opts?.from, to: opts?.to, path: opts?.path })}`).then(asText),
+  file: (projectId: string | null | undefined, rev: string, path: string) =>
+    request<any>(`${V(projectId)}/file${query({ rev, path })}`).then(asText),
+  commit: (projectId: string | null | undefined, message: string, paths?: string[]) =>
+    request<any>(`${V(projectId)}/commit`, { method: "POST", json: paths?.length ? { message, paths } : { message } }).then((r) => normalizeCommit(r?.commit ?? r ?? {})),
+  createBranch: (projectId: string | null | undefined, name: string, from?: string | null) =>
+    request<any>(`${V(projectId)}/branches`, { method: "POST", json: from ? { name, from } : { name } }),
+  checkout: (projectId: string | null | undefined, branch: string, dirty?: "stash" | "discard") =>
+    request<any>(`${V(projectId)}/checkout`, { method: "POST", json: dirty ? { branch, [dirty]: true } : { branch } }),
+  merge: (projectId: string | null | undefined, branch: string) =>
+    request<any>(`${V(projectId)}/merge`, { method: "POST", json: { branch } }).then((r): MergeResult => ({ merged: !!r?.merged, fast_forward: !!r?.fast_forward, conflicts: listOf<string>(r?.conflicts).map(String) })),
+  deleteBranch: (projectId: string | null | undefined, name: string) =>
+    request<any>(`${V(projectId)}/branches/${name.split("/").map(enc).join("/")}`, { method: "DELETE" }),
+  /** Restore files from a revision as a new commit. */
+  restore: (projectId: string | null | undefined, rev: string, paths?: string[]) =>
+    request<any>(`${V(projectId)}/restore`, { method: "POST", json: paths?.length ? { rev, paths } : { rev } }),
+  discard: (projectId: string | null | undefined, paths: string[]) =>
+    request<any>(`${V(projectId)}/discard`, { method: "POST", json: { paths } }),
 };
 
 /**

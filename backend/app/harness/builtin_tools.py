@@ -66,7 +66,7 @@ def _call_id(ctx: HarnessContext) -> str | None:
 async def _fs_list(args: dict[str, Any], ctx: HarnessContext) -> Any:
     root = _root(ctx)
     start = workspace.resolve(root, args.get("path") or ".")
-    if not start.is_dir():
+    if not start.is_dir() or workspace.is_checkpoint_rel(workspace.relpath(root, start)):
         raise WorkspaceError(f"not a directory: {args.get('path')}")
     depth = _clamp(args.get("depth"), 2, 1, 8)
     entries, truncated = workspace.walk(root, start, max_entries=500, max_depth=depth - 1)
@@ -114,6 +114,8 @@ async def _fs_glob(args: dict[str, Any], ctx: HarnessContext) -> Any:
         rel_parts = path.relative_to(root).parts
         if any(part in workspace.SKIP_DIRS for part in rel_parts):
             continue
+        if workspace.is_checkpoint_rel("/".join(rel_parts)):
+            continue
         found.append(path)
         if len(found) >= 5000:
             break
@@ -150,7 +152,10 @@ async def _fs_grep(args: dict[str, Any], ctx: HarnessContext) -> Any:
         else:
             files = []
             for dirpath, dirs, names in os.walk(base):
-                dirs[:] = sorted(d for d in dirs if d not in workspace.SKIP_DIRS)
+                dirs[:] = sorted(
+                    d for d in dirs if d not in workspace.SKIP_DIRS
+                    and not workspace.is_checkpoint_rel(
+                        workspace.relpath(root, type(base)(dirpath) / d)))
                 for name in sorted(names):
                     files.append(type(base)(dirpath) / name)
         for path in files:

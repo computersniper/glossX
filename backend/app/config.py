@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .platform_support import default_cache_dir, read_utf8_text, resolve_data_dir
+from .platform_support import default_cache_dir, glossx_home, read_utf8_text, resolve_data_dir
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -33,12 +33,26 @@ CONFIG_PATH = DATA_DIR / "config.json"
 # GlossX agent state: project memory and per-run sandbox workspaces for delegates.
 PROJECTS_DIR = DATA_DIR / "projects"
 WORKSPACES_DIR = DATA_DIR / "workspaces"
-# GlossX harness: agent sessions, workspace checkpoints, custom commands/agents.
+# GlossX harness: agent sessions (library data stays in the data directory).
 SESSIONS_DIR = DATA_DIR / "sessions"
-CHECKPOINTS_DIR = DATA_DIR / "checkpoints"
-COMMANDS_DIR = DATA_DIR / "commands"
-AGENTS_DIR = DATA_DIR / "agents"
-GLOBAL_INSTRUCTIONS = DATA_DIR / "GLOSSX.md"
+# The user's agent files live in ``~/.glossx`` (``GLOSSX_HOME`` overrides), like
+# Claude Code's ``~/.claude``: GLOSSX.md, settings.json, commands/, agents/, skills/.
+GLOSSX_HOME = glossx_home()
+GLOBAL_INSTRUCTIONS = GLOSSX_HOME / "GLOSSX.md"
+HARNESS_SETTINGS_PATH = GLOSSX_HOME / "settings.json"
+COMMANDS_DIR = GLOSSX_HOME / "commands"
+AGENTS_DIR = GLOSSX_HOME / "agents"
+SKILLS_DIR = GLOSSX_HOME / "skills"
+# Per-workspace agent files: ``<workspace>/.glossx/`` (settings.json, commands/,
+# agents/, memory.json, checkpoints/).
+WORKSPACE_CONFIG_DIRNAME = ".glossx"
+# Where those files lived before ``~/.glossx`` existed. Still read as a fallback
+# and copied (never moved) by ``app.harness.home.migrate``.
+LEGACY_GLOBAL_INSTRUCTIONS = DATA_DIR / "GLOSSX.md"
+LEGACY_COMMANDS_DIR = DATA_DIR / "commands"
+LEGACY_AGENTS_DIR = DATA_DIR / "agents"
+LEGACY_CHECKPOINTS_DIR = DATA_DIR / "checkpoints"
+CHECKPOINTS_DIR = LEGACY_CHECKPOINTS_DIR  # old name, kept for external scripts
 
 APP_NAME = "GlossX"
 

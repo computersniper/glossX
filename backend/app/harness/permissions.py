@@ -119,6 +119,17 @@ def suggest_rule(tool: str, primary: str | None) -> str:
     return tool
 
 
+def protects_config(spec: Any, primary: str | None) -> bool:
+    """A file-writing tool call whose path is inside ``<workspace>/.glossx``."""
+    if primary is None or not getattr(spec, "workspace_write", False):
+        return False
+    if getattr(spec, "primary_arg", None) != "path":
+        return False
+    from .workspace import is_config_path
+
+    return is_config_path(primary)
+
+
 def decide(
     spec: Any,
     args: dict[str, Any],
@@ -137,6 +148,9 @@ def decide(
     hit = _rule_hit(list(perms.get("deny") or []), tool, primary, for_allow=False)
     if hit:
         return "deny", f"blocked by permission rule {hit}"
+    if protects_config(spec, primary):
+        # never auto-approved: not by auto mode, not by an allow rule
+        return "ask", ".glossx holds this workspace's GlossX settings; changes always need approval"
     hit = _rule_hit(list(perms.get("ask") or []), tool, primary, for_allow=False)
     if hit:
         return "ask", f"permission rule {hit} asks for approval"

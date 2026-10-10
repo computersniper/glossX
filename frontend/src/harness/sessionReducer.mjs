@@ -75,6 +75,16 @@ function unwrap(payload, key) {
   return payload && typeof payload === "object" && payload[key] && typeof payload[key] === "object" ? payload[key] : payload;
 }
 
+/** `turn.completed` may say the turn's changes were auto-committed: `commit: {id, short, message}` (or just an id). */
+export function commitOf(p) {
+  const raw = p?.commit ?? p?.auto_commit ?? p?.vcs?.commit;
+  if (!raw || raw === true) return null;
+  const c = typeof raw === "string" ? { id: raw } : raw;
+  const id = String(c.id ?? c.sha ?? c.short ?? "");
+  if (!id) return null;
+  return { ...c, id, short: String(c.short ?? id.slice(0, 7)), message: typeof c.message === "string" ? c.message : "" };
+}
+
 /** Apply one event; returns the same object when nothing changed. */
 export function applySessionEvent(state, name, payload) {
   const p = payload ?? {};
@@ -167,9 +177,14 @@ export function applySessionEvent(state, name, payload) {
       return { ...state, context: { ...state.context, ...c } };
     }
     case "turn.completed": {
-      const messages = state.messages.some((m) => m.streaming)
+      let messages = state.messages.some((m) => m.streaming)
         ? state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m))
         : state.messages;
+      // a small "committed <id>" marker at the end of a turn that auto-committed
+      const commit = commitOf(p);
+      if (commit && !messages.some((m) => m.type === "system_note" && m.commit && (m.commit.id === commit.id || m.commit.short === commit.short))) {
+        messages = [...messages, { id: `commit-${commit.id}`, type: "system_note", kind: "commit", text: commit.message || "", commit }];
+      }
       const next = { ...state, messages, status: "idle", approvals: [], input: null, stop: { reason: p.stop_reason || "completed", rounds: p.rounds ?? null } };
       if (p.stop_reason === "error" && p.error && !state.error) next.error = String(p.error);
       if (p.usage && state.session) next.session = { ...state.session, usage: p.usage };

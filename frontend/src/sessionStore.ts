@@ -1,8 +1,8 @@
 // Agent sessions: list, active session, live per-session state fed by SSE.
 import { create } from "zustand";
 import {
-  ApiError, harnessApi, isMissing, openSessionStream, sessionsApi,
-  type Attachment, type SessionMode, type SessionState, type SessionSummary,
+  ApiError, harnessApi, isBlocking, isMissing, openInboxStream, openSessionStream, sessionsApi,
+  type Attachment, type InboxSummary, type SessionMode, type SessionState, type SessionSummary,
 } from "./api/harness";
 import { applySessionEvent, emptySessionState } from "./harness/sessionReducer.mjs";
 import { useStore } from "./store";
@@ -30,6 +30,19 @@ function write(key: string, value: unknown) {
 }
 
 const streams = new Map<string, () => void>();
+let inboxStream: (() => void) | null = null;
+let inboxTimer = 0;
+/** false once the backend answered that POST /read does not exist. */
+let readSupported = true;
+const readAt = new Map<string, number>();
+const NO_INBOX: InboxSummary = { unread: 0, blocking: 0, items: [] };
+export const activityOf = (s: SessionSummary) => s.last_activity_at || s.updated_at || s.created_at || 0;
+const byRecency = (a: SessionSummary, b: SessionSummary) => activityOf(b) - activityOf(a);
+/** Inbox order (spec §1): blocking attention, then unread, then the rest — each by last activity. */
+export function inboxOrder(list: SessionSummary[]): SessionSummary[] {
+  const rank = (s: SessionSummary) => (isBlocking(s.attention) ? 0 : s.unread ? 1 : 2);
+  return [...list].sort((a, b) => rank(a) - rank(b) || byRecency(a, b));
+}
 const EMPTY: SessionState = emptySessionState() as SessionState;
 
 interface SessionsStore {
@@ -45,10 +58,31 @@ interface SessionsStore {
   draft: { mode: SessionMode; model: ModelChoice };
   /** Text queued for the composer by other parts of the UI (palette, welcome, library). */
   prefill: { text?: string; attachments?: Attachment[]; send?: boolean; id: number } | null;
+  /** Live unread / blocking counts (GET /api/sessions/inbox/events). */
+  inbox: InboxSummary;
+  /** Threads in inbox order (GET /api/sessions?view=inbox); null = not loaded yet. */
+  inboxList: SessionSummary[] | null;
+  /** Which list the Threads activity shows. */
+  sideView: "threads" | "inbox";
+  /** Branch the next new thread starts on ("Try on a branch"); null = the workspace's current branch. */
+  pendingBranch: string | null;
 
   refresh: () => Promise<void>;
   select: (id: string | null) => void;
   newChat: () => void;
+  /** Start a new thread, optionally in a given project and on a (new or existing) branch. */
+  newThread: (opts?: { projectId?: string | null; branch?: string | null }) => void;
+  /** Open a thread in the AI pane, make its project active and mark it read. */
+  openThread: (id: string) => void;
+  setSideView: (v: "threads" | "inbox") => void;
+  /** Show the Threads activity on its inbox list. */
+  openInbox: () => void;
+  refreshInbox: () => Promise<void>;
+  /** Subscribe to the live inbox summary (idempotent). */
+  startInbox: () => void;
+  markRead: (id: string, force?: boolean) => Promise<void>;
+  markAllRead: () => Promise<void>;
+  setPendingBranch: (branch: string | null) => void;
   send: (text: string, attachments?: Attachment[]) => Promise<boolean>;
   interrupt: () => Promise<void>;
   approve: (toolCallId: string, decision: "once" | "always" | "deny", feedback?: string) => Promise<void>;
@@ -58,7 +92,7 @@ interface SessionsStore {
   rename: (id: string, title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   /** Fork the active chat up to and including `messageId` (whole chat when omitted); `prefill` lands in the composer. */
-  fork: (messageId?: string | null, prefill?: { text: string; attachments?: Attachment[] }) => Promise<void>;
+  fork: (messageId?: string | null, prefill?: { text: string; attachments?: Attachment[] }, sessionId?: string) => Promise<void>;
   compact: (focus?: string) => Promise<void>;
   compose: (p: { text?: string; attachments?: Attachment[]; send?: boolean }) => void;
   clearError: () => void;
@@ -89,7 +123,25 @@ export const useSessions = create<SessionsStore>((set, get) => {
     set((st) => {
       const merged = { ...(st.list.find((x) => x.id === id) || {}), ...s.session, status: s.status } as SessionSummary;
       const rest = st.list.filter((x) => x.id !== id);
-      return { list: [merged, ...rest].sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0)) };
+      return {
+        list: [merged, ...rest].sort(byRecency),
+        inboxList: st.inboxList ? st.inboxList.map((x) => (x.id === id ? { ...x, ...merged } : x)) : st.inboxList,
+      };
+    });
+  };
+
+  /** Local echo of a read: the server's summary follows on the inbox stream. */
+  const applyRead = (id: string) => {
+    const clear = (s: SessionSummary): SessionSummary => (s.id !== id || (!s.unread && !s.attention) ? s : { ...s, unread: false, attention: isBlocking(s.attention) ? s.attention : null });
+    set((st) => {
+      const wasUnread = st.list.find((s) => s.id === id)?.unread;
+      const state = st.states[id];
+      return {
+        list: st.list.map(clear),
+        inboxList: st.inboxList ? st.inboxList.map(clear) : st.inboxList,
+        states: state?.session ? { ...st.states, [id]: { ...state, session: clear(state.session) } } : st.states,
+        inbox: wasUnread ? { ...st.inbox, unread: Math.max(0, st.inbox.unread - 1) } : st.inbox,
+      };
     });
   };
 
@@ -146,6 +198,90 @@ export const useSessions = create<SessionsStore>((set, get) => {
     sending: false,
     draft: read(DRAFT_KEY, { mode: "agent" as SessionMode, model: { provider: null, model: null } }),
     prefill: null,
+    inbox: NO_INBOX,
+    inboxList: null,
+    sideView: "threads",
+    pendingBranch: null,
+
+    newThread: (opts) => {
+      if (opts && "projectId" in opts && opts.projectId !== useStore.getState().agentProjectId) useStore.getState().setAgentProjectId(opts.projectId || null);
+      get().select(null);
+      set({ pendingBranch: opts?.branch || null });
+      useStore.getState().setLayout({ aiOpen: true, aiMode: "agent" });
+      set({ prefill: { id: Date.now(), text: "" } });
+    },
+
+    openThread: (id) => {
+      const sess = get().list.find((s) => s.id === id) || get().inboxList?.find((s) => s.id === id);
+      get().select(id);
+      const st = useStore.getState();
+      st.setLayout({ aiOpen: true, aiMode: "agent" });
+      // the explorer / source control follow the thread's project
+      if (sess?.project_id && sess.project_id !== st.agentProjectId) st.setAgentProjectId(sess.project_id);
+      void get().markRead(id, true);
+    },
+
+    setSideView: (v) => {
+      set({ sideView: v });
+      if (v === "inbox") void get().refreshInbox();
+    },
+
+    openInbox: () => {
+      useStore.getState().setLayout({ activity: "threads", sideOpen: true });
+      get().setSideView("inbox");
+    },
+
+    refreshInbox: async () => {
+      try {
+        const all = (await sessionsApi.list(undefined, false, "inbox")).filter((s) => !s.parent_id);
+        // an older backend ignores ?view=inbox and has none of the inbox fields: order it here
+        const ordered = all.some((s) => s.last_activity_at != null || s.unread != null) ? all : inboxOrder(all);
+        set({ inboxList: ordered });
+      } catch {
+        set((st) => ({ inboxList: st.inboxList ?? inboxOrder(st.list) }));
+      }
+    },
+
+    startInbox: () => {
+      if (inboxStream) return;
+      inboxStream = openInboxStream((summary) => {
+        set({ inbox: summary });
+        // unread / attention changed somewhere: refresh the lists (coalesced)
+        window.clearTimeout(inboxTimer);
+        inboxTimer = window.setTimeout(() => {
+          void get().refresh();
+          if (get().sideView === "inbox") void get().refreshInbox();
+        }, 250);
+      });
+    },
+
+    markRead: async (id, force) => {
+      if (!readSupported || !id) return;
+      const sess = get().list.find((s) => s.id === id) || get().states[id]?.session;
+      const pending = !!sess && (sess.unread === true || (!!sess.attention && !isBlocking(sess.attention)));
+      if (!pending && !force) return;
+      const now = Date.now();
+      if (now - (readAt.get(id) || 0) < 800) return; // activity arrives in bursts
+      readAt.set(id, now);
+      applyRead(id);
+      try {
+        await sessionsApi.read(id);
+      } catch (e) {
+        if (isMissing(e)) readSupported = false;
+      }
+    },
+
+    markAllRead: async () => {
+      const ids = new Set([...get().list, ...(get().inboxList || [])].filter((s) => s.unread || (s.attention && !isBlocking(s.attention))).map((s) => s.id));
+      for (const item of get().inbox.items) if (!isBlocking(item.attention)) ids.add(item.session_id);
+      await Promise.all([...ids].map((id) => {
+        readAt.delete(id);
+        return get().markRead(id, true);
+      }));
+      void get().refreshInbox();
+    },
+
+    setPendingBranch: (branch) => set({ pendingBranch: branch }),
 
     refresh: async () => {
       set({ loadingList: true });
@@ -156,7 +292,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
           void harnessApi.getSettings().then((s) => !get().activeId && set((st) => ({ draft: { ...st.draft, mode: s.default_mode } }))).catch(() => {});
         }
         const all = await sessionsApi.list();
-        const list = all.filter((s) => !s.parent_id).sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+        const list = all.filter((s) => !s.parent_id).sort(byRecency);
         const { activeId } = get();
         const stillThere = !activeId || list.some((s) => s.id === activeId);
         set({ list, available: true, loadingList: false, activeId: stillThere ? activeId : null });
@@ -170,7 +306,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
       const prev = get().activeId;
       if (prev && prev !== id && (get().states[prev]?.status || "idle") === "idle") unwatch(prev);
       write(ACTIVE_KEY, id);
-      set({ activeId: id });
+      set({ activeId: id, pendingBranch: null });
       if (id) {
         const sess = get().list.find((s) => s.id === id);
         if (sess) set((st) => ({ draft: { mode: sess.mode || st.draft.mode, model: { provider: sess.model?.provider ?? null, model: sess.model?.model ?? null } } }));
@@ -193,8 +329,11 @@ export const useSessions = create<SessionsStore>((set, get) => {
             mode: draft.mode,
             provider: draft.model.provider,
             model: draft.model.model,
+            branch: get().pendingBranch,
           });
           id = created.id;
+          // a thread on another branch checks that branch out in the workspace
+          if (get().pendingBranch) window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
           set((st) => ({
             available: true,
             list: [created, ...st.list.filter((s) => s.id !== created.id)],
@@ -327,7 +466,10 @@ export const useSessions = create<SessionsStore>((set, get) => {
       if (!t) return;
       try {
         await sessionsApi.patch(id, { title: t });
-        set((st) => ({ list: st.list.map((s) => (s.id === id ? { ...s, title: t } : s)) }));
+        set((st) => ({
+          list: st.list.map((s) => (s.id === id ? { ...s, title: t } : s)),
+          inboxList: st.inboxList ? st.inboxList.map((s) => (s.id === id ? { ...s, title: t } : s)) : st.inboxList,
+        }));
         patchState(id, (s) => (s.session ? { ...s, session: { ...s.session, title: t } } : s));
       } catch (e) {
         fail(e);
@@ -342,15 +484,15 @@ export const useSessions = create<SessionsStore>((set, get) => {
         set((st) => {
           const states = { ...st.states };
           delete states[id];
-          return { list: st.list.filter((s) => s.id !== id), states };
+          return { list: st.list.filter((s) => s.id !== id), inboxList: st.inboxList ? st.inboxList.filter((s) => s.id !== id) : st.inboxList, states };
         });
       } catch (e) {
         fail(e);
       }
     },
 
-    fork: async (messageId, prefill) => {
-      const id = get().activeId;
+    fork: async (messageId, prefill, sessionId) => {
+      const id = sessionId || get().activeId;
       if (!id) return;
       try {
         const forked = await sessionsApi.fork(id, messageId);

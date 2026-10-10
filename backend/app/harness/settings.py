@@ -1,6 +1,11 @@
-"""Harness settings (``config.json`` key ``glossx_harness``).
+"""Harness settings: ``~/.glossx/settings.json`` (global) merged with a
+workspace's ``<workspace>/.glossx/settings.json`` (project overrides).
 
-Shape (also the contract of ``GET/PUT /api/harness/settings``)::
+Before ``~/.glossx`` existed the settings lived in ``config.json`` under the key
+``glossx_harness``; that key is still read until the new file is written.
+
+Shape (also the contract of ``GET/PUT /api/harness/settings``; ``vcs`` is
+``{"auto_commit": true}``)::
 
     {
       "permissions": {"allow": [pattern], "deny": [pattern], "ask": [pattern]},
@@ -42,8 +47,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "mention_budget": 12_000,
     "trusted_plugins": [],
     "allow_private_network": False,
+    "vcs": {"auto_commit": True},
 }
 _KEYS = set(DEFAULT_SETTINGS)
+# keys a workspace's ``.glossx/settings.json`` may override (the rest is global
+# only: a project file must not be able to trust plugins or open the network)
+PROJECT_KEYS = ("permissions", "hooks", "context_limit", "default_mode", "max_tool_rounds",
+                "mention_budget", "vcs")
 
 
 def _int(raw: Any, key: str, lo: int, hi: int) -> int:
@@ -143,17 +153,32 @@ def normalize(raw: Any) -> dict[str, Any]:
         if not isinstance(private, bool):
             raise ValueError("allow_private_network must be a boolean")
         out["allow_private_network"] = private
+    vcs = raw.get("vcs")
+    if vcs is not None:
+        if not isinstance(vcs, dict):
+            raise ValueError("vcs must be an object")
+        bad = set(vcs) - {"auto_commit"}
+        if bad:
+            raise ValueError(f"unknown vcs field: {', '.join(sorted(bad))}")
+        auto = vcs.get("auto_commit")
+        if auto is not None:
+            if not isinstance(auto, bool):
+                raise ValueError("vcs.auto_commit must be a boolean")
+            out["vcs"] = {"auto_commit": auto}
     return out
 
 
-def load() -> dict[str, Any]:
-    raw = config.load_config().get(CONFIG_KEY)
+def _lenient(raw: Any, keys: Any = None) -> dict[str, Any]:
+    """Normalize ``raw``; fields that do not validate fall back to the defaults."""
+    keys = list(keys if keys is not None else DEFAULT_SETTINGS)
+    if isinstance(raw, dict):
+        raw = {k: v for k, v in raw.items() if k in keys}
     try:
         return normalize(raw)
     except ValueError:
         out = copy.deepcopy(DEFAULT_SETTINGS)
         if isinstance(raw, dict):
-            for key in DEFAULT_SETTINGS:
+            for key in keys:
                 try:
                     out[key] = normalize({key: raw.get(key)})[key]
                 except ValueError:
@@ -161,20 +186,73 @@ def load() -> dict[str, Any]:
         return out
 
 
+def load_global() -> dict[str, Any]:
+    """The user's settings (``~/.glossx/settings.json``; before that file exists,
+    the ``glossx_harness`` key of ``config.json``)."""
+    from . import home
+
+    return _lenient(home.read_global_settings())
+
+
+def merge_project(base: dict[str, Any], raw: Any) -> dict[str, Any]:
+    """``base`` with a workspace's ``.glossx/settings.json`` merged over it:
+    permission rules and hooks are concatenated (project entries first), scalar
+    values the file sets override, global-only keys are ignored."""
+    if not isinstance(raw, dict) or not raw:
+        return base
+    present = [k for k in PROJECT_KEYS if raw.get(k) is not None]
+    if not present:
+        return base
+    project = _lenient(raw, present)
+    out = copy.deepcopy(base)
+    for key in present:
+        if key == "permissions":
+            given = raw.get("permissions") if isinstance(raw.get("permissions"), dict) else {}
+            for kind in ("allow", "deny", "ask"):
+                if given.get(kind) is None:
+                    continue
+                merged = list(project["permissions"][kind]) + list(out["permissions"][kind])
+                out["permissions"][kind] = list(dict.fromkeys(merged))[:MAX_RULES * 2]
+        elif key == "hooks":
+            for event in HOOK_EVENTS:
+                extra = [dict(h, source="project") for h in project["hooks"][event]]
+                out["hooks"][event] = extra + list(out["hooks"][event])
+        elif key == "vcs":
+            if isinstance(raw.get("vcs"), dict) and raw["vcs"].get("auto_commit") is not None:
+                out["vcs"] = dict(project["vcs"])
+        else:
+            out[key] = project[key]
+    return out
+
+
+def load(workspace_root: Any = None) -> dict[str, Any]:
+    """Effective settings: the global ones, with the project overrides of
+    ``<workspace_root>/.glossx/settings.json`` merged over them when a workspace
+    is given."""
+    base = load_global()
+    if workspace_root is None:
+        return base
+    from . import home
+
+    return merge_project(base, home.read_workspace_settings(workspace_root))
+
+
 def save(raw: Any) -> dict[str, Any]:
-    """Merge a (possibly partial) settings object over the current one and save."""
+    """Merge a (possibly partial) settings object over the current global one
+    and save it to ``~/.glossx/settings.json``."""
+    from . import home
+
     if not isinstance(raw, dict):
         raise ValueError("settings must be an object")
-    merged = {**load(), **raw}
+    merged = {**load_global(), **raw}
     clean = normalize(merged)
-    # save_config deep-merges dicts; every list is replaced, every key is present
-    config.save_config({CONFIG_KEY: clean})
-    return load()
+    home.write_global_settings(clean)
+    return load_global()
 
 
 def add_rule(kind: str, pattern: str) -> dict[str, Any]:
     """Append ``pattern`` to ``permissions.<kind>`` (no-op if present)."""
-    current = load()
+    current = load_global()
     rules = list(current["permissions"].get(kind) or [])
     pattern = normalize_pattern(pattern)
     if pattern not in rules:
