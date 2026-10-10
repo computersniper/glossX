@@ -48,6 +48,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "trusted_plugins": [],
     "allow_private_network": False,
     "vcs": {"auto_commit": True},
+    "browser": {"path": None, "headed": False, "allow_private": False, "idle_timeout": 300, "navigation_budget": 60},
 }
 _KEYS = set(DEFAULT_SETTINGS)
 # keys a workspace's ``.glossx/settings.json`` may override (the rest is global
@@ -165,6 +166,20 @@ def normalize(raw: Any) -> dict[str, Any]:
             if not isinstance(auto, bool):
                 raise ValueError("vcs.auto_commit must be a boolean")
             out["vcs"] = {"auto_commit": auto}
+    browser = raw.get("browser")
+    if browser is not None:
+        if not isinstance(browser, dict) or set(browser)-set(DEFAULT_SETTINGS["browser"]):
+            raise ValueError("Unknown browser settings field")
+        for key in ("headed", "allow_private"):
+            if key in browser:
+                if not isinstance(browser[key], bool): raise ValueError("browser."+key+" must be boolean")
+                out["browser"][key]=browser[key]
+        if "path" in browser:
+            value=browser["path"]
+            if value is not None and (not isinstance(value,str) or len(value)>2000):raise ValueError("Invalid browser path")
+            out["browser"]["path"]=value or None
+        for key in ("idle_timeout", "navigation_budget"):
+            if key in browser:out["browser"][key]=_int(browser[key],"browser."+key,1,10000)
     return out
 
 

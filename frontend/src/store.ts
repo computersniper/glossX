@@ -20,13 +20,13 @@ import { evictPdfDoc } from "./pdf/docCache";
 
 // ---- workbench layout + editor tabs ----
 export type UiMode = "gloss" | "glossx"; // classic reader | agent workbench
-export type Activity = "library" | "threads" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings";
+export type Activity = "library" | "threads" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings" | "browser";
 export type AiMode = "agent" | "chat" | "tools";
 export type BottomTab = "trace" | "runs" | "tasks";
-export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme" | "branches" | "newBranch" | "commit" | "tryBranch";
+export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme" | "branches" | "newBranch" | "commit" | "tryBranch" | "browserUrl";
 // file / checkpoint ids are `<workspace key>|<path or checkpoint id>`;
 // vcsdiff = `<key>|<path>` (working tree vs HEAD); commit = `<key>|<commit id>`
-export type EditorTab = { kind: "paper" | "run" | "welcome" | "file" | "checkpoint" | "vcsdiff" | "commit"; id: string };
+export type EditorTab = { kind: "paper" | "run" | "welcome" | "file" | "checkpoint" | "vcsdiff" | "commit" | "browser"; id: string };
 export const splitWorkspaceId = (id: string) => {
   const i = id.indexOf("|");
   return { project: i < 0 ? "default" : id.slice(0, i), ref: i < 0 ? id : id.slice(i + 1) };
@@ -130,6 +130,7 @@ interface State {
   openCheckpointTab: (project: string | null | undefined, checkpointId: string) => void;
   openVcsDiffTab: (project: string | null | undefined, path: string) => void;
   openCommitTab: (project: string | null | undefined, commitId: string) => void;
+  openBrowserTab: (sessionId: string) => void;
   restoreTabs: () => Promise<void>;
   openCitation: (span: AgentSpan) => Promise<void>;
   // agent
@@ -336,11 +337,15 @@ export const useStore = create<State>((set, get) => ({
     addTab({ kind: "commit", id });
     void get().activateTab(`commit:${id}`);
   },
+  openBrowserTab: (id) => {
+    addTab({ kind: "browser", id });
+    void get().activateTab(`browser:${id}`);
+  },
   restoreTabs: async () => {
     const saved = readJson<{ tabs: EditorTab[]; active: string | null }>(TABS_KEY, { tabs: [], active: null });
     const known = new Set(get().papers.map((p) => p.id));
     const tabs = (Array.isArray(saved.tabs) ? saved.tabs : []).filter(
-      (t) => t && typeof t.id === "string" && (t.kind === "paper" ? known.has(t.id) : t.kind === "run" || t.kind === "welcome" || t.kind === "file"),
+      (t) => t && typeof t.id === "string" && (t.kind === "paper" ? known.has(t.id) : ["run", "welcome", "file", "browser"].includes(t.kind)),
     );
     if (!tabs.length) return;
     set({ openTabs: tabs });

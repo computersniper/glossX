@@ -25,6 +25,7 @@ class BrowserProcess:
         self._idle_task: asyncio.Task | None = None
         self._last_used = time.monotonic()
         self._leases = 0
+        self.proxy_port = None
 
     def touch(self):
         self._last_used = time.monotonic()
@@ -55,6 +56,11 @@ class BrowserProcess:
                     "--no-first-run", "--no-default-browser-check", "--disable-extensions",
                     "--disable-background-networking", "--disable-sync", "--disable-component-update",
                     "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]
+            args += ["--disable-quic", "--disable-features=WebRtcAllowInputVolumeAdjustment,MediaRouter"]
+            if self.proxy_port:
+                args += [f"--proxy-server=http://127.0.0.1:{self.proxy_port}",
+                         "--proxy-bypass-list=<-loopback>",
+                         "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"]
             if not self.headed:
                 args.append("--headless=new")
             args.append("about:blank")

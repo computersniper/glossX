@@ -3,7 +3,7 @@
 > 用途：给之后接手的 agent / 开发者看，读完就能继续干活。
 > 最后更新：2026-10-10。维护规则见文末。
 
-> **当前已按用户要求暂停（本地额度将耗尽）**。功能已实现，但前端分支交互的最终确认和新提交 GitHub CI/Preview 核验尚未完成。续作从最新 Git 提交及 `docs/progress/integration.md` 的暂停交接开始。
+> **当前正在续作浏览器与缓存任务**。工作区/VCS 上一轮已收尾；当前任务规格及交接见第 4 节，协调记录见 `docs/progress/browser-cache-integration.md`。
 
 ## 0. 一分钟了解现状
 
@@ -12,7 +12,7 @@
 - **git 身份**：`computersniper <jiechaocai@gmail.com>`。新的提交只标注实际参与的作者，不沿用旧 Claude co-author 模板。
 - **Python**：`backend\.venv`，基于 conda 环境 `xnewenv`（Python 3.11.14，`C:\Users\caijiechao\.conda\envs\xnewenv`）创建。本机 PATH 里没有 `python`，一律用 `backend\.venv\Scripts\python.exe`。
 - **前端**：`frontend/`，Node + Vite + React + TypeScript，`node_modules` 已安装。
-- **本机模型**：只用 Codex CLI（`codex-cli 0.144.6`，ChatGPT 账号登录）。**必须在 GlossX 设置里把 Codex 模型设为 `gpt-5.6-sol`**（或 `gpt-5.6-terra` / `gpt-5.6-luna` / `gpt-5.5`）：用户的 `~/.codex/config.toml` 默认是 `gpt-6.1-sol`，该账号不支持，会报 400。不要改用户的 Codex 配置。
+- **本机模型**：真实验收用 Codex CLI（`codex-cli 0.144.6`，ChatGPT 账号登录）。用户要求新增最新模型支持：已核对官方文档，建议目录包含 `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` 等，保留自定义与 CLI 默认。2026-10-10 本账号 6.1 极小探针仍返回 400 不支持，功能实测继续显式指定 `gpt-5.6-sol`；这不是产品模型限制。不要改用户的 Codex 配置，不自动替换用户选择。
 - **当前状态**：会话收件箱、论文工作区、Git 版本控制和 `.glossx` 已接好；本地测试、真实 Codex 与界面联调证据见下文。接手基线 `5ff29e3`，最终远程 CI/Preview 状态见 `docs/progress/integration.md`。
 
 ## 1. 必读文档（按顺序）
@@ -94,6 +94,30 @@ packaging/GlossX.spec  scripts/  .github/workflows/（ci.yml, preview-build.yml,
 > 接手第一阶段：工作台视口/flex 收缩加固及 24 项真实浏览器布局检查完成；浏览器发现、异步 CDP、独立进程/profile、AX 快照/过期编号、URL 校验基础模块和真实 Edge 冒烟完成。**浏览器工具/API/前端、完整网络安全拦截和缓存仍未完成**。后端 178 passed / 10 skipped；前端 27 项、类型检查、构建通过。详细限制与下一步见 `docs/progress/browser-backend.md`、`docs/progress/browser-frontend.md`。
 >
 > 用户追加要求：论文工作区须可自定义，代码继续兼容 Linux 和 Windows；工作区自定义尚未实现，不自动迁移已有目录。
+
+### 本轮最小交付与后续接续（以此处及各日志末尾为准）
+
+用户要求节省额度、停止测试，并将略过项记录好。当前实现包含浏览器引擎/17 个工具/审批/API、浏览器标签页与接管、缓存采集/账本/增量线程/指标，以及最新 Codex 模型建议；最终代码未做完整验收。当前本地接手快照为 `a35f798`，之后的最小交付提交用 `git log -1` 查看。
+
+详细日志：[协调记录](progress/browser-cache-integration.md)、[浏览器后端](progress/browser-backend.md)、[缓存后端](progress/cache-backend.md)、[前端](progress/browser-frontend.md)。**日志前面的“下一步”可能是历史状态，接手必须读末尾。**
+
+| 略过 / 未完成项 | 之后怎样继续 |
+|---|---|
+| 最终全量后端、前端检查 | `backend/.venv/Scripts/python.exe -m pytest -q`；在 frontend 下运行 `npx tsc --noEmit -p .`、`npm test`、`npm run build`。停止前基础浏览器 23 项、缓存针对集合 24 项及前端 28 项/build 通过，不代表最终全量。 |
+| 真实公网浏览器完整流程 | 先看 browser-backend 日志中的 Edge/DNS/自动 attach 已知问题，再跑交接 3.2：arXiv 打开→快照→按编号点击→正文→截图→后退→导入→tabs；同时验证 file/private 拒绝、重定向/iframe/子资源、审批和旧编号失效。 |
+| 浏览器仍缺的非核心实现 | 通用 DOI 导入、运行中浏览器设置重载、详细页面变化提示尚未实现。当前导入支持 arXiv/PDF/页面 PDF 元数据；设置路径/窗口模式变更后需重启服务。优先修通基本公网流程后再补，细节见 browser-backend 日志。 |
+| screencast、用户接管及服务退出清理 | 假模型+真实服务联调浏览器页，确认图像帧、点击坐标、键盘/输入、切标签；关闭/取消/崩溃后核对浏览器进程确实退出。当前只做过基础进程/AX/截图冒烟。 |
+| 真 Codex 使用浏览器导入论文 | 用全新隔离 DATA/CACHE/GLOSSX_HOME 服务，显式指定账号可用模型；验证 browser_open/read/import_paper 的真实工具调用和 library:write 审批。尚未执行。 |
+| 缓存 3 用户轮完整实测 | `backend/.venv/Scripts/python.exe scripts/dev/verify_prompt_cache.py --model gpt-5.6-sol --output <report.json>`。当前因用户指示中止，仅两次模型调用；新增内容恢复已观察到，但不能称已完成三轮或实际计费输入减少。 |
+| 固定 CLI 开销优化 | ignore-rules 对照输入均 22053，无降低证据，未保留优化。以后逐个测量其他 CLI 参数，不改个人配置，只有有效才接入。 |
+| 其他接入方式真实缓存数据 | Claude CLI、Anthropic、OpenAI 真实账户端到端尚未验证；已有解析/账本实现与定向测试不能代替真实账户。 |
+| 最终前缀/回退集成回归 | 全量后再核对工具往返、审批、压缩、分叉、换模型、thread 丢失、子 agent 计量及模式/附论文/跨天系统前缀稳定。 |
+| 深浅截图及 UI 整体验收 | 前端本轮未运行 Playwright/截图。按交接 3.3 真实服务验收，截图自查后选 2–3 张进 docs/screenshots；高级超时设置、跨 agent 操作日志合并未扩展。 |
+| 打包与远程结果 | 已补 websocket hidden import，exe 浏览器完整功能未验证；本轮不等待 CI/Preview，不把旧 SHA 的通过结果套到新提交。恢复后按最新代码 SHA 查工作流和实际产物。 |
+| 最新模型账号开通 | 6.1-sol 建议已提供，但本账号最新探针仍 400；以后用 scripts/dev/probe_codex_model.py 复查，不能隐式切模型或改用户 CLI 配置。 |
+| 可自定义论文工作区 | 另一 agent 日志记录的补充需求尚未实现。须补全默认位置/单论文目录/API/UI和已有文件、Git 历史迁移方案，不自动搬已有目录。 |
+
+恢复顺序：看 Git 和四份日志末尾 → 优先修通真实浏览器及确认接管/清理 → 真 Codex 浏览器与缓存完整流程 → 全量检查/截图/打包 → 最后核验远程。开始前用 Git 保存新的本地修改，保留真实数据；没有启用开发 mock。
 >
 > 2026-10-10 晚已完成并推送（`d2680df`）：新 logo（带 X）、README 改版、删掉 Gloss 模式的 Agent workspace、设置里四种模型接入方式的开关。
 

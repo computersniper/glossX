@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type AiUsageSummary } from "../api/client";
 import { useStore } from "../store";
+import { ModelOptions, useModelCatalog } from "../modelCatalog";
 import { ThemePicker } from "./ThemePicker";
 import { PdfModeToggle } from "./PdfModeToggle";
 import { FeatureSettingsEditor } from "./FeatureSettingsEditor";
@@ -18,7 +19,7 @@ const LANGS = [
 
 // reasoning-depth options per local CLI (controlled via the standard CLI flags)
 const CLAUDE_EFFORT = ["", "low", "medium", "high", "xhigh", "max"];
-const CODEX_EFFORT = ["", "minimal", "low", "medium", "high"];
+const CODEX_EFFORT = ["", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 const CLAUDE_MODELS = ["sonnet", "opus", "haiku"];
 // [English name, Chinese name, English hint, Chinese hint]
 const PROVIDER_NAMES: Record<string, [string, string, string, string]> = {
@@ -29,6 +30,7 @@ const PROVIDER_NAMES: Record<string, [string, string, string, string]> = {
 };
 
 export function SettingsPanel() {
+  const catalog = useModelCatalog();
   const loadSettings = useStore((s) => s.loadSettings);
   const notify = useStore((s) => s.notify);
   const uiLang = useStore((s) => s.uiLang);
@@ -260,17 +262,20 @@ export function SettingsPanel() {
               <span>{uiLang === "zh" ? "总计" : "Total"}<b>{formatTokens(usage.total.total_tokens)}</b></span>
               <span>{uiLang === "zh" ? "平均 / 任务" : "Average / task"}<b>{formatTokens(usage.total.average_total_tokens)}</b></span>
               <span>{uiLang === "zh" ? "任务数" : "Tasks"}<b>{formatTokens(usage.total.tasks)}</b></span>
+              <span>{uiLang === "zh" ? "缓存输入" : "Cached input"}<b>{formatTokens(usage.total.cached_input_tokens || 0)}</b></span>
+              <span>{uiLang === "zh" ? "缓存命中率" : "Cache hit rate"}<b>{Math.round((usage.total.cache_hit_rate || 0) * 100)}%</b></span>
             </div>
             {usage.by_task.length > 0 && (
               <div className="usage-by-task">
                 {usage.by_task.map((row) => (
                   <div key={row.task_type}>
                     <span>{row.task_type.replaceAll("_", " ")}</span>
-                    <b>{formatTokens(row.average_total_tokens)} <small>{uiLang === "zh" ? "平均" : "avg"}</small></b>
+                    <b>{formatTokens(row.average_total_tokens)} <small>{uiLang === "zh" ? "平均" : "avg"} · {Math.round((row.cache_hit_rate || 0) * 100)}% {uiLang === "zh" ? "缓存" : "cached"}</small></b>
                   </div>
                 ))}
               </div>
             )}
+            {[{ label: uiLang === "zh" ? "按提供方" : "By provider", rows: usage.by_provider || [], key: "provider" }, { label: uiLang === "zh" ? "按日期" : "By day", rows: usage.by_day || [], key: "day" }].map((group) => group.rows.length > 0 && <div className="usage-by-task" key={group.key}><strong>{group.label}</strong>{group.rows.map((row: any) => <div key={row[group.key]}><span>{row[group.key]}</span><b>{formatTokens(row.total_tokens)} · {Math.round((row.cache_hit_rate || 0) * 100)}% <small>{uiLang === "zh" ? "缓存" : "cached"}</small></b></div>)}</div>)}
             <p className="usage-note">
               {usage.total.estimated_tasks > 0
                 ? (uiLang === "zh"
@@ -306,12 +311,14 @@ export function SettingsPanel() {
       <fieldset>
         <legend>local_codex — ChatGPT subscription (no key)</legend>
         <label>model (blank = codex default)</label>
-        <input value={cfg.providers.local_codex?.model || ""}
+        <input list="codex-model-suggestions" value={cfg.providers.local_codex?.model || ""}
           onChange={(e) => setProv("local_codex", "model", e.target.value)} />
+        <ModelOptions id="codex-model-suggestions" provider="local_codex" />
+        <p className="usage-note">{uiLang === "zh" ? "模型是否可用取决于账号和接入端点。可选择建议、输入自定义ID或留空；使用上方连接测试核实。" : "Availability depends on your account and endpoint. Pick a suggestion, enter a custom id, or leave blank. Verify with the connection test above."}</p>
         <label>reasoning effort (model_reasoning_effort)</label>
         <select value={cfg.providers.local_codex?.effort || ""}
           onChange={(e) => setProv("local_codex", "effort", e.target.value)}>
-          {CODEX_EFFORT.map((v) => <option key={v} value={v}>{v || "(default)"}</option>)}
+          {[...new Set(["", ...(catalog.models.local_codex?.find((m) => m.id === cfg.providers.local_codex?.model)?.reasoning_efforts || CODEX_EFFORT), cfg.providers.local_codex?.effort || ""])].map((v) => <option key={v} value={v}>{v || "(default)"}</option>)}
         </select>
       </fieldset>
 
@@ -334,8 +341,9 @@ export function SettingsPanel() {
         <input value={cfg.providers.openai.base_url}
           onChange={(e) => setProv("openai", "base_url", e.target.value)} />
         <label>model</label>
-        <input value={cfg.providers.openai.model}
+        <input list="openai-model-suggestions" value={cfg.providers.openai.model}
           onChange={(e) => setProv("openai", "model", e.target.value)} />
+        <ModelOptions id="openai-model-suggestions" provider="openai" />
         <label>api key</label>
         <input type="password" placeholder={cfg.providers.openai.api_key === "set" ? "•••• saved" : "sk-…"}
           onChange={(e) => setProv("openai", "api_key", e.target.value)} />

@@ -10,6 +10,16 @@ import { useStore } from "../../store";
 export type ToolFamily = "paper" | "research" | "read" | "edit" | "exec" | "web" | "agent" | "external";
 
 const EXACT: Record<string, { icon: LucideIcon; family: ToolFamily; en: string; zh: string }> = {
+  browser_open: { icon: Globe, family: "web", en: "Open browser", zh: "打开浏览器" },
+  browser_snapshot: { icon: FileSearch, family: "web", en: "Inspect page", zh: "检查页面" },
+  browser_click: { icon: Globe, family: "web", en: "Click page", zh: "点击页面" },
+  browser_type: { icon: FilePen, family: "web", en: "Type into page", zh: "输入页面" },
+  browser_press: { icon: Globe, family: "web", en: "Press key", zh: "按键" },
+  browser_scroll: { icon: Globe, family: "web", en: "Scroll page", zh: "滚动页面" },
+  browser_read: { icon: BookOpen, family: "web", en: "Read page", zh: "阅读页面" },
+  browser_screenshot: { icon: FileSearch, family: "web", en: "Capture page", zh: "截取页面" },
+  browser_tabs: { icon: Globe, family: "web", en: "Browser tabs", zh: "浏览器标签" },
+  browser_import_paper: { icon: Library, family: "paper", en: "Import browser paper", zh: "导入当前论文" },
   library_search: { icon: Search, family: "paper", en: "Search library", zh: "检索论文库" },
   library_list: { icon: Library, family: "paper", en: "List library", zh: "列出论文库" },
   library_import: { icon: Library, family: "paper", en: "Import paper", zh: "导入论文" },
@@ -57,6 +67,7 @@ export function toolMeta(tool: string, zh: boolean): { icon: LucideIcon; family:
   if (tool.startsWith("delegate_")) return { icon: Bot, family: "external", label: pretty };
   if (tool.startsWith("remote_") || tool.includes("ssh")) return { icon: Server, family: "exec", label: pretty };
   if (tool.startsWith("paper_") || tool.startsWith("library_")) return { icon: BookOpen, family: "paper", label: pretty };
+  if (tool.startsWith("browser_")) return { icon: Globe, family: "web", label: pretty };
   if (tool.startsWith("fs_")) return { icon: FileText, family: "read", label: pretty };
   return { icon: Wrench, family: "external", label: pretty };
 }

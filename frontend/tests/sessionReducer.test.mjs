@@ -5,6 +5,21 @@ import { diffLines, diffStats, parseUnifiedDiff } from "../src/harness/diff.mjs"
 
 const run = (events, state = emptySessionState()) => events.reduce((s, [name, payload]) => applySessionEvent(s, name, payload), state);
 
+test("browser and cumulative usage survive a per-turn completion and replay", () => {
+  const usage = { input_tokens: 2000, cached_input_tokens: 1500, llm_calls: 3, exact: true };
+  const browser = { tabs: [{ id: "tab1", url: "https://example.org" }], controlling: "user" };
+  const note = { id: "usage-1", type: "system_note", kind: "turn_usage", turn_id: "m1", usage: { input_tokens: 500, llm_calls: 1 } };
+  const s = run([
+    ["session.updated", { id: "s1", usage: {} }],
+    ["browser.updated", browser], ["usage.updated", usage],
+    ["message.created", note], ["turn.completed", { message_id: "m1", usage: note.usage }],
+    ["message.created", note],
+  ]);
+  assert.deepEqual(s.browser, browser);
+  assert.deepEqual(s.session.usage, usage);
+  assert.equal(s.messages.filter((m) => m.kind === "turn_usage").length, 1);
+});
+
 test("replay then streaming assistant text", () => {
   const s = run([
     ["session.updated", { id: "a", title: "T", status: "running", mode: "agent", messages: [{ id: "u1", type: "user", text: "hi" }] }],

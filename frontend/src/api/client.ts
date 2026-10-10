@@ -285,6 +285,10 @@ export interface ProviderTestResult {
   error?: string;
 }
 export interface AiUsageAggregate {
+  cached_input_tokens?: number;
+  cache_write_tokens?: number;
+  reasoning_tokens?: number;
+  cache_hit_rate?: number;
   tasks: number;
   prompt_tokens: number;
   completion_tokens: number;
@@ -306,6 +310,8 @@ export interface AiUsageRecord {
   created_at: number;
 }
 export interface AiUsageSummary {
+  by_provider?: (AiUsageAggregate & { provider: string })[];
+  by_day?: (AiUsageAggregate & { day: string })[];
   total: AiUsageAggregate;
   by_task: (AiUsageAggregate & { task_type: string })[];
   recent: AiUsageRecord[];

@@ -231,6 +231,7 @@ export function HarnessSettings() {
         hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, cfg.hooks[e].filter((h) => h.command.trim()).map((h) => ({ ...h, matcher: h.matcher.trim() || "*", command: h.command.trim() }))])) as Settings["hooks"],
       };
       if (cfg.vcs) clean.vcs = cfg.vcs;
+      if (cfg.browser) clean.browser = cfg.browser;
       const next = await harnessApi.putSettings(clean);
       const displayed = { ...next, paths: cfg.paths };
       setSaved(displayed);
@@ -266,6 +267,15 @@ export function HarnessSettings() {
   return (
     <div className="gx-settings">
       <p className="gx-set-scope">{zh ? "这里编辑全局设置。项目 .glossx/settings.json 中的覆盖设置仍会优先应用。" : "Edit global settings here. Overrides in a project’s .glossx/settings.json still take precedence."}</p>
+      <section className="gx-set">
+        <h3><Globe size={15} /> {zh ? "浏览器" : "Browser"}</h3>
+        <p className="gx-set-hint">{zh ? "使用独立的 GlossX 浏览器配置。留空会自动寻找 Edge、Chrome 或 Chromium。" : "Uses a separate GlossX browser profile. Leave the path empty to detect Edge, Chrome or Chromium."}</p>
+        <input className="gx-input" aria-label={zh ? "浏览器可执行文件" : "Browser executable"} placeholder={zh ? "自动检测浏览器" : "Detect browser automatically"} value={cfg.browser?.path || ""} onChange={(e) => patch({ browser: { ...cfg.browser, path: e.target.value || null } })} />
+        <Switch checked={cfg.browser?.headed ?? false} onChange={(v) => patch({ browser: { ...cfg.browser, headed: v } })} label={zh ? "显示浏览器窗口" : "Show browser window"} />
+        <Switch checked={cfg.browser?.allow_private ?? false} onChange={(v) => patch({ browser: { ...cfg.browser, allow_private: v } })} label={zh ? "允许访问本机及私有网络" : "Allow local and private network pages"} />
+        <p className="gx-set-hint">{zh ? "默认阻止私有地址。修改后在下一次浏览器启动时生效。" : "Private addresses are blocked by default. Changes apply when the browser next starts."}</p>
+      </section>
+
       <section className="gx-set">
         <h4>{zh ? "默认模式" : "Default mode"}</h4>
         <p>{zh ? "新对话开始时使用的模式。" : "The mode a new chat starts in."}</p>

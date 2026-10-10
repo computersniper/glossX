@@ -366,6 +366,7 @@ class SessionManager:
             fresh["context"]["compacted_through"] = through
         ctx_mod.recount(fresh)
         rt = Runtime(fresh, self)
+        engine.add_note(rt, "cache_reset", "Prompt cache reset: conversation forked.", reason="fork")
         self._sessions[rt.id] = rt
         rt.persist()
         return rt.public(with_messages=True)

@@ -6,6 +6,7 @@ import {
 } from "./api/harness";
 import { applySessionEvent, emptySessionState } from "./harness/sessionReducer.mjs";
 import { useStore } from "./store";
+import { useBrowser } from "./browserStore";
 
 export type ModelChoice = { provider: string | null; model: string | null };
 type Conn = "open" | "reconnecting" | "closed";
@@ -151,7 +152,11 @@ export const useSessions = create<SessionsStore>((set, get) => {
       id,
       (name, payload) => {
         patchState(id, (s) => applySessionEvent(s, name, payload) as SessionState);
-        if (name === "session.updated" || name === "turn.completed") {
+        if (name === "browser.updated") useBrowser.getState().put(id, payload);
+        if (name === "tool.updated" && String(payload?.tool || "").startsWith("browser_") && !["denied", "error", "awaiting_approval"].includes(payload?.status)) {
+          if (useStore.getState().mode === "glossx" && !useStore.getState().openTabs.some((t) => t.kind === "browser" && t.id === id)) useStore.getState().openBrowserTab(id);
+        }
+          if (name === "session.updated" || name === "turn.completed" || name === "usage.updated") {
           syncSummary(id);
           const st = get();
           if (id === st.activeId) {

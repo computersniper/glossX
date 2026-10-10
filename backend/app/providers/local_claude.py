@@ -27,6 +27,9 @@ from .base import (
     ProviderSessionUnavailableError,
     render_transcript,
     runtime_option,
+    anthropic_usage,
+    normalize_usage,
+    report_stream_usage,
 )
 
 CLAUDE_SHORT = ("sonnet", "opus", "haiku", "fable")
@@ -246,13 +249,7 @@ class LocalClaudeProvider(Provider):
                     raise ClaudeSessionUnavailableError(detail)
                 raise RuntimeError(detail)
             usage = data.get("usage", {}) or {}
-            norm = {
-                "prompt_tokens": usage.get("input_tokens", 0)
-                + usage.get("cache_read_input_tokens", 0)
-                + usage.get("cache_creation_input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-            }
-            norm["total_tokens"] = norm["prompt_tokens"] + norm["completion_tokens"]
+            norm = normalize_usage(anthropic_usage(usage), system, messages, data.get("result", ""))
             return data.get("result", ""), norm, data.get("session_id") or session_id
         finally:
             if proc is not None and proc.returncode is None:
@@ -319,6 +316,8 @@ class LocalClaudeProvider(Provider):
                 except json.JSONDecodeError:
                     continue
                 partial, full = _extract_delta(evt)
+                if evt.get("type") == "result":
+                    report_stream_usage(anthropic_usage(evt.get("usage")))
                 if partial:
                     saw_partial = True
                     streamed_any = True
@@ -344,7 +343,8 @@ class LocalClaudeProvider(Provider):
 
         if not streamed_any:
             # Fallback: blocking completion, chunked out.
-            text, _ = await self.complete(system, messages, model)
+            text, usage = await self.complete(system, messages, model)
+            report_stream_usage(usage)
             step = 24
             for i in range(0, len(text), step):
                 yield text[i : i + step]

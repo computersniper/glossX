@@ -53,6 +53,23 @@ def new_id(prefix: str = "") -> str:
     return prefix + uuid.uuid4().hex[:16]
 
 
+def empty_usage() -> dict[str, Any]:
+    return {"input_tokens_est": 0, "output_tokens_est": 0, "llm_calls": 0,
+            "input_tokens": 0, "cached_input_tokens": 0, "cache_write_tokens": 0,
+            "output_tokens": 0, "reasoning_tokens": 0, "cache_hit_rate": 0.0,
+            "last_call": None, "exact": True}
+
+
+def add_usage(target: dict, call: dict) -> None:
+    for key in ("input_tokens", "cached_input_tokens", "cache_write_tokens", "output_tokens", "reasoning_tokens"):
+        target[key] = int(target.get(key) or 0) + int(call.get(key) or 0)
+    target["exact"] = bool(target.get("exact", True)) and bool(call.get("exact", False))
+    target["cache_hit_rate"] = target["cached_input_tokens"] / target["input_tokens"] if target["input_tokens"] else 0.0
+    target["last_call"] = {"input": call.get("input_tokens", 0), "cached": call.get("cached_input_tokens", 0),
+                           "output": call.get("output_tokens", 0), "exact": bool(call.get("exact")),
+                           "hit_rate": call.get("cached_input_tokens", 0) / call["input_tokens"] if call.get("input_tokens") else 0.0}
+
+
 def sessions_dir() -> Path:
     path = config.SESSIONS_DIR
     path.mkdir(parents=True, exist_ok=True)
@@ -89,7 +106,7 @@ def new_session(
         "messages": [],
         "todos": [],
         "status": "idle",
-        "usage": {"input_tokens_est": 0, "output_tokens_est": 0, "llm_calls": 0},
+        "usage": empty_usage(),
         "context": {"tokens_est": 0, "limit": context_limit, "compactions": 0},
         "scope_papers": [],
         "last_activity_at": ts,
@@ -135,6 +152,12 @@ def recover(data: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("todos", [])
     data.setdefault("scope_papers", [])
     data.setdefault("usage", {"input_tokens_est": 0, "output_tokens_est": 0, "llm_calls": 0})
+    usage = data["usage"]
+    if "input_tokens" not in usage:
+        usage.update(input_tokens=int(usage.get("input_tokens_est") or 0),
+                     output_tokens=int(usage.get("output_tokens_est") or 0), exact=not bool(usage.get("llm_calls")))
+    for key, value in empty_usage().items():
+        usage.setdefault(key, value)
     data.setdefault("context", {"tokens_est": 0, "limit": 120_000, "compactions": 0})
     data.setdefault("model", {"provider": None, "model": None})
     data.setdefault("mode", "agent")
@@ -249,7 +272,7 @@ def summary(session: dict[str, Any]) -> dict[str, Any]:
 
 def public_message(msg: dict[str, Any]) -> dict[str, Any]:
     """Message as sent to clients (internal prompt fields stripped)."""
-    hidden = {"raw", "context", "tokens_est_prompt"}
+    hidden = {"raw", "context", "tokens_est_prompt", "_prompt_item"}
     return {k: v for k, v in msg.items() if k not in hidden}
 
 

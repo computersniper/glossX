@@ -164,12 +164,12 @@ def system_prompt(
     else:
         parts.append(BASE_PROMPT)
     parts.append(f"Write in {config.output_language()} unless the user writes in another language.")
-    parts.append(MODE_RULES.get(mode, MODE_RULES["agent"]))
     parts.append(HOST_RULE)
     parts.append(protocol.PROTOCOL_INSTRUCTIONS.strip())
     parts.append(UNTRUSTED_RULE + " " + TOOL_RESULT_RULE)
 
-    visible = [spec for spec in table.values() if permissions.mode_allows(mode, spec.category)]
+    # Availability is enforced when executing, not by rewriting cached tools.
+    visible = sorted(table.values(), key=lambda spec: spec.name)
     skills = [s for s in visible if str(s.capability or "").startswith("skill.")]
     plain = [s for s in visible if s not in skills]
     if plain:
@@ -184,10 +184,12 @@ def system_prompt(
         parts.append("# Tools\n(no tools are available; answer directly)")
     if "task" in table and agent is None:
         agents = extensions.list_agents(workspace_root)
-        lines = [f"- {a['name']}: {a.get('description') or ''}".rstrip() for a in agents]
+        lines = [f"- {a['name']}: {a.get('description') or ''}".rstrip() for a in sorted(agents, key=lambda a: a['name'])]
         parts.append("# Subagent types (for the task tool)\n" + "\n".join(lines))
 
-    env = [f"Date: {time.strftime('%Y-%m-%d')}"]
+    for label, text in instructions(workspace_root):
+        parts.append(f"# {label}\n{text}")
+    env = []
     project_id = session.get("project_id")
     if project_id:
         try:
@@ -199,6 +201,15 @@ def system_prompt(
             env.append(f"Project: {project_id}")
     if workspace_root is not None:
         env.append(f"Workspace root: {workspace_root} (tool paths are relative to it)")
+    if env:
+        parts.append("# Project\n" + "\n".join(env))
+    return "\n\n".join(p for p in parts if p)
+
+
+def session_state(session: dict[str, Any]) -> str:
+    env = [f"Date: {time.strftime('%Y-%m-%d')}", MODE_RULES.get(session['mode'], MODE_RULES['agent'])]
+    if session.get("branch"):
+        env.append(f"Branch: {session['branch']}")
     scope = []
     for pid in (session.get("scope_papers") or [])[:30]:
         paper = store.get_paper(pid)
@@ -206,16 +217,12 @@ def system_prompt(
             scope.append(f"- {pid}: {clip(paper.get('title') or '', 160)} ({paper.get('year') or 'n.d.'})")
     if scope:
         env.append("Papers attached to this session (default scope of paper tools):\n" + "\n".join(scope))
-    parts.append("# Environment\n" + "\n".join(env))
-
     todos = session.get("todos") or []
     if todos:
         marks = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}
-        parts.append("# Current todo list\n" + "\n".join(
+        env.append("Current todo list:\n" + "\n".join(
             f"{marks.get(t.get('status'), '[ ]')} {t.get('content')}" for t in todos))
-    for label, text in instructions(workspace_root):
-        parts.append(f"# {label}\n{text}")
-    return "\n\n".join(p for p in parts if p)
+    return "[Session state]\n" + "\n".join(env) + "\n[/Session state]"
 
 
 # -- prompt messages ----------------------------------------------------------------------
@@ -266,11 +273,17 @@ def provider_messages(session: dict[str, Any]) -> list[dict[str, str]]:
     ordered = ([summary] if summary else []) + [
         m for m in live if not (m.get("type") == "system_note" and m.get("kind") == "compaction")]
     out: list[dict[str, str]] = []
+    latest_user = next((m for m in reversed(ordered) if message_prompt(m) and message_prompt(m)[0] == "user"), None)
     for msg in ordered:
-        item = message_prompt(msg)
+        item = msg.get("_prompt_item") or message_prompt(msg)
         if item is None:
             continue
         role, content = item
+        if "_prompt_item" not in msg:
+            if msg is latest_user:
+                content += "\n\n" + session_state(session)
+            # Terminal messages are frozen once, including bounded tool previews.
+            msg["_prompt_item"] = [role, content]
         if out and out[-1]["role"] == role:
             out[-1]["content"] += "\n\n" + content
         else:
@@ -460,6 +473,11 @@ async def compact(rt: Any, *, focus: str = "", auto: bool = False) -> dict[str, 
     stamp(note)
     session["messages"].append(note)
     ctx["compactions"] = int(ctx.get("compactions") or 0) + 1
+    session.pop("provider_thread", None)
+    reset = {"id": new_id("m_"), "type": "system_note", "kind": "cache_reset",
+             "text": "Prompt cache reset: conversation compacted.", "reason": "compaction", "created_at": now()}
+    session["messages"].append(reset)
+    rt.emit("message.created", public_message(reset))
     ctx["compacted_through"] = old[-1]["id"]
     recount(session)
     note["tokens_before"] = before

@@ -27,6 +27,8 @@ from .base import (
     ProviderSessionUnavailableError,
     render_transcript,
     runtime_option,
+    normalize_usage,
+    report_stream_usage,
 )
 
 
@@ -87,6 +89,18 @@ def _thread_id_from_jsonl(output: bytes) -> str | None:
             if isinstance(thread_id, str) and thread_id:
                 return thread_id
     return None
+
+
+def _usage_from_jsonl(output: bytes) -> dict:
+    for line in reversed(output.splitlines()):
+        try:
+            event = json.loads(line)
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+            usage = event["usage"]
+            return {**usage, "reasoning_tokens": usage.get("reasoning_output_tokens", 0), "exact": True}
+    return {}
 
 
 def _session_is_unavailable(detail: str) -> bool:
@@ -221,9 +235,8 @@ class LocalCodexProvider(Provider):
                 "-C", sandbox,
                 "-o", out_path,
             ]
-            if persist_session:
-                cmd.append("--json")
-            else:
+            cmd.append("--json")
+            if not persist_session:
                 cmd.append("--ephemeral")
         if model:
             cmd += ["-m", model]
@@ -268,7 +281,7 @@ class LocalCodexProvider(Provider):
             resolved_session_id = _thread_id_from_jsonl(out) or session_id
             return (
                 text,
-                {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                normalize_usage(_usage_from_jsonl(out), system, messages, text),
                 resolved_session_id,
             )
         finally:
@@ -288,7 +301,8 @@ class LocalCodexProvider(Provider):
         self, system: str, messages: list[Message], model: str | None = None
     ) -> AsyncIterator[str]:
         # codex exec isn't a token stream; fall back to chunking the completion.
-        text, _ = await self.complete(system, messages, model)
+        text, usage = await self.complete(system, messages, model)
+        report_stream_usage(usage)
         step = 24
         for i in range(0, len(text), step):
             yield text[i : i + step]

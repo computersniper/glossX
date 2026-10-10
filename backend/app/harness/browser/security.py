@@ -9,11 +9,48 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+import time
 from urllib.parse import urlsplit
 
 
 class BrowserSecurityError(ValueError):
     pass
+
+
+_dns_cache = {}
+
+
+async def resolve_addresses(host: str, port: int) -> list[tuple]:
+    """Resolve normally; recover real addresses from a system TUN fake-IP DNS.
+
+    Benchmark-range fake addresses are never admitted as public sockets. For a
+    hostname using that range, resolve its real public records through DoH and
+    still enforce public-address admission before connecting numerically.
+    """
+    results = await asyncio.wait_for(asyncio.get_running_loop().getaddrinfo(
+        host, port, type=socket.SOCK_STREAM), timeout=5)
+    fake = ipaddress.ip_network('198.18.0.0/15')
+    if any(ipaddress.ip_address(item[4][0]) in fake for item in results):
+        try:
+            ipaddress.ip_address(host)
+            return results  # A literal private/benchmark address remains blocked.
+        except ValueError:
+            pass
+        hit = _dns_cache.get(host)
+        if hit and time.monotonic() - hit[0] < 60:
+            addresses = hit[1]
+        else:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get('https://1.1.1.1/dns-query', params={'name': host, 'type': 'A'},
+                                            headers={'accept': 'application/dns-json'})
+                response.raise_for_status()
+                addresses = [a['data'] for a in response.json().get('Answer', []) if a.get('type') == 1]
+            if not addresses:
+                raise BrowserSecurityError('Could not resolve real browser destination behind fake-IP DNS')
+            _dns_cache[host] = (time.monotonic(), addresses)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, port)) for address in addresses]
+    return results
 
 
 def _public(address: str) -> bool:
@@ -54,9 +91,7 @@ async def validate_url(url: str, *, allow_private: bool = False) -> str:
         addresses = [str(literal)]
     else:
         try:
-            results = await asyncio.wait_for(asyncio.get_running_loop().getaddrinfo(
-                host, port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM,
-            ), timeout=5)
+            results = await resolve_addresses(host, port or (443 if parsed.scheme == "https" else 80))
         except (OSError, asyncio.TimeoutError) as error:
             raise BrowserSecurityError("Could not safely resolve browser URL") from error
         addresses = [item[4][0] for item in results]

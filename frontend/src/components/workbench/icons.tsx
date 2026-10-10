@@ -3,11 +3,12 @@
 import {
   Blocks, Bot, Command, Ellipsis, FileText, FolderKanban, FolderTree, History, Home, Library, MessageSquare,
   PanelBottom, PanelLeft, PanelRight, Plus, ScrollText, Search, Settings, Sparkles, Upload, Wrench, X, FileCode,
-  GitCompareArrows, GitCommitHorizontal, MessagesSquare, type LucideIcon,
+  GitCompareArrows, GitCommitHorizontal, MessagesSquare, Globe, type LucideIcon,
 } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
   library: Library,
+  browser: Globe,
   projects: FolderKanban,
   workspace: FolderTree,
   threads: MessagesSquare,

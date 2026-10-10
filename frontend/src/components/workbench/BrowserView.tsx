@@ -1,0 +1,132 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, Globe, Hand, Import, MessageSquarePlus, Plus, RefreshCw, Send, Sparkles, X } from "lucide-react";
+import { browserApi, type BrowserFrame, type BrowserInput, type BrowserStatus } from "../../api/browser";
+import { useBrowser, openBrowser } from "../../browserStore";
+import { useStore } from "../../store";
+import { useSessions } from "../../sessionStore";
+import { EmptyState, Spinner } from "../ui";
+
+export function BrowserActivity() {
+  const zh = useStore((s) => s.uiLang) === "zh";
+  const states = useBrowser((s) => s.states);
+  const sessions = useSessions((s) => s.list);
+  return <div className="wb-side-body gx-browser-activity">
+    <div className="gx-browser-intro"><Globe size={24} /><h3>{zh ? "一起浏览与研究" : "Browse and research together"}</h3><p>{zh ? "智能体和你共享会话里的浏览器。随时接管页面，阅读后把正文发回对话。" : "Share a browser with the agent in each thread. Take over at any time and send what you read back to chat."}</p>
+      <button type="button" className="gx-btn primary" onClick={() => void openBrowser()}><Globe size={14} />{zh ? "打开浏览器" : "Open browser"}</button>
+      <button type="button" className="gx-btn ghost" onClick={() => useStore.getState().openPalette("browserUrl")}>{zh ? "打开网址…" : "Open a URL…"}</button>
+    </div>
+    {Object.entries(states).filter(([, s]) => s.tabs?.length).map(([id, state]) => <button key={id} type="button" className="gx-browser-session" onClick={() => void openBrowser(undefined, id)}><Globe size={14} /><span><strong>{sessions.find((s) => s.id === id)?.title || (zh ? "浏览会话" : "Browser thread")}</strong><small>{state.title || state.url || `${state.tabs.length} tabs`}</small></span></button>)}
+  </div>;
+}
+
+export function BrowserView({ sessionId, visible }: { sessionId: string; visible: boolean }) {
+  const zh = useStore((s) => s.uiLang) === "zh";
+  const state = useBrowser((s) => s.states[sessionId]);
+  const [status, setStatus] = useState<BrowserStatus | null>(null);
+  const [frame, setFrame] = useState<BrowserFrame | null>(null);
+  const [address, setAddress] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [text, setText] = useState("");
+  const [actions, setActions] = useState<{ time: number; text: string }[]>([]);
+  const image = useRef<HTMLImageElement>(null);
+  const scroll = useRef<{ x: number; y: number; timer: ReturnType<typeof setTimeout> | null }>({ x: 0, y: 0, timer: null });
+  const current = state?.tabs?.find((t) => t.id === state.active || t.active) || state?.tabs?.[0];
+  const url = state?.url || current?.url || "";
+  const controlling = state?.controlling === "user";
+  const put = useBrowser.getState().put;
+  const note = (value: string) => setActions((a) => [{ time: Date.now(), text: value }, ...a].slice(0, 12));
+
+  const load = useCallback(async () => {
+    try {
+      const [s, b] = await Promise.all([browserApi.status(), browserApi.state(sessionId)]);
+      setStatus(s); put(sessionId, b); setError("");
+    } catch (e: any) { setError(String(e?.message || e)); }
+  }, [sessionId]);
+  useEffect(() => { if (visible) void load(); }, [visible, load]);
+  useEffect(() => { setAddress(url); }, [url]);
+  useEffect(() => { if (!visible || !status?.available || !state?.tabs?.length) return;
+    setConnected(false);
+    const stop = browserApi.frames(sessionId, (f) => { setFrame(f); setConnected(true); }, (s) => put(sessionId, s), (message) => { setConnected(false); if (message) setError(message); });
+    return stop;
+  }, [visible, sessionId, status?.available, current?.id]);
+  useEffect(() => () => { if (scroll.current.timer) clearTimeout(scroll.current.timer); }, []);
+  // Leaving this tab always gives control back, including when the editor tab closes.
+  useEffect(() => { if (!visible && controlling) void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [visible, controlling, sessionId]);
+  useEffect(() => () => { if (useBrowser.getState().states[sessionId]?.controlling === "user") void browserApi.input(sessionId, { type: "takeover", controlling: "agent" }).catch(() => {}); }, [sessionId]);
+
+  const act = async (body: BrowserInput, label?: string) => {
+    if (busy && !["click", "scroll", "key", "text"].includes(body.type)) return;
+    setBusy(true); setError("");
+    try {
+      const result = await browserApi.input(sessionId, body);
+      if (result?.tabs) put(sessionId, result);
+      else if (result?.state?.tabs) put(sessionId, result.state);
+      if (label) note(label);
+      if (body.type === "import_paper") {
+        await useStore.getState().loadPapers();
+        useStore.getState().notify(zh ? "论文导入已开始" : "Paper import started");
+      }
+      if (!["click", "scroll", "key", "text"].includes(body.type)) await load();
+    } catch (e: any) { setError(String(e?.message || e)); }
+    finally { setBusy(false); }
+  };
+  const navigate = () => {
+    const input = address.trim();
+    if (!input) return;
+    const target = /^https?:\/\//i.test(input) || input === "about:blank" ? input : `https://${input}`;
+    setFrame(null);
+    void act({ type: "navigate", url: target }, `${zh ? "打开" : "Navigate"} ${target}`);
+  };
+  const share = async () => {
+    setBusy(true); setError("");
+    try {
+      const read = await browserApi.read(sessionId);
+      const body = read.markdown || read.text || "";
+      if (!body) throw new Error(zh ? "页面没有可读取的正文" : "This page has no readable content");
+      useSessions.getState().openThread(sessionId);
+      useSessions.getState().compose({ attachments: [{ kind: "selection", ref: `page-${Date.now()}`, label: read.title || read.url || url, text: `Source: ${read.url || url}\n\n${body}` }] });
+      note(zh ? "已附加页面正文到对话" : "Page text attached to chat");
+    } catch (e: any) { setError(String(e?.message || e)); }
+    finally { setBusy(false); }
+  };
+  const key = (e: React.KeyboardEvent) => {
+    if (!controlling || e.nativeEvent.isComposing) return;
+    if ((e.ctrlKey || e.metaKey) && ["k", "l", "w"].includes(e.key.toLowerCase())) return;
+    e.preventDefault(); e.stopPropagation();
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) void act({ type: "text", text: e.key });
+    else void act({ type: "key", key: [e.ctrlKey ? "Control" : "", e.metaKey ? "Meta" : "", e.altKey ? "Alt" : "", e.shiftKey ? "Shift" : "", e.key].filter(Boolean).join("+") });
+  };
+
+  return <div className={`wb-doc gx-browser${visible ? "" : " hidden"}`}>
+    <div className="gx-browser-tabs" aria-label={zh ? "浏览器标签" : "Browser tabs"}>
+      {(state?.tabs || []).map((t) => <div key={t.id} className={`gx-browser-tab${current?.id === t.id ? " active" : ""}`}><button type="button" onClick={() => { setFrame(null); void act({ type: "switch_tab", id: t.id }); }} title={t.url}><Globe size={11} /><span>{t.title || t.url || (zh ? "新标签" : "New tab")}</span></button><button type="button" title={zh ? "关闭标签" : "Close tab"} onClick={() => void act({ type: "close_tab", id: t.id })}><X size={11} /></button></div>)}
+      <button type="button" className="gx-icon-btn" title={zh ? "新标签" : "New tab"} disabled={busy || status?.available === false} onClick={() => void act({ type: "new_tab", url: "about:blank" })}><Plus size={14} /></button>
+    </div>
+    <form className="gx-browser-address" onSubmit={(e) => { e.preventDefault(); navigate(); }}>
+      <button type="button" className="gx-icon-btn" title={zh ? "后退" : "Back"} disabled={!current || busy} onClick={() => void act({ type: "back" })}><ArrowLeft size={14} /></button>
+      <button type="button" className="gx-icon-btn" title={zh ? "前进" : "Forward"} disabled={!current || busy} onClick={() => void act({ type: "forward" })}><ArrowRight size={14} /></button>
+      <button type="button" className="gx-icon-btn" title={zh ? "刷新" : "Reload"} disabled={!current || busy} onClick={() => void act({ type: "reload" })}>{busy || state?.loading ? <Spinner size={14} /> : <RefreshCw size={14} />}</button>
+      <label><Globe size={13} /><input value={address} onChange={(e) => setAddress(e.target.value)} aria-label={zh ? "网址" : "Address"} placeholder="https://arxiv.org/abs/1706.03762" spellCheck={false} /><button type="submit" className="gx-icon-btn" title={zh ? "打开网址" : "Go"} disabled={!address.trim() || busy}><Send size={12} /></button></label>
+    </form>
+    <div className="gx-browser-controls">
+      <button type="button" className={`gx-browser-takeover${controlling ? " on" : ""}`} aria-pressed={controlling} disabled={!current || busy} onClick={() => void act({ type: "takeover", controlling: controlling ? "agent" : "user" })}>{controlling ? <Hand size={13} /> : <Sparkles size={13} />}{controlling ? (zh ? "你正在控制 · 交回智能体" : "You are controlling · give back") : (zh ? "智能体控制 · 接管" : "Agent controls · take over")}</button>
+      <span className="spacer" />
+      <button type="button" className="gx-btn ghost sm" disabled={!current || busy} onClick={() => void act({ type: "import_paper" }, zh ? "导入论文" : "Import paper")}><Import size={13} />{zh ? "导入这篇论文" : "Import this paper"}</button>
+      <button type="button" className="gx-btn ghost sm" disabled={!current || busy} onClick={() => void share()}><MessageSquarePlus size={13} />{zh ? "发到对话" : "Send page to chat"}</button>
+    </div>
+    {error && <div className="gx-browser-error" role="alert"><span>{error}</span><button type="button" className="gx-link" onClick={() => void load()}>{zh ? "重试" : "Retry"}</button></div>}
+    <div className="gx-browser-page">
+      {status?.available === false ? <EmptyState icon={<Globe size={24} />} title={zh ? "没有找到浏览器" : "No browser found"} hint={zh ? "安装 Edge、Chrome 或 Chromium，或在智能体设置中指定浏览器路径。" : "Install Edge, Chrome or Chromium, or set its executable path in agent settings."} action={<button type="button" className="gx-btn" onClick={() => useStore.getState().setLayout({ activity: "settings", sideOpen: true })}>{zh ? "打开设置" : "Open settings"}</button>} />
+      : !current ? <EmptyState icon={<Globe size={30} />} title={zh ? "从一个页面开始" : "Start with a page"} hint={zh ? "输入网址，或让智能体打开一篇论文。这个浏览器使用 GlossX 独立配置，不读取你的个人浏览器资料。" : "Enter a URL or ask the agent to open a paper. This browser uses a separate GlossX profile."} action={<button type="button" className="gx-btn" onClick={() => void act({ type: "new_tab", url: "about:blank" })}><Plus size={13} />{zh ? "新标签" : "New tab"}</button>} />
+      : frame ? <img ref={image} className={`gx-browser-frame${controlling ? " controlling" : ""}`} src={frame.data.startsWith("data:") ? frame.data : `data:image/jpeg;base64,${frame.data}`} alt={state?.title || current.title || (zh ? "实时浏览页面" : "Live browser page")} tabIndex={controlling ? 0 : -1} draggable={false}
+        onClick={(e) => { if (!controlling) return; e.currentTarget.focus(); const b = e.currentTarget.getBoundingClientRect(); void act({ type: "click", x: Math.round((e.clientX - b.x) * frame.width / b.width), y: Math.round((e.clientY - b.y) * frame.height / b.height) }); }}
+        onWheel={(e) => { if (!controlling) return; e.stopPropagation(); scroll.current.x += e.deltaX; scroll.current.y += e.deltaY; if (!scroll.current.timer) scroll.current.timer = setTimeout(() => { const { x, y } = scroll.current; scroll.current = { x: 0, y: 0, timer: null }; void act({ type: "scroll", delta_x: x, delta_y: y }); }, 80); }}
+        onKeyDown={key} onPaste={(e) => { if (controlling) { e.preventDefault(); void act({ type: "text", text: e.clipboardData.getData("text") }); } }} />
+      : <div className="gx-browser-wait"><Spinner size={22} /><span>{zh ? "正在连接页面画面…" : "Connecting to the live page…"}</span></div>}
+    </div>
+    {controlling && <form className="gx-browser-type" onSubmit={(e) => { e.preventDefault(); if (text) { void act({ type: "text", text }); setText(""); } }}><Hand size={13} /><input value={text} onChange={(e) => setText(e.target.value)} placeholder={zh ? "向页面当前焦点输入文字（支持中文）…" : "Type into the page’s focused field…"} /><button type="submit" className="gx-btn sm" disabled={!text}>{zh ? "输入" : "Type"}</button><button type="button" className="gx-btn ghost sm" onClick={() => void act({ type: "key", key: "Enter" })}>Enter</button></form>}
+    <footer className="gx-browser-foot"><span className={`gx-dot${connected ? " st-idle" : ""}`} /><span>{connected ? (zh ? "画面已连接" : "Live view connected") : (zh ? "等待画面" : "Waiting for live view")}</span><span className="spacer" /><details><summary>{zh ? "操作记录" : "Actions"} · {actions.length}</summary><ol>{actions.length ? actions.map((a) => <li key={a.time + a.text}><time>{new Date(a.time).toLocaleTimeString()}</time>{a.text}</li>) : <li>{zh ? "导航和导入操作会显示在这里。" : "Navigation and imports appear here."}</li>}</ol></details></footer>
+  </div>;
+}

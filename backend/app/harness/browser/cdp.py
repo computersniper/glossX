@@ -60,14 +60,14 @@ class CDPClient:
                 future.cancel()
 
     @asynccontextmanager
-    async def events(self, method: str, *, session_id: str | None = None, maxsize: int = 32):
+    async def events(self, method: str, *, session_id: str | None = None, maxsize: int = 32, lossless: bool = False):
         """Subscribe before starting the producer. Slow viewers retain latest events.
 
         Network interception consumers must size/drain their queues appropriately;
         this lossy queue is intended for view/telemetry, not security decisions.
         """
         key = (method, session_id)
-        queue: asyncio.Queue = asyncio.Queue(maxsize=max(1, maxsize))
+        queue: asyncio.Queue = asyncio.Queue(maxsize=0 if lossless else max(1, maxsize))
         self._events[key].add(queue)
         try:
             yield queue

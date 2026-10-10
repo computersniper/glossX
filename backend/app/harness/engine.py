@@ -22,6 +22,8 @@ import json
 import logging
 import os
 import re
+import time
+import hashlib
 from typing import Any
 
 from ..agent import connections as conn_mod
@@ -40,6 +42,8 @@ from .session import (
     now,
     public_message,
     store_result,
+    empty_usage,
+    add_usage,
 )
 from .tools import (
     HarnessContext,
@@ -65,16 +69,25 @@ RESERVED_CALL_KEYS = {"id", "type", "tool", "args", "status", "raw", "created_at
 class UsageMeter:
     """``providers.call_meter`` hook: counts model calls made by nested tools."""
 
-    def __init__(self, session: dict[str, Any]) -> None:
+    def __init__(self, session: dict[str, Any], rt: Runtime | None = None) -> None:
         self.session = session
+        self.rt = rt
+        self.turn = empty_usage()
         self.main = False  # the loop's own stream call is accounted separately
 
     def before_llm_call(self) -> None:
         self.session["usage"]["llm_calls"] += 1
+        self.turn["llm_calls"] += 1
 
     def after_llm_call(self, tokens_est: int) -> None:
         if not self.main:
             self.session["usage"]["input_tokens_est"] += max(0, int(tokens_est or 0))
+
+    def after_usage(self, usage: dict) -> None:
+        add_usage(self.session["usage"], usage)
+        add_usage(self.turn, usage)
+        if self.rt:
+            self.rt.emit("usage.updated", dict(self.session["usage"]))
 
 
 def err(error: BaseException) -> str:
@@ -604,12 +617,13 @@ async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
 
     meter.main = True
     try:
-        async for chunk in providers.stream(system, messages, provider=model.get("provider") or None,
-                                            model=model.get("model") or None):
-            if not chunk:
-                continue
-            raw += chunk
-            push(visible.feed(chunk))
+        with providers.harness_session(session, lambda reason: add_note(rt, "cache_reset", f"Prompt cache reset: {reason}.", reason=reason)):
+            async for chunk in providers.stream(system, messages, provider=model.get("provider") or None,
+                                                model=model.get("model") or None):
+                if not chunk:
+                    continue
+                raw += chunk
+                push(visible.feed(chunk))
         push(visible.flush())
     except BaseException as error:
         msg["streaming"] = False
@@ -647,7 +661,8 @@ async def run_turn(rt: Runtime, *, agent: dict[str, Any] | None = None,
     ``{stop_reason, rounds, message_id, cancelled}``; cleanup is done here but
     the caller decides whether to re-raise a cancellation."""
     session = rt.session
-    meter = UsageMeter(session)
+    meter = UsageMeter(session, rt)
+    started = time.monotonic()
     info: dict[str, Any] = {"stop_reason": "completed", "rounds": 0, "message_id": None,
                             "cancelled": False}
     last_assistant: dict[str, Any] | None = None
@@ -673,6 +688,12 @@ async def run_turn(rt: Runtime, *, agent: dict[str, Any] | None = None,
                     subagent=rt.parent is not None, include_unavailable=True)
                 rt.turn_tools = table
                 system = ctx_mod.system_prompt(session, table, workspace_root=root, agent=agent)
+                signature = hashlib.sha256(system.encode()).hexdigest()
+                previous_signature = session.get("prompt_signature")
+                if previous_signature and previous_signature != signature:
+                    session.pop("provider_thread", None)
+                    add_note(rt, "cache_reset", "Prompt cache reset: instructions or available tools changed.", reason="prompt_changed")
+                session["prompt_signature"] = signature
                 ctx_mod.recount(session, ctx_mod.est_tokens(system))
                 if ctx_mod.needs_compaction(session) and compacted_at != info["rounds"]:
                     compacted_at = info["rounds"]
@@ -722,6 +743,8 @@ async def run_turn(rt: Runtime, *, agent: dict[str, Any] | None = None,
         rt.emit("error", {"message": err(error), "session_id": rt.id,
                           "message_id": (last_assistant or {}).get("id")})
     ctx_mod.recount(session)
+    meter.turn["duration_seconds"] = round(time.monotonic() - started, 3)
+    info["usage"] = meter.turn
     return info
 
 
@@ -752,12 +775,14 @@ def finish_turn(rt: Runtime, info: dict[str, Any]) -> None:
     if rt.parent is None:
         rt.task = None
     rt.refresh_status()
+    if info.get("usage"):
+        add_note(rt, "turn_usage", "", usage=info["usage"], turn_id=info.get("message_id"))
     rt.emit("context.updated", dict(rt.session["context"]))
     rt.emit("turn.completed", {
         "session_id": rt.id, "stop_reason": info.get("stop_reason"),
         "rounds": info.get("rounds", 0), "message_id": info.get("message_id"),
         "error": info.get("error"), "status": rt.session["status"], "commit": info.get("commit"),
-        "usage": dict(rt.session["usage"]), "context": dict(rt.session["context"]),
+        "usage": info.get("usage", empty_usage()), "context": dict(rt.session["context"]),
     })
     rt.persist()
 
@@ -806,8 +831,11 @@ async def drive_compaction(rt: Runtime, focus: str = "") -> dict[str, Any]:
     """Task body of a manual compaction (``/compact`` or the compact endpoint)."""
     result: dict[str, Any] = {"compacted": False, "reason": "failed"}
     info = {"stop_reason": "compacted", "rounds": 0, "message_id": None}
+    meter = UsageMeter(rt.session, rt)
+    started = time.monotonic()
     try:
-        result = await ctx_mod.compact(rt, focus=focus, auto=False)
+        with providers.call_meter(meter):
+            result = await ctx_mod.compact(rt, focus=focus, auto=False)
         info["message_id"] = result.get("note_id")
         if not result.get("compacted"):
             info["stop_reason"] = "noop"
@@ -819,6 +847,9 @@ async def drive_compaction(rt: Runtime, focus: str = "") -> dict[str, Any]:
         info.update(stop_reason="error", error=err(error))
         result = {"compacted": False, "reason": err(error)}
     finally:
+        if meter.turn["llm_calls"]:
+            meter.turn["duration_seconds"] = round(time.monotonic() - started, 3)
+            info["usage"] = meter.turn
         finish_turn(rt, info)
     return result
 
@@ -870,8 +901,14 @@ async def run_subagent(ctx: HarnessContext, *, description: str, prompt: str,
         if child in parent.children:
             parent.children.remove(child)
         finish_turn(child, info)
+        add_usage(psession["usage"], child_session["usage"])
         for key in ("input_tokens_est", "output_tokens_est", "llm_calls"):
             psession["usage"][key] += int(child_session["usage"].get(key) or 0)
+        meter = providers.current_call_meter()
+        if isinstance(meter, UsageMeter):
+            add_usage(meter.turn, child_session["usage"])
+            meter.turn["llm_calls"] += int(child_session["usage"].get("llm_calls") or 0)
+        parent.emit("usage.updated", dict(psession["usage"]))
         for pid in child_session.get("scope_papers") or []:
             if pid not in psession["scope_papers"]:
                 psession["scope_papers"].append(pid)

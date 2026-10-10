@@ -8,6 +8,8 @@ import { useStore } from "../../store";
 import { useActiveSession, useSessions } from "../../sessionStore";
 import { MenuButton, MenuItem, MenuLabel, MenuSep, Popover, Spinner } from "../ui";
 import { formatTokens } from "./toolMeta";
+import { CacheIndicator } from "./CacheUsage";
+import { useModelCatalog } from "../../modelCatalog";
 
 export const MODES: { id: SessionMode; icon: LucideIcon; en: string; zh: string; hintEn: string; hintZh: string }[] = [
   { id: "ask", icon: Eye, en: "Ask", zh: "问答", hintEn: "Read-only: answers from papers and files", hintZh: "只读：基于论文与文件回答" },
@@ -91,6 +93,7 @@ function ContextMeter({ zh }: { zh: boolean }) {
 }
 
 function ModelPicker({ zh }: { zh: boolean }) {
+  const catalog = useModelCatalog();
   const providers = useStore((s) => s.providers);
   const providerModels = useStore((s) => s.providerModels);
   const defaultProvider = useStore((s) => s.provider);
@@ -132,6 +135,9 @@ function ModelPicker({ zh }: { zh: boolean }) {
               }}
             />
           ))}
+          <MenuSep />
+          {(catalog.models[model.provider || defaultProvider] || []).map((m) => <MenuItem key={m.id} label={m.label || m.id} detail={m.id} selected={model.model === m.id} onSelect={() => { close(); void setModel({ provider: model.provider || defaultProvider, model: m.id }); }} />)}
+          <MenuItem label={zh ? "自定义模型…" : "Custom model…"} onSelect={() => { close(); const value = prompt(zh ? "模型ID（留空使用默认）" : "Model id (blank uses the default)", model.model || ""); if (value !== null) void setModel({ provider: model.provider || defaultProvider, model: value.trim() || null }); }} />
         </>
       )}
     </MenuButton>
@@ -514,6 +520,7 @@ export function Composer({ disabled }: { disabled?: boolean }) {
         </button>
         <span className="spacer" />
         <ContextMeter zh={zh} />
+        <CacheIndicator zh={zh} />
         {busy ? (
           <button type="button" className="gx-send stop" title={T.stop} aria-label={T.stop} onClick={() => void interrupt()}>
             <Square size={11} fill="currentColor" />

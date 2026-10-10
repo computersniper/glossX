@@ -6,10 +6,11 @@ import { decodeFrame, EVENT_NAMES } from "../harness/sessionReducer.mjs";
 export type SessionMode = "ask" | "agent" | "auto" | "plan";
 export type SessionStatus = "idle" | "running" | "awaiting_approval" | "awaiting_input";
 export type ToolStatus = "pending" | "awaiting_approval" | "running" | "done" | "error" | "denied";
-export type AttachmentKind = "paper" | "span" | "file" | "run";
+export type AttachmentKind = "paper" | "span" | "file" | "run" | "selection";
 export type Attachment = { kind: AttachmentKind; ref: string; label?: string; text?: string; ok?: boolean; error?: string };
 
 export type SessionContext = { tokens_est: number; limit: number; compactions: number; percent?: number; system_tokens_est?: number; compacted_through?: string | null };
+export type SessionUsage = { input_tokens?: number; input_tokens_est?: number; cached_input_tokens?: number; cache_write_tokens?: number; output_tokens?: number; output_tokens_est?: number; reasoning_tokens?: number; llm_calls: number; cache_hit_rate?: number; exact?: boolean; duration_seconds?: number; last_call?: { input?: number; cached?: number; output?: number; hit_rate?: number; exact?: boolean } };
 export type SessionSummary = {
   id: string;
   title: string;
@@ -22,7 +23,7 @@ export type SessionSummary = {
   status: SessionStatus;
   message_count?: number;
   last_message?: string;
-  usage?: { input_tokens_est: number; output_tokens_est: number; llm_calls: number };
+  usage?: SessionUsage;
   context?: SessionContext;
   workspace?: { key: string; path: string; vcs?: { available?: boolean; branch?: string | null } | null } | null;
   /** Threads + inbox (docs/glossx-workspaces.md §1). All optional: older backends omit them. */
@@ -80,7 +81,7 @@ export type ToolCallMessage = {
   compacted?: boolean;
   [extra: string]: any;
 };
-export type SystemNote = { id: string; type: "system_note"; kind?: string; text: string; created_at?: number; compacted?: boolean };
+export type SystemNote = { id: string; type: "system_note"; kind?: string; text: string; created_at?: number; compacted?: boolean; usage?: SessionUsage; turn_id?: string };
 export type SessionMessage = UserMessage | AssistantMessage | ToolCallMessage | SystemNote;
 
 export type Todo = { id: string; text: string; active?: string; status: "pending" | "in_progress" | "completed" | (string & {}) };
@@ -131,6 +132,7 @@ export type HarnessSettings = {
   context_limit: number;
   default_mode: SessionMode;
   vcs?: { auto_commit?: boolean; [extra: string]: any };
+  browser?: { path?: string | null; headed?: boolean; allow_private?: boolean; idle_timeout?: number; navigation_budget?: number };
   /** Read-only: where the harness keeps its files (`~/.glossx`, `<workspace>/.glossx`). */
   paths?: { home?: string; global_instructions?: string; workspace_config?: string; [extra: string]: any };
   [extra: string]: any;

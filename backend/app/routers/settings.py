@@ -6,8 +6,15 @@ from pydantic import BaseModel
 
 from .. import config
 from ..providers import registry
+from ..model_catalog import suggestions
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+@router.get("/models")
+async def get_model_suggestions():
+    """Current suggestions; choosing a model does not grant account access."""
+    return suggestions()
 
 
 class SettingsPatch(BaseModel):

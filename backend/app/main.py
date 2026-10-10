@@ -27,6 +27,7 @@ from .providers import registry
 from .tasks import AITaskManager
 from .routers import (
     agent,
+    browser,
     ai,
     annotations,
     citations,
@@ -63,6 +64,7 @@ def _close_streams_on_exit_signal(app: FastAPI) -> None:
             def handler(sig, frame, _previous=previous):
                 try:
                     loop.call_soon_threadsafe(app.state.sessions.close_streams)
+                    loop.call_soon_threadsafe(lambda: asyncio.create_task(app.state.browser.close()))
                 except Exception:  # loop already closed
                     pass
                 _previous(sig, frame)
@@ -87,12 +89,16 @@ async def lifespan(app: FastAPI):
     app.state.sessions = SessionManager(
         agent_runs=app.state.agent_runs, import_jobs=app.state.import_jobs
     )
+    from .harness.browser.engine import BrowserManager
+    app.state.browser = BrowserManager(app.state.sessions)
+    app.state.sessions.browser = app.state.browser
     _close_streams_on_exit_signal(app)
     try:
         yield
     finally:
         # sessions first: their turns may be waiting on workflow runs
         await app.state.sessions.shutdown()
+        await app.state.browser.close()
         await app.state.agent_runs.shutdown()
         await mcp_clients.close_all()
         await app.state.ai_tasks.shutdown()
@@ -142,6 +148,7 @@ app.include_router(mcp.router)
 app.include_router(sessions.router)
 app.include_router(harness.router)
 app.include_router(harness.workspace_router)
+app.include_router(browser.router)
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import type { PluginConfigurationProperty, PluginManifest } from "../api/client";
 import { useStore } from "../store";
+import { ModelOptions } from "../modelCatalog";
 
 interface FeatureDescriptor {
   id: string;
@@ -197,7 +198,8 @@ export function FeatureSettingsEditor({ cfg, providers, saving, setCfg, onSave }
           </div>
           <div className="feature-setting-row">
             <label>{text.model}</label>
-            <input value={settings.model || ""} placeholder={text.modelHint} onChange={(event) => patch({ model: event.target.value })} />
+            <input list="feature-model-suggestions" value={settings.model || ""} placeholder={text.modelHint} onChange={(event) => patch({ model: event.target.value })} />
+            <ModelOptions id="feature-model-suggestions" provider={settings.provider || cfg.provider || "local_codex"} />
           </div>
           <div className="feature-setting-row">
             <label>{text.effort}</label>

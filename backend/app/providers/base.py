@@ -20,6 +20,52 @@ Message = dict  # {"role": "user"|"assistant"|"system", "content": str}
 _RUNTIME_OPTIONS: ContextVar[dict[str, Any]] = ContextVar(
     "gloss_provider_runtime_options", default={}
 )
+_STREAM_USAGE: ContextVar[dict | None] = ContextVar("gloss_stream_usage", default=None)
+
+
+@contextmanager
+def capture_stream_usage():
+    """Per-call, task-local usage sink; never share mutable provider state."""
+    usage: dict = {}
+    token = _STREAM_USAGE.set(usage)
+    try:
+        yield usage
+    finally:
+        _STREAM_USAGE.reset(token)
+
+
+def report_stream_usage(usage: dict) -> None:
+    sink = _STREAM_USAGE.get()
+    if sink is not None:
+        sink.update(usage)
+
+
+def normalize_usage(raw: dict | None, system: str = "", messages: list[Message] | None = None,
+                    text: str = "") -> dict:
+    """Total input includes cache reads/writes; old token aliases stay supported."""
+    raw = raw or {}
+    exact = bool(raw.get("exact", any(k in raw for k in ("input_tokens", "prompt_tokens"))
+                     and any(int(raw.get(k) or 0) for k in ("input_tokens", "prompt_tokens", "output_tokens", "completion_tokens"))))
+    inp = int(raw.get("input_tokens", raw.get("prompt_tokens", 0)) or 0)
+    out = int(raw.get("output_tokens", raw.get("completion_tokens", 0)) or 0)
+    if not exact:
+        inp = estimate_text_tokens(system + "\n" + message_text(messages or []))
+        out = estimate_text_tokens(text)
+    cached = min(max(0, int(raw.get("cached_input_tokens") or 0)), max(0, inp)) if exact else 0
+    return {"input_tokens": max(0, inp), "cached_input_tokens": cached,
+            "cache_write_tokens": max(0, int(raw.get("cache_write_tokens") or 0)),
+            "output_tokens": max(0, out), "reasoning_tokens": max(0, int(raw.get("reasoning_tokens") or 0)),
+            "exact": exact, "prompt_tokens": max(0, inp), "completion_tokens": max(0, out),
+            "total_tokens": max(0, inp) + max(0, out)}
+
+
+def anthropic_usage(raw: dict | None) -> dict:
+    raw = raw or {}
+    return {"input_tokens": int(raw.get("input_tokens") or 0) + int(raw.get("cache_read_input_tokens") or 0)
+            + int(raw.get("cache_creation_input_tokens") or 0),
+            "cached_input_tokens": int(raw.get("cache_read_input_tokens") or 0),
+            "cache_write_tokens": int(raw.get("cache_creation_input_tokens") or 0),
+            "output_tokens": int(raw.get("output_tokens") or 0), "exact": "input_tokens" in raw}
 
 
 class ProviderSessionUnavailableError(RuntimeError):
@@ -44,8 +90,7 @@ def runtime_option(name: str, default: Any = None) -> Any:
 def estimate_text_tokens(text: str) -> int:
     """Return a clearly-labelled best-effort token estimate.
 
-    Local Codex CLI executions do not currently expose usage in their machine
-    readable output.  We use the same broadly useful tokenizer as the feature
+    Transports occasionally omit usage. We use the same useful tokenizer as the feature
     prompt budgeter when it is available, with a conservative character
     fallback for minimal installations.  Callers must retain whether a value
     came from this function rather than presenting it as provider billing data.
@@ -132,7 +177,8 @@ class Provider:
         self, system: str, messages: list[Message], model: str | None = None
     ) -> AsyncIterator[str]:
         """Yield text deltas. Default: chunk the non-stream completion."""
-        text, _ = await self.complete(system, messages, model)
+        text, usage = await self.complete(system, messages, model)
+        report_stream_usage(usage)
         # emit in modest chunks so the UI feels live
         step = 24
         for i in range(0, len(text), step):

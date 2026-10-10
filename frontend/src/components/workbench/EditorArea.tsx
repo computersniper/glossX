@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowUp, Command, FolderTree, MessageSquare, Upload, type LucideIcon } from "lucide-react";
+import { ArrowUp, Command, FolderTree, MessageSquare, Upload, Globe, type LucideIcon } from "lucide-react";
 import { splitWorkspaceId, tabKey, useStore, type EditorTab } from "../../store";
 import { useSessions } from "../../sessionStore";
 import { Outline } from "../Outline";
@@ -12,6 +12,8 @@ import { CheckpointView, FileEditor, isDirty, useFiles } from "./FileEditor";
 import { Icon } from "./icons";
 import { CommitView, VcsDiffView } from "./VcsViews";
 import { SHORTCUTS } from "./shortcuts";
+import { BrowserView } from "./BrowserView";
+import { openBrowser } from "../../browserStore";
 
 const baseName = (path: string) => path.split("/").pop() || path;
 
@@ -20,6 +22,7 @@ function useTabTitle(tab: EditorTab) {
   const run = useStore((s) => (tab.kind === "run" ? s.runs[tab.id] : undefined));
   const zh = useStore((s) => s.uiLang) === "zh";
   if (tab.kind === "welcome") return zh ? "欢迎" : "Welcome";
+  if (tab.kind === "browser") return zh ? "浏览器" : "Browser";
   if (tab.kind === "run") return run?.goal || (zh ? "运行报告" : "Run report");
   if (tab.kind === "file") return baseName(splitWorkspaceId(tab.id).ref);
   if (tab.kind === "checkpoint") return zh ? "修改差异" : "Change diff";
@@ -28,7 +31,7 @@ function useTabTitle(tab: EditorTab) {
   return papers.find((p) => p.id === tab.id)?.title || (zh ? "论文" : "Paper");
 }
 
-const TAB_ICON: Record<EditorTab["kind"], string> = { paper: "paper", run: "report", welcome: "home", file: "file", checkpoint: "diff", vcsdiff: "diff", commit: "commit" };
+const TAB_ICON: Record<EditorTab["kind"], string> = { paper: "paper", run: "report", welcome: "home", file: "file", checkpoint: "diff", vcsdiff: "diff", commit: "commit", browser: "browser" };
 
 /** Close a tab, asking first when a workspace file has unsaved edits. */
 export function requestCloseTab(key: string) {
@@ -198,6 +201,7 @@ function Welcome({ visible }: { visible: boolean }) {
     { icon: Upload, title: T.imp, hint: T.impH, run: () => openPalette("import") },
     { icon: MessageSquare, title: T.chat, hint: T.chatH, keys: "Ctrl+L", run: () => { newChat(); compose({}); } },
     { icon: FolderTree, title: T.ws, hint: T.wsH, run: () => setLayout({ activity: "workspace", sideOpen: true }) },
+    { icon: Globe, title: zh ? "打开浏览器" : "Open browser", hint: zh ? "实时网页与接管控制" : "Live pages and shared control", run: () => { void openBrowser(); } },
     { icon: Command, title: T.pal, hint: zh ? "所有操作，一处可达" : "Every action in one place", keys: "Ctrl+K", run: () => openPalette("commands") },
   ];
 
@@ -317,6 +321,7 @@ export function EditorArea() {
         </div>
       )}
       <div className="wb-editor-body">
+        {openTabs.filter((t) => t.kind === "browser").map((t) => <BrowserView key={t.id} sessionId={t.id} visible={activeTabKey === tabKey(t)} />)}
         {current && <PaperEditor visible={!!paperActive && !loading} />}
         {loading && <div className="wb-doc wb-loading"><Spinner size={16} /> {zh ? "正在打开论文…" : "Opening paper…"}</div>}
         {openTabs.filter((t) => t.kind === "run").map((t) => (

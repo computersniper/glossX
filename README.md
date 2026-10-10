@@ -117,9 +117,15 @@ Switch between them with the toggle at the top left.
 | **Literature review with claim verification** | A built-in workflow: plan, search with fallbacks, screen, read with reader subagents, verify claims against paper spans, write a cited report. |
 | **Projects and memory** | Research projects with persistent memory notes recalled at plan time; verified claims are saved back. |
 | **Context management** | Token meter, auto-compaction at 80% of the context limit, large tool results stored by reference. |
+| **Built-in agent browser** | Uses installed Edge/Chrome over CDP with accessibility element refs, browser tabs, a live view and user takeover. Downloads and paper imports require approval; private destinations are blocked by default. |
+| **Prompt cache usage** | Provider-reported input, cached and output tokens, session and turn cache indicators, usage history, and incremental Codex/Claude sessions with full-transcript fallback. Missing token counts remain labelled estimates. |
 | **Plugins (manifest v2)** | Kinds: `tool`, `command`, `agent`, `skill`, `hook`, `mcp`, `workflow`, `loop`, `decider`, `provider`, `view`. Third-party manifests are declarative only; tool output is always treated as untrusted data. |
 
 Plugin authors: see the [Gloss Plugin Authoring specification](docs/plugin-authoring.md).
+
+Browser/cache specification and implementation notes: [spec](docs/glossx-browser-cache.md),
+[progress](docs/progress/browser-cache-integration.md). Settings suggest current Codex models including
+`gpt-6.1-sol`; availability depends on your account and endpoint. Custom model IDs remain supported.
 
 ### Threads, paper workspaces and version control
 

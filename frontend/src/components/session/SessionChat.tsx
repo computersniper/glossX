@@ -15,6 +15,7 @@ import { MenuButton, MenuItem, MenuLabel, MenuSep, Popover, Spinner } from "../u
 import { Composer } from "./Composer";
 import { ToolCard } from "./ToolCard";
 import { callSpans, openSpan, relativeTime } from "./toolMeta";
+import { TurnUsage } from "./CacheUsage";
 
 const SPAN_MARK = /\[S:([^\]\s]+#\d+)\]/g;
 
@@ -155,6 +156,7 @@ function CommitMark({ m, zh, project }: { m: Extract<SessionMessage, { type: "sy
 function SystemNote({ m, zh, project }: { m: Extract<SessionMessage, { type: "system_note" }>; zh: boolean; project: string }) {
   const [open, setOpen] = useState(false);
   if ((m as any).commit || /^(auto_?)?commit(ted)?$/.test(m.kind || "")) return <CommitMark m={m} zh={zh} project={project} />;
+  if (m.kind === "turn_usage" && m.usage) return <TurnUsage usage={m.usage} zh={zh} />;
   return <PlainNote m={m} zh={zh} open={open} setOpen={setOpen} />;
 }
 
@@ -162,6 +164,7 @@ function PlainNote({ m, zh, open, setOpen }: { m: Extract<SessionMessage, { type
   const first = (m.text || "").split("\n")[0];
   const kind = m.kind || "";
   const title = kind.includes("compact") ? (zh ? "上下文已压缩 · 查看摘要" : "Context compacted · view summary")
+    : kind === "cache_reset" ? (zh ? "提示缓存已重置" : "Prompt cache reset")
     : kind === "interrupt" ? (zh ? "你中断了这一轮" : "You stopped this turn")
     : kind === "budget" ? (zh ? "已达到本轮的工具调用上限" : "Stopped at this turn’s tool-round limit")
     : kind.includes("hook") ? (zh ? "钩子输出" : "Hook output")

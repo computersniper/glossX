@@ -5,12 +5,28 @@ import { diffLines, parseUnifiedDiff } from "../../harness/diff.mjs";
 import { splitDiff } from "../../harness/vcs.mjs";
 import { useStore } from "../../store";
 import { useSessions } from "../../sessionStore";
+import { openBrowser } from "../../browserStore";
 import { Markdown } from "../Markdown";
 import { Spinner } from "../ui";
 import { DiffView, revertCheckpoint, rowsForCheckpoint, statsOf, useCheckpoint, useCheckpointMarks, useDiffRows, type DiffRow } from "./DiffView";
 import { argSummary, callCommit, callSpans, formatDuration, formatTokens, openSpan, spanLabel, toolMeta } from "./toolMeta";
 
 const EDIT_TOOLS = new Set(["fs_edit", "fs_write"]);
+
+function BrowserResult({ call, zh }: { call: ToolCallMessage; zh: boolean }) {
+  let result: any = call.browser || {};
+  try { result = { ...JSON.parse(call.result_preview || "{}"), ...result }; } catch { /* truncated preview is still shown below */ }
+  const sid = call.session_id || useSessions.getState().activeId;
+  const url = call.url || result.url || call.args?.url;
+  const screenshot = call.screenshot || result.image_url;
+  const safeImage = typeof screenshot === "string" && /^\/api\/sessions\/[^/]+\/browser\/files\//.test(screenshot);
+  return <div className="gx-browser-result">
+    {safeImage && <img src={screenshot} alt={result.title || (zh ? "页面截图" : "Page screenshot")} loading="lazy" />}
+    {result.title && <strong>{result.title}</strong>}
+    {url && <code title={url}>{url}</code>}
+    {sid && <button type="button" className="gx-link" onClick={() => void openBrowser(undefined, sid)}><ExternalLink size={12} />{zh ? "在浏览器查看" : "View in browser"}</button>}
+  </div>;
+}
 
 function argsDiff(call: ToolCallMessage): DiffRow[] | null {
   const a = call.args || {};
@@ -292,6 +308,7 @@ export function ToolCard({ call, project, sub, approvalFor, kidsOf }: ToolCardPr
 
       {open && (
         <div className="gx-tool-body">
+          {call.tool.startsWith("browser_") && <BrowserResult call={call} zh={zh} />}
           {isEdit ? (
             <EditBody call={call} project={project} zh={zh} />
           ) : isPlan ? (

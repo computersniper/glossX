@@ -22,7 +22,7 @@ from typing import Any
 
 from ..agent.capabilities import APPROVAL_REQUIRED
 
-READ_ONLY_CATEGORIES = {"read", "meta", "agent"}
+READ_ONLY_CATEGORIES = {"read", "meta", "agent", "browser"}
 CATEGORIES = {"read", "meta", "agent", "write", "exec", "plan"}
 _SPLIT = re.compile(r"\s*(?:;|&&|\|\||\||\n)\s*")
 _UNSAFE = ("`", "$(", ">", "<")
@@ -55,6 +55,8 @@ def parse(pattern: str) -> tuple[str, str | None]:
 
 
 def _name_matches(name_glob: str, tool: str) -> bool:
+    if name_glob.startswith("browser."):
+        name_glob = "browser_" + name_glob[len("browser."):]
     return bool(_glob(name_glob).fullmatch(tool))
 
 
@@ -139,6 +141,8 @@ def decide(
 ) -> tuple[str, str]:
     """Return ``(decision, reason)``; decision is allow | ask | deny | unavailable."""
     tool = spec.name
+    if mode in {"ask", "plan"} and tool in {"browser_download", "browser_import_paper"}:
+        return "unavailable", "This browser write is unavailable in read-only mode"
     if not mode_allows(mode, spec.category):
         return "unavailable", f"{tool} is not available in {mode} mode (read-only)"
     if spec.category == "plan":
@@ -162,6 +166,8 @@ def decide(
 
 def default_decision(spec: Any, mode: str, auto_approve: set[str] | frozenset[str]) -> tuple[str, str]:
     category = spec.category
+    if category == "browser":
+        return ("ask", "Browser download or paper import needs approval") if spec.always_ask else ("allow", "Browser navigation/read; sensitive page actions are checked at execution")
     if category in READ_ONLY_CATEGORIES:
         return "allow", "read-only tool"
     if category == "write":

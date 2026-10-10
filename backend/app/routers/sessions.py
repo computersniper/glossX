@@ -185,6 +185,7 @@ async def patch_session(session_id: str, body: SessionPatchBody, request: Reques
 async def delete_session(session_id: str, request: Request):
     try:
         await _manager(request).delete(session_id)
+        await request.app.state.browser.close_session(session_id)
     except _HANDLED as error:
         raise _fail(error) from error
     return {"status": "deleted", "id": session_id}

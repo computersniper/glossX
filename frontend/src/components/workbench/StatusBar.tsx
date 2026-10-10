@@ -7,6 +7,7 @@ import { useActiveSession, useSessions } from "../../sessionStore";
 import { formatTokens } from "../session/toolMeta";
 import { MenuButton, MenuItem, MenuLabel, Spinner } from "../ui";
 import { BranchSwitcher, ProjectSwitcher } from "./BranchSwitcher";
+import { CacheIndicator } from "../session/CacheUsage";
 
 /** Three representative colors per theme for the picker swatches. */
 const SWATCH: Record<string, [string, string, string]> = {
@@ -56,6 +57,7 @@ export function StatusBar() {
       {model && <span className="wb-status-item muted" title={`${provider} · ${model}`}>{model}</span>}
       <ProjectSwitcher className="wb-status-item" placement="top-start" />
       <BranchSwitcher />
+      <CacheIndicator zh={zh} status />
       {waiting > 0 && (
         <button
           className="wb-status-item attention"

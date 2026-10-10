@@ -13,6 +13,8 @@ import { requestCloseTab } from "./EditorArea";
 import { focusAiPane } from "./focus";
 import { branchName, commitChanges, createBranch, mergeBranch, switchBranch, useVcs, useVcsEntry } from "../../vcsStore";
 import { openInstructions } from "./WorkspaceView";
+import { browserApi } from "../../api/browser";
+import { openBrowser } from "../../browserStore";
 
 interface Item {
   id: string;
@@ -46,7 +48,7 @@ function fuzzy(query: string, text: string) {
   return score;
 }
 
-const INPUT_MODES = new Set<PaletteMode>(["import", "ask", "newProject", "newBranch", "tryBranch", "commit"]);
+const INPUT_MODES = new Set<PaletteMode>(["import", "ask", "newProject", "newBranch", "tryBranch", "commit", "browserUrl"]);
 
 export function CommandPalette() {
   const mode = useStore((s) => s.palette);
@@ -160,6 +162,9 @@ export function CommandPalette() {
       { id: "search", group: G.papers, icon: Search, label: L("Search scholar", "学术搜索"), run: () => st.setLayout({ activity: "search", sideOpen: true }) },
       { id: "library", group: G.go, icon: Library, label: L("Show library", "显示论文库"), run: () => st.setLayout({ activity: "library", sideOpen: true }) },
       { id: "workspace", group: G.go, icon: FolderTree, label: L("Show workspace files", "显示工作区文件"), run: () => st.setLayout({ activity: "workspace", sideOpen: true }) },
+      { id: "browser", group: G.go, icon: Search, label: L("Open browser", "打开浏览器"), run: () => openBrowser() },
+      { id: "browserUrl", group: G.go, icon: Search, label: L("Open URL in browser…", "在浏览器中打开网址…"), run: toMode("browserUrl"), keepOpen: true },
+      { id: "browserImport", group: G.papers, icon: Upload, label: L("Import current browser page as paper", "把当前浏览器页面导入为论文"), run: async () => { const id = st.openTabs.find((t) => t.kind === "browser" && `browser:${t.id}` === st.activeTabKey)?.id || useSessions.getState().activeId; if (!id) return st.notify(L("Open a browser page first", "请先打开浏览器页面")); try { await browserApi.input(id, { type: "import_paper" }); await st.loadPapers(); st.notify(L("Paper import started", "论文导入已开始")); } catch (e: any) { st.notify(String(e?.message || e)); } } },
       { id: "instructions", group: G.go, icon: NotebookText, label: L("Open GLOSSX.md (project instructions)", "打开 GLOSSX.md（项目说明）"), run: () => openInstructions(st.agentProjectId) },
       { id: "switchProject", group: G.go, icon: FolderKanban, label: L("Switch project…", "切换项目…"), run: toMode("projects"), keepOpen: true },
       { id: "newProject", group: G.go, icon: FolderKanban, label: L("New project…", "新建项目…"), run: toMode("newProject"), keepOpen: true },
@@ -218,6 +223,8 @@ export function CommandPalette() {
       if (mode === "import") {
         await st.enqueueImport(text);
         st.setLayout({ activity: "library", sideOpen: true });
+      } else if (mode === "browserUrl") {
+        await openBrowser(/^https?:\/\//i.test(text) || text === "about:blank" ? text : `https://${text}`);
       } else if (mode === "ask") {
         useSessions.getState().newChat();
         useSessions.getState().compose({ text, send: true });
@@ -263,6 +270,7 @@ export function CommandPalette() {
 
   const placeholder = {
     commands: zh ? "输入命令…" : "Type a command…",
+    browserUrl: zh ? "输入网址，回车打开" : "Enter a URL, Enter to open",
     papers: zh ? "搜索要打开的论文…" : "Search a paper to open…",
     runs: zh ? "搜索运行…" : "Search runs…",
     chats: zh ? "搜索对话…" : "Search threads…",

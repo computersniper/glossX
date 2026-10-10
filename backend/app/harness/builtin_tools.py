@@ -646,7 +646,8 @@ def harness_capabilities() -> list[Capability]:
         read = name in {"status", "log", "diff"}
         vcs_caps.append(_cap("vcs_" + name, "Workspace git: " + name + ".", _vcs_handler(name), "read" if read else "exec", props, required,
                              permissions=["workspace:read" if read else "code:execute"], always_ask=not read, parallel_safe=read))
-    return vcs_caps + [
+    from .browser.tools import capabilities as browser_capabilities
+    return vcs_caps + browser_capabilities() + [
         _cap("paper_read", "Read a library paper: metadata/outline/opening text, or a section by title, or pages (e.g. '3-5').",
              _paper_read, "read",
              {"paper_id": _p("string", "library paper id"),

@@ -30,6 +30,9 @@ a = Analysis(
         "uvicorn.protocols.http.auto",
         "uvicorn.protocols.websockets.auto",
         "uvicorn.lifespan.on",
+        # The CDP client supports both the current and legacy websocket APIs.
+        "websockets.asyncio.client",
+        "websockets.legacy.client",
     ],
     hookspath=[],
     hooksconfig={},

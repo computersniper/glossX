@@ -4,7 +4,7 @@
 export const EVENT_NAMES = [
   "message.created", "message.delta", "message.completed", "tool.updated", "todos.updated",
   "approval.requested", "approval.resolved", "input.requested", "input.resolved", "context.updated", "session.updated",
-  "turn.completed", "error",
+  "turn.completed", "error", "browser.updated", "usage.updated",
 ];
 
 const TERMINAL_TOOL = new Set(["done", "error", "denied"]);
@@ -89,6 +89,8 @@ export function commitOf(p) {
 export function applySessionEvent(state, name, payload) {
   const p = payload ?? {};
   switch (name) {
+    case "browser.updated": return { ...state, browser: p };
+    case "usage.updated": return { ...state, session: { ...(state.session || {}), usage: p.usage || p } };
     case "session.updated": {
       const s = unwrap(p, "session");
       if (!s || typeof s !== "object") return state;
@@ -187,7 +189,7 @@ export function applySessionEvent(state, name, payload) {
       }
       const next = { ...state, messages, status: "idle", approvals: [], input: null, stop: { reason: p.stop_reason || "completed", rounds: p.rounds ?? null } };
       if (p.stop_reason === "error" && p.error && !state.error) next.error = String(p.error);
-      if (p.usage && state.session) next.session = { ...state.session, usage: p.usage };
+      // turn usage is not the session total; usage.updated carries that total.
       if (p.context) next.context = { ...state.context, ...p.context };
       return next;
     }
