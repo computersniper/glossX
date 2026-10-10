@@ -149,7 +149,7 @@ export function CommandPalette() {
       { id: "newChat", group: G.agent, icon: SquarePen, label: L("New thread", "新对话"), run: () => { useSessions.getState().newThread(); focusAiPane(); } },
       { id: "openChat", group: G.agent, icon: History, label: L("Open thread…", "打开对话…"), run: toMode("chats"), keepOpen: true },
       { id: "inbox", group: G.agent, icon: Bell, label: L("Open inbox", "打开收件箱"), detail: inboxCount ? L(`${inboxCount} waiting`, `${inboxCount} 个待处理`) : undefined, run: () => useSessions.getState().openInbox() },
-      { id: "threads", group: G.agent, icon: MessagesSquare, label: L("Show threads", "显示全部对话"), run: () => { st.setLayout({ activity: "threads", sideOpen: true }); useSessions.getState().setSideView("threads"); } },
+      { id: "threads", group: G.agent, icon: MessagesSquare, label: L("Show threads", "显示全部对话"), run: () => { st.setLayout({ aiOpen: true, aiMode: "threads" }); useSessions.getState().setSideView("threads"); } },
       { id: "tryBranch", group: G.agent, icon: GitBranchPlus, label: L("New thread on a new branch…", "在新分支上开始对话…"), detail: L("try another approach", "换一种做法试试"), run: toMode("tryBranch"), keepOpen: true },
       { id: "scm", group: G.vcs, icon: GitCompareArrows, label: L("Open source control", "打开源代码管理"), detail: nChanges ? L(`${nChanges} uncommitted`, `${nChanges} 个未提交`) : undefined, run: () => st.setLayout({ activity: "scm", sideOpen: true }) },
       ...(vcsOk ? [

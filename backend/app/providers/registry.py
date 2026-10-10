@@ -407,7 +407,9 @@ async def stream(
     *,
     provider: str | None = None,
     model: str | None = None,
+    effort: str | None = None,
 ):
+    """``effort`` (a thread's own reasoning effort) wins over the feature's."""
     settings = _settings_for_current_feature(provider, model)
     provider_name = settings["provider"]
     model = settings.get("model")
@@ -419,7 +421,7 @@ async def stream(
     _meter_before()
     usage = {}
     try:
-        with provider_runtime_options(effort=feature.get("effort")), capture_stream_usage() as usage:
+        with provider_runtime_options(effort=effort or feature.get("effort")), capture_stream_usage() as usage:
             source = _harness_stream(p, provider_name, sys, msgs, model) if _HARNESS_SESSION.get() is not None else p.stream(sys, msgs, model)
             async for chunk in source:
                 if not connected:
