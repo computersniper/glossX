@@ -131,6 +131,12 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+/* The app fills the window; the page itself must never scroll, or the top
+   bar slides out of view. pdf.js appends a measuring canvas to <body> that
+   made the page 20px taller than the window (its viewer CSS hides it, but
+   that stylesheet is not loaded here). */
+html, body { overflow: hidden; }
+body > .hiddenCanvasElement { position: absolute; top: 0; left: 0; width: 0; height: 0; display: none; }
 body { background: var(--bg); color: var(--fg); }
 button { font-family: inherit; cursor: pointer; }
 a { color: var(--accent); text-decoration: none; }

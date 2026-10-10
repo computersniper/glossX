@@ -120,6 +120,10 @@ const checks = [];
     assert.match(await terminal.innerText(), /(^|\n)Connected/);
     await page.getByRole('button', { name: 'Hide panel (Ctrl+J)', exact: true }).click();
     await terminal.waitFor({ state: 'detached' }); checks.push('real terminal command output, tab switch preserves shell, closing panel unmounts connection');
+    // pdf.js's measuring canvas once made the page taller than the window, so any
+    // focus or wheel scrolled the whole app and pushed the title bar out of view.
+    await page.mouse.move(700, 500); await page.mouse.wheel(0, 2000); await page.locator('.wb-title-bell').click(); await page.keyboard.press('Escape');
+    assert.deepEqual(await page.evaluate(() => [document.body.scrollHeight - innerHeight, document.scrollingElement.scrollTop, document.querySelector('.wb-titlebar').getBoundingClientRect().top]), [0, 0, 0]); checks.push('page never scrolls; title bar stays at the top');
     assert.deepEqual(errors, []); checks.push('no frontend runtime errors');
     console.log(JSON.stringify({ session: sid, checks, snapshot: !!snap, screenshots: output }, null, 2));
   } catch (error) { if (page) await page.screenshot({ path: path.join(output, 'browser-debug.png') }); throw error; }
