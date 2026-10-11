@@ -1354,3 +1354,13 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .gx-pdfpage canvas { display: block; }
 .gx-pdfpage span { position: absolute; right: 6px; bottom: 4px; padding: 0 5px; border-radius: 4px; background: rgba(0, 0, 0, .45); color: #fff; font-size: 11px; }
 .gx-docv-embed .gx-pdfpages { align-items: flex-start; }
+.mobile-devices { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.mobile-device { display: flex; align-items: center; gap: 10px; }
+.mobile-device > span:first-child { font-weight: 600; }
+.mobile-device > .usage-note { flex: 1; margin: 0; }
+.mobile-manual { margin-top: 12px; }
+.mobile-manual summary { cursor: pointer; color: var(--gx-text-2, inherit); font-size: 13px; }
+.mobile-manual > label { display: block; margin: 8px 0 2px; }
+.mobile-manual > code { display: block; overflow-wrap: anywhere; }
+.mobile-manual > .mobile-code { font-size: 18px; letter-spacing: .06em; }
+.mobile-manual > button { margin-top: 8px; }

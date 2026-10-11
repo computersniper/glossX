@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
 import { isMobileClient, leaveComputer } from "../mobile";
 
@@ -10,10 +10,17 @@ type RemoteStatus = {
   port: number;
   token: string;
   urls: string[];
+  pair_urls: string[];
+  pair_expires_in: number;
+  devices: { id: string; name: string; created: number; last_seen: number }[];
 };
 
-function pairLink(url: string, token: string) {
-  return `glossx://pair?${new URLSearchParams({ u: url, t: token })}`;
+function ago(seconds: number, zh: boolean) {
+  const s = Math.max(0, Date.now() / 1000 - seconds);
+  if (s < 90) return zh ? "刚刚" : "just now";
+  if (s < 3600) return zh ? `${Math.round(s / 60)} 分钟前` : `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return zh ? `${Math.round(s / 3600)} 小时前` : `${Math.round(s / 3600)} h ago`;
+  return zh ? `${Math.round(s / 86400)} 天前` : `${Math.round(s / 86400)} d ago`;
 }
 
 function QrCode({ text }: { text: string }) {
@@ -38,21 +45,38 @@ export function MobileAccess({ zh }: { zh: boolean }) {
   const [error, setError] = useState("");
   const remote = isMobileClient();
 
+  // the QR holds a one-time sign-in link; a new one replaces the last
+  const [pairUrls, setPairUrls] = useState<string[]>([]);
+  const deviceCount = useRef(-1);
+  const load = async (pair: boolean) => {
+    const r = await fetch(`/api/remote${pair ? "?pair=1" : ""}`).catch(() => null);
+    const next: RemoteStatus | null = r?.ok ? await r.json() : null;
+    setStatus(next);
+    if (next && pair) setPairUrls(next.pair_urls);
+    // a phone just used the QR: show a fresh one
+    if (next && deviceCount.current >= 0 && next.devices.length > deviceCount.current && !pair) void load(true);
+    if (next) deviceCount.current = next.devices.length;
+  };
+
   useEffect(() => {
     if (remote) return;
-    fetch("/api/remote")
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setStatus)
-      .catch(() => setStatus(null));
+    void load(true);
+    // new QR shortly before the old one expires; watch for phones pairing meanwhile
+    const qr = window.setInterval(() => void load(true), 8 * 60 * 1000);
+    const watch = window.setInterval(() => { if (document.visibilityState === "visible") void load(false); }, 4000);
+    return () => { window.clearInterval(qr); window.clearInterval(watch); };
   }, [remote]);
 
-  const change = async (patch: { enabled?: boolean; rotate_token?: boolean }) => {
+  const change = async (patch: { enabled?: boolean; rotate_token?: boolean; remove_device?: string; remove_all_devices?: boolean }) => {
     setBusy(true);
     setError("");
     try {
       const r = await fetch("/api/remote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
       if (!r.ok) throw new Error(String(r.status));
-      setStatus(await r.json());
+      const next: RemoteStatus = await r.json();
+      setStatus(next);
+      deviceCount.current = next.devices.length;
+      if (patch.rotate_token) void load(true);
     } catch {
       setError(zh ? "保存失败" : "Couldn't save");
     } finally {
@@ -77,7 +101,7 @@ export function MobileAccess({ zh }: { zh: boolean }) {
   // older backend, or opened from another device without the app
   if (!status) return null;
 
-  const url = status.urls[0];
+  const pairUrl = pairUrls[0];
   return (
     <section className="usage-card mobile-access" aria-label={zh ? "移动端访问" : "Mobile access"}>
       <div className="usage-head">
@@ -96,24 +120,45 @@ export function MobileAccess({ zh }: { zh: boolean }) {
       {status.reachable && (
         <>
           {!status.auth && <p className="usage-note" role="alert">{zh ? "GLOSS_REMOTE_AUTH=off：局域网内任何设备都能直接访问。" : "GLOSS_REMOTE_AUTH=off: any device on the network can connect without a code."}</p>}
-          {url ? (
+          {pairUrl ? (
             <div className="mobile-pair">
-              <QrCode text={pairLink(url, status.token)} />
+              <QrCode text={pairUrl} />
               <div className="mobile-pair-text">
-                <p className="usage-note">{zh ? "用手机相机扫码打开 GlossX，或在 App 里填写：" : "Scan with the phone's camera to open GlossX, or enter in the app:"}</p>
-                <label>{zh ? "地址" : "Address"}</label>
-                {status.urls.map((u) => <code key={u}>{u.replace(/^http:\/\//, "")}</code>)}
-                <label>{zh ? "配对码" : "Pairing code"}</label>
-                <code className="mobile-code">{status.token}</code>
-                <button className="small" type="button" disabled={busy} onClick={() => void change({ rotate_token: true })}>
-                  {zh ? "换一个配对码" : "New pairing code"}
-                </button>
+                <p className="usage-note">
+                  {zh
+                    ? "用 iPhone、iPad 或安卓手机的相机扫码，在浏览器里打开就自动登录，不用装 App。之后点“分享 → 添加到主屏幕”，就能像 App 一样全屏使用。"
+                    : "Scan with the camera on an iPhone, iPad or Android phone: it opens in the browser, already signed in, no app needed. Then Share → Add to Home Screen to use it full screen like an app."}
+                </p>
+                <p className="usage-note">{zh ? "二维码只能用一次，10 分钟内有效。" : "Each QR code works once, for 10 minutes."}</p>
+                <button className="small" type="button" onClick={() => void load(true)}>{zh ? "刷新二维码" : "New QR code"}</button>
               </div>
             </div>
           ) : (
             <p className="usage-note">{zh ? "没找到局域网地址，请确认电脑已联网。" : "No network address found; check that this computer is online."}</p>
           )}
-          <p className="usage-note">{zh ? "手机和电脑要在同一个 Wi‑Fi，或同一个 VPN（如 Tailscale）。换配对码后，已连接的设备需要重新输入。" : "The phone and this computer need the same Wi-Fi or VPN (e.g. Tailscale). A new code signs out every connected device."}</p>
+          {status.devices.length > 0 && (
+            <div className="mobile-devices">
+              <label>{zh ? "已配对的设备" : "Paired devices"}</label>
+              {status.devices.map((d) => (
+                <div className="mobile-device" key={d.id}>
+                  <span>{d.name}</span>
+                  <span className="usage-note">{zh ? "最近使用 " : "last used "}{ago(d.last_seen, zh)}</span>
+                  <button className="small" type="button" disabled={busy} onClick={() => void change({ remove_device: d.id })}>{zh ? "移除" : "Remove"}</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <details className="mobile-manual">
+            <summary>{zh ? "手动输入（GlossX App 或扫不了码时）" : "Enter by hand (GlossX app, or when the QR won't scan)"}</summary>
+            <label>{zh ? "地址" : "Address"}</label>
+            {status.urls.map((u) => <code key={u}>{u.replace(/^http:\/\//, "")}</code>)}
+            <label>{zh ? "配对码" : "Pairing code"}</label>
+            <code className="mobile-code">{status.token}</code>
+            <button className="small" type="button" disabled={busy} onClick={() => void change({ rotate_token: true })}>
+              {zh ? "换配对码并移除所有设备" : "New code, sign out every device"}
+            </button>
+          </details>
+          <p className="usage-note">{zh ? "手机和电脑要连同一个 Wi‑Fi。" : "The phone and this computer need to be on the same Wi-Fi."}</p>
         </>
       )}
       {error && <p role="alert">{error}</p>}

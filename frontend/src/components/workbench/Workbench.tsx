@@ -15,7 +15,7 @@ import { DialogHost } from "./dialog";
 import { ProjectSwitcher } from "./BranchSwitcher";
 import { MenuBar } from "./MenuBar";
 import { InboxBell, inboxTitle } from "./ThreadsView";
-import { MOD_KEY, isMobileClient, leaveComputer, useCompact } from "../../mobile";
+import { MOD_KEY, isMobileClient, isTouchClient, leaveComputer, useCompact } from "../../mobile";
 import type { Activity } from "../../store";
 
 const NARROW = "(max-width: 1099px)";
@@ -184,6 +184,7 @@ export function Workbench() {
   const narrow = useNarrow();
   const compact = useCompact();
   const mobile = isMobileClient();
+  const touch = isTouchClient();
   const activeTabKey = useStore((s) => s.activeTabKey);
   useWorkbenchKeys();
   useInbox();
@@ -203,7 +204,7 @@ export function Workbench() {
   useEffect(() => {
     if (!activeTabKey) return;
     if (compact) setLayout({ sideOpen: false, aiOpen: false });
-    else if (mobile && narrow) setLayout({ sideOpen: false });
+    else if (touch && narrow) setLayout({ sideOpen: false });
   }, [compact, activeTabKey]);
 
   // on a tablet in portrait the side bar and the AI pane both cover the editor:
@@ -212,11 +213,11 @@ export function Workbench() {
   useEffect(() => {
     const before = prev.current;
     prev.current = layout;
-    if (!mobile || !narrow || compact || !layout.sideOpen || !layout.aiOpen) return;
+    if (!touch || !narrow || compact || !layout.sideOpen || !layout.aiOpen) return;
     // the one just opened stays; on first load the AI pane does
     if (before.sideOpen && before.aiOpen) setLayout({ sideOpen: false });
     else setLayout(before.aiOpen ? { aiOpen: false } : { sideOpen: false });
-  }, [layout.sideOpen, layout.aiOpen, mobile, narrow, compact]);
+  }, [layout.sideOpen, layout.aiOpen, touch, narrow, compact]);
 
   const maxSide = Math.max(200, window.innerWidth - (narrow ? 0 : layout.aiOpen ? layout.aiWidth : 0) - MIN_EDITOR - 48);
   const sideW = clamp(layout.sideWidth, 200, Math.min(560, maxSide));

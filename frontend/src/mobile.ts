@@ -23,7 +23,12 @@ export function mobileShell(): string | null {
   return read(SHELL_KEY);
 }
 
+/** Inside the GlossX phone / tablet app. */
 export const isMobileClient = () => !!mobileShell();
+
+/** A phone or tablet: the app, or Safari / Chrome (also from the home screen) after scanning the QR code. */
+export const isTouchClient = () =>
+  isMobileClient() || (window.matchMedia("(pointer: coarse)").matches && !(window as { glossxDesktop?: unknown }).glossxDesktop);
 
 /** Back to the app's own "pick a computer" page. */
 export function leaveComputer(reason = "switch") {
@@ -46,7 +51,7 @@ export function initMobileClient() {
     for (const key of ["token", "client", "shell"]) params.delete(key);
     window.history.replaceState(null, "", url.pathname + (params.toString() ? `?${params}` : "") + url.hash);
   }
-  if (!isMobileClient()) return;
+  if (!isTouchClient()) return;
   document.documentElement.classList.add("gx-mobile");
   // pinch zooms the PDF (PdfViewer), never the whole app
   document.querySelector('meta[name="viewport"]')?.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover");

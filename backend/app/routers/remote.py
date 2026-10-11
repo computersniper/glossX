@@ -16,7 +16,7 @@ def _local_only(request: Request) -> None:
         raise HTTPException(403, "Only this computer can change mobile access")
 
 
-def _status(request: Request) -> dict:
+def _status(request: Request, pair: bool = False) -> dict:
     state = remote_access.load_state()
     server = request.scope.get("server") or (None, None)
     bound = os.environ.get("GLOSS_BIND_HOST", "")
@@ -25,6 +25,7 @@ def _status(request: Request) -> dict:
     reachable = bound in {"0.0.0.0", "::"}
     port = listening_port if reachable else state["port"]
     addresses = remote_access.lan_addresses()
+    code = remote_access.new_pair_code() if pair else None
     return {
         "enabled": state["enabled"],
         "reachable": reachable,
@@ -34,23 +35,34 @@ def _status(request: Request) -> dict:
         "token": remote_access.token(),
         "addresses": addresses,
         "urls": [f"http://{ip}:{port}" for ip in addresses],
+        # what the QR holds: open it on a phone and that device is signed in
+        "pair_urls": [f"http://{ip}:{port}/pair?c={code}" for ip in addresses] if code else [],
+        "pair_expires_in": remote_access.PAIR_TTL,
+        "devices": remote_access.devices(),
     }
 
 
 @router.get("")
-async def get_remote(request: Request):
+async def get_remote(request: Request, pair: bool = False):
+    """``?pair=1`` also mints a new QR code (replacing the previous one)."""
     _local_only(request)
-    return _status(request)
+    return _status(request, pair)
 
 
 class RemotePatch(BaseModel):
     enabled: bool | None = None
     port: int | None = Field(default=None, ge=1024, le=65535)
     rotate_token: bool = False
+    remove_device: str | None = None
+    remove_all_devices: bool = False
 
 
 @router.post("")
 async def update_remote(body: RemotePatch, request: Request):
     _local_only(request)
     remote_access.update(enabled=body.enabled, port=body.port, rotate=body.rotate_token)
+    if body.remove_device:
+        remote_access.remove_device(body.remove_device)
+    if body.remove_all_devices:
+        remote_access.remove_device(None)
     return _status(request)
