@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -199,8 +199,49 @@ def _project_detail(project_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/projects")
-async def list_projects(paper_id: str | None = None):
-    return projects.list_projects(paper_id)
+async def list_projects(paper_id: str | None = None, archived: bool = False):
+    return projects.list_projects(paper_id, archived=archived)
+
+
+class LifecycleBody(BaseModel):
+    action: Literal["archive", "restore", "remove"]
+
+
+def _lifecycle(ids: list[str], action: str, request: Request):
+    from ..harness import workspace
+    manager = request.app.state.sessions
+    for key in ids:
+        project = projects.get(key)
+        runs = _manager(request).summaries(project.get("run_ids") or [])
+        if manager.busy_sessions(key) or workspace.is_relocating(key) or any(r["status"] not in ("completed", "failed", "cancelled") for r in runs):
+            raise HTTPException(409, "wait for running threads or workspace relocation to finish")
+        if action == "remove" and not project.get("archived"):
+            raise HTTPException(400, "archive the project before removing it")
+        if project.get("removed"):
+            raise HTTPException(400, "project has been removed")
+    for key in ids:
+        projects.lifecycle(key, action)
+        manager.project_archived(key, action != "restore")
+    return {"changed": len(ids)}
+
+
+@router.post("/projects/{project_id}/lifecycle")
+async def project_lifecycle(project_id: str, body: LifecycleBody, request: Request):
+    try:
+        return _lifecycle([project_id], body.action, request)
+    except projects.ProjectNotFoundError as error:
+        raise HTTPException(404, "project not found") from error
+
+
+class DirectionLifecycleBody(LifecycleBody):
+    name: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/categories/lifecycle")
+async def direction_lifecycle(body: DirectionLifecycleBody, request: Request):
+    members = [p for p in projects.list_projects(archived=body.action != "archive")
+               if p.get("category") == body.name or p.get("hub_category") == body.name]
+    return _lifecycle([p["id"] for p in members], body.action, request)
 
 
 @router.post("/projects")

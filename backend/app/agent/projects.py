@@ -60,6 +60,13 @@ def _path(project_id: str) -> Path:
 
 
 def _read(project_id: str) -> dict[str, Any]:
+    # Background workspace/git setup also reads projects. On Windows an open
+    # reader can prevent the atomic replace used by writers.
+    with _lock:
+        return _read_unlocked(project_id)
+
+
+def _read_unlocked(project_id: str) -> dict[str, Any]:
     path = _path(project_id)
     if not path.is_file():
         raise ProjectNotFoundError(project_id)
@@ -288,7 +295,7 @@ def ensure_paper_project(paper: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     if not paper_id:
         raise ValueError("paper has no id")
     with _lock:
-        own = next((p for p in list_projects() if p.get("source_paper_id") == paper_id), None)
+        own = next((p for p in _all() if p.get("source_paper_id") == paper_id), None)
         if own is not None:
             if paper_id not in own["paper_ids"]:
                 own["paper_ids"].append(paper_id)
@@ -354,7 +361,7 @@ def _all() -> list[dict[str, Any]]:
 
 def _sync_hub(category: str, everyone: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Add the papers of every project filed under ``category`` to its hub."""
-    hub = next((p for p in everyone if p.get("hub_category") == category), None)
+    hub = next((p for p in everyone if p.get("hub_category") == category and not p.get("removed")), None)
     if hub is None:
         return None
     papers = list(hub["paper_ids"])
@@ -423,7 +430,9 @@ def category_hub(category: str) -> dict[str, Any]:
     if not category:
         raise ValueError("category must not be empty")
     with _lock:
-        everyone = _all()
+        everyone = [p for p in _all() if not p.get("removed")]
+        if any(p.get("hub_category") == category and p.get("archived") for p in everyone):
+            raise ValueError("restore the archived direction project first")
         if not any(p.get("hub_category") == category for p in everyone):
             hub = create(category, f"Every paper filed under the research direction “{category}”.")
             hub["category"] = category
@@ -439,17 +448,35 @@ def get(project_id: str) -> dict[str, Any]:
         return workspace_detail(_read(project_id))
 
 
-def list_projects(paper_id: str | None = None) -> list[dict[str, Any]]:
+def list_projects(paper_id: str | None = None, *, archived: bool = False) -> list[dict[str, Any]]:
     out = []
     with _lock:
         for path in _dir().glob("*.json"):
             try:
                 project = _read(path.stem)
+                if project.get("removed") or bool(project.get("archived")) != archived:
+                    continue
                 if paper_id is None or paper_id in project["paper_ids"]:
                     out.append(workspace_detail(project))
             except ProjectNotFoundError:
                 continue
     return sorted(out, key=lambda p: p.get("created_at") or 0, reverse=True)
+
+
+def lifecycle(project_id: str, action: str) -> dict[str, Any]:
+    """Keep metadata as a tombstone on removal: never delete workspace files,
+    and never silently recreate an automatically generated paper workspace."""
+    with _lock:
+        project = _read(project_id)
+        if project.get("removed"):
+            raise ValueError("project has been removed")
+        if action == "remove" and not project.get("archived"):
+            raise ValueError("archive the project before removing it")
+        project["archived"] = action != "restore"
+        if action == "remove":
+            project["removed"] = True
+        _write(project)
+        return project
 
 
 def add_memory(

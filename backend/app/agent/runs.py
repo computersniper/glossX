@@ -196,6 +196,8 @@ class AgentRunManager:
         limits = normalize_budget(budget)
         if project_id and not projects.exists(project_id):
             raise LookupError(f"project not found: {project_id}")
+        if project_id and projects.get(project_id).get("archived"):
+            raise ValueError("restore the archived project before starting a run")
         scope = list(dict.fromkeys(str(p) for p in paper_ids))
         for pid in scope:
             if not store.get_paper(pid):

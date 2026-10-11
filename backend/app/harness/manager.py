@@ -110,6 +110,8 @@ class SessionManager:
             return None
         if not isinstance(project_id, str) or not projects.exists(project_id):
             raise LookupError(f"project not found: {project_id}")
+        if projects.get(project_id).get("archived"):
+            raise ValueError("restore the project before starting a thread")
         return project_id
 
     # -- projects / workspaces ---------------------------------------------------------------
@@ -142,7 +144,7 @@ class SessionManager:
         return [rt for rt in self._sessions.values() if not rt.session.get("parent_id")]
 
     def inbox_summary(self) -> dict[str, Any]:
-        items = sorted((rt.public() for rt in self._roots()), key=self._inbox_rank)
+        items = sorted((rt.public() for rt in self._roots() if not rt.session.get("archived")), key=self._inbox_rank)
         return {
             "unread": sum(1 for s in items if s["unread"]),
             "blocking": sum(1 for s in items if s["attention"] in BLOCKING),
@@ -217,9 +219,11 @@ class SessionManager:
 
     # -- CRUD -----------------------------------------------------------------------------
     def list(self, *, project_id: str | None = None, include_subagents: bool = False,
-             view: str | None = None) -> list[dict[str, Any]]:
+             view: str | None = None, archived: bool = False) -> list[dict[str, Any]]:
         out = []
         for rt in self._sessions.values():
+            if bool(rt.session.get("archived")) != archived:
+                continue
             if rt.session.get("parent_id") and not include_subagents:
                 continue
             if project_id is not None:
@@ -330,6 +334,16 @@ class SessionManager:
     def patch(self, session_id: str, fields: dict[str, Any]) -> dict[str, Any]:
         rt = self._rt(session_id)
         session = rt.session
+        if fields.get("archived") is not None:
+            if rt.busy():
+                raise SessionBusyError("wait for the thread to finish before archiving it")
+            if not fields["archived"] and session.get("project_id"):
+                project = projects.get(session["project_id"])
+                if project.get("archived") and not project.get("removed"):
+                    raise ValueError("restore the project before restoring its threads")
+            session["archived"] = bool(fields["archived"])
+            session.pop("archived_by_project", None)
+            self.inbox_changed()
         if "title" in fields and fields["title"] is not None:
             title = str(fields["title"]).strip()
             if not title:
@@ -360,6 +374,22 @@ class SessionManager:
         rt.persist()
         return rt.public(with_messages=True)
 
+    def project_archived(self, project_id: str, archived: bool) -> None:
+        """Restore only threads archived by this project, not individually
+        archived threads. Called after all project busy checks have passed."""
+        for rt in self._sessions.values():
+            if rt.session.get("project_id") != project_id:
+                continue
+            if archived and not rt.session.get("archived"):
+                rt.session["archived"] = True
+                rt.session["archived_by_project"] = project_id
+            elif not archived and rt.session.get("archived_by_project") == project_id:
+                rt.session["archived"] = False
+                rt.session.pop("archived_by_project", None)
+            rt.persist()
+            rt.emit("session.updated", rt.public())
+        self.inbox_changed()
+
     async def delete(self, session_id: str) -> None:
         rt = self._rt(session_id)
         await self._stop(rt)
@@ -372,6 +402,8 @@ class SessionManager:
 
     def fork(self, session_id: str, message_id: str | None) -> dict[str, Any]:
         src = self._rt(session_id)
+        if src.session.get("archived"):
+            raise ValueError("restore the archived thread before forking it")
         messages = src.session["messages"]
         if message_id:
             index = next((i for i, m in enumerate(messages) if m.get("id") == message_id), None)
@@ -477,6 +509,12 @@ class SessionManager:
 
     # -- turns ----------------------------------------------------------------------------
     def _reserve(self, rt: Runtime) -> None:
+        if rt.session.get("archived"):
+            raise ValueError("restore this archived thread before sending a message")
+        if rt.session.get("project_id"):
+            project = projects.get(rt.session["project_id"])
+            if project.get("archived") and not project.get("removed"):
+                raise ValueError("restore this archived project before sending a message")
         if workspace.is_relocating(rt.session.get("project_id")):
             raise SessionBusyError("workspace relocation is in progress")
         if not self._accepting:

@@ -12,6 +12,7 @@ export type Attachment = { kind: AttachmentKind; ref: string; label?: string; te
 export type SessionContext = { tokens_est: number; limit: number; compactions: number; percent?: number; system_tokens_est?: number; compacted_through?: string | null };
 export type SessionUsage = { input_tokens?: number; input_tokens_est?: number; cached_input_tokens?: number; cache_write_tokens?: number; output_tokens?: number; output_tokens_est?: number; reasoning_tokens?: number; llm_calls: number; cache_hit_rate?: number; exact?: boolean; duration_seconds?: number; last_call?: { input?: number; cached?: number; output?: number; hit_rate?: number; exact?: boolean } };
 export type SessionSummary = {
+  archived?: boolean;
   id: string;
   title: string;
   project_id?: string | null;
@@ -223,6 +224,7 @@ const S = (id: string) => `/api/sessions/${enc(id)}`;
 const W = (projectId?: string | null) => `/api/workspace/${enc(projectId || "default")}`;
 
 export const sessionsApi = {
+  archived: () => request<SessionSummary[]>("/api/sessions?archived=true"),
   list: (projectId?: string | null, includeSubagents = false, view?: "inbox") =>
     request<any>(`/api/sessions${query({ project_id: projectId, include_subagents: includeSubagents ? "true" : undefined, view })}`).then((r) => listOf<SessionSummary>(r, "sessions", "items")),
   /** Mark a thread as seen: clears `unread` and a non-blocking `attention`. */
@@ -231,7 +233,7 @@ export const sessionsApi = {
   create: (body: { title?: string; project_id?: string | null; mode?: SessionMode; provider?: string | null; model?: string | null; effort?: string | null; branch?: string | null }) =>
     request<SessionSummary>("/api/sessions", { method: "POST", json: clean(body) }),
   get: (id: string) => request<SessionSummary & { messages?: SessionMessage[]; todos?: unknown[] }>(S(id)),
-  patch: (id: string, body: { title?: string; mode?: SessionMode; model?: string | { provider?: string | null; model?: string | null; effort?: string | null } }) =>
+  patch: (id: string, body: { archived?: boolean; title?: string; mode?: SessionMode; model?: string | { provider?: string | null; model?: string | null; effort?: string | null } }) =>
     request<SessionSummary>(S(id), { method: "PATCH", json: body }),
   remove: (id: string) => request<unknown>(S(id), { method: "DELETE" }),
   /** Copy the session up to and including `messageId` (the whole session when omitted). */

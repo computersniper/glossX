@@ -1,10 +1,10 @@
 // Side bar: threads grouped by project, and the inbox (docs/glossx-workspaces.md §1).
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bell, BookOpen, CheckCheck, ChevronRight, CircleAlert, CircleCheck, FolderKanban, GitBranch, GitFork, Inbox, MessageCircleQuestion,
+  Archive, ArchiveRestore, Bell, BookOpen, CheckCheck, ChevronRight, CircleAlert, CircleCheck, FolderKanban, GitBranch, GitFork, Inbox, MessageCircleQuestion,
   MessagesSquare, Pencil, Search, ShieldQuestion, SquarePen, Trash2, type LucideIcon,
 } from "lucide-react";
-import { isBlocking, type Attention, type SessionSummary } from "../../api/harness";
+import { isBlocking, sessionsApi, type Attention, type SessionSummary } from "../../api/harness";
 import { useStore } from "../../store";
 import { activityOf, useSessions } from "../../sessionStore";
 import { useBranch, useVcs } from "../../vcsStore";
@@ -67,10 +67,10 @@ async function removeThread(s: SessionSummary, zh: boolean) {
     actions: [{ id: "delete", label: zh ? "删除" : "Delete", danger: true }],
     cancel: zh ? "取消" : "Cancel",
   });
-  if (ok) void useSessions.getState().remove(s.id);
+  if (ok) await useSessions.getState().remove(s.id);
 }
 
-function ThreadRow({ s, zh, inbox, groupBranch }: { s: SessionSummary; zh: boolean; inbox?: boolean; groupBranch?: string | null }) {
+function ThreadRow({ s, zh, inbox, groupBranch, onChange }: { s: SessionSummary; zh: boolean; inbox?: boolean; groupBranch?: string | null; onChange?: () => void }) {
   const active = useSessions((st) => st.activeId === s.id);
   const openThread = useSessions((st) => st.openThread);
   const rename = useSessions((st) => st.rename);
@@ -103,7 +103,7 @@ function ThreadRow({ s, zh, inbox, groupBranch }: { s: SessionSummary; zh: boole
           }}
         />
       ) : (
-        <button type="button" className="gx-th-main" title={s.preview ? `${title}\n\n${s.preview}` : title} onClick={() => openThread(s.id)}>
+        <button type="button" className="gx-th-main" title={s.preview ? `${title}\n\n${s.preview}` : title} onClick={() => { if (s.archived) useStore.getState().notify(zh ? "恢复对话后可打开" : "Restore the thread to open it"); else openThread(s.id); }}>
           <span className="gx-th-lead">
             {running ? <Spinner size={12} /> : s.unread ? <i className="gx-unread" aria-label={zh ? "未读" : "Unread"} /> : null}
           </span>
@@ -130,12 +130,13 @@ function ThreadRow({ s, zh, inbox, groupBranch }: { s: SessionSummary; zh: boole
           {(close) => (
             <>
               <MenuItem icon={<Pencil size={14} />} label={zh ? "重命名" : "Rename"} onSelect={() => { close(); setEditing(title); }} />
-              <MenuItem icon={<GitFork size={14} />} label={zh ? "分叉为新对话" : "Fork into a new thread"} disabled={s.status !== "idle"} onSelect={() => { close(); void fork(null, undefined, s.id); }} />
+              <MenuItem icon={<GitFork size={14} />} label={zh ? "分叉为新对话" : "Fork into a new thread"} disabled={s.archived || s.status !== "idle"} onSelect={() => { close(); void fork(null, undefined, s.id); }} />
               {(s.unread || s.attention === "done" || s.attention === "error") && (
                 <MenuItem icon={<CheckCheck size={14} />} label={zh ? "标为已读" : "Mark as read"} onSelect={() => { close(); void markRead(s.id, true); }} />
               )}
               <MenuSep />
-              <MenuItem icon={<Trash2 size={14} />} danger label={zh ? "删除" : "Delete"} onSelect={() => { close(); void removeThread(s, zh); }} />
+              <MenuItem icon={s.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />} disabled={s.status !== "idle"} label={s.archived ? (zh ? "恢复对话" : "Restore thread") : (zh ? "归档对话" : "Archive thread")} onSelect={() => { close(); void useSessions.getState().archive(s.id, !s.archived).then(onChange).catch(() => {}); }} />
+              {s.archived && <MenuItem icon={<Trash2 size={14} />} danger label={zh ? "永久删除" : "Delete permanently"} onSelect={() => { close(); void removeThread(s, zh).then(onChange); }} />}
             </>
           )}
         </MenuButton>
@@ -213,6 +214,7 @@ export function ThreadsHeadActions() {
   const newThread = useSessions((s) => s.newThread);
   return (
     <>
+      <button type="button" className={`gx-icon-btn${view === "archive" ? " open" : ""}`} aria-pressed={view === "archive"} title={zh ? "归档对话" : "Archived threads"} onClick={() => setView(view === "archive" ? "threads" : "archive")}><Archive size={14} /></button>
       <button
         type="button"
         className={`gx-icon-btn gx-bell-btn${view === "inbox" ? " open" : ""}`}
@@ -230,6 +232,9 @@ export function ThreadsHeadActions() {
 }
 
 export function ThreadsView() {
+  const [archived, setArchived] = useState<SessionSummary[]>([]);
+  const [archiveError, setArchiveError] = useState("");
+  const loadArchive = () => { setArchiveError(""); void sessionsApi.archived().then(setArchived).catch((e) => setArchiveError(String(e?.message || e))); };
   const zh = useStore((s) => s.uiLang) === "zh";
   const projects = useStore((s) => s.projects);
   const activeProject = useStore((s) => s.agentProjectId || null);
@@ -253,7 +258,8 @@ export function ThreadsView() {
   }, []);
   useEffect(() => {
     if (view === "inbox") void useSessions.getState().refreshInbox();
-  }, [view]);
+    if (view === "archive") loadArchive();
+  }, [view, list]);
   // the active project's branch is shown live on its group
   useEffect(() => {
     useVcs.getState().ensure(activeProject, 15000);
@@ -323,7 +329,12 @@ export function ThreadsView() {
         </div>
       )}
       <div className="gx-th-scroll">
-        {available === false ? (
+        {view === "archive" ? <>
+          <div className="gx-menu-heading">{zh ? "归档对话" : "Archived threads"}<i>{archived.length}</i></div>
+          {archiveError && <div className="error" role="alert">{archiveError}</div>}
+          {archived.filter(match).map((s) => <ThreadRow key={s.id} s={s} zh={zh} inbox onChange={loadArchive} />)}
+          {!archived.length && !archiveError && <div className="muted wb-empty">{zh ? "暂无归档对话" : "No archived threads"}</div>}
+        </> : available === false ? (
           <EmptyState icon={<MessagesSquare size={20} />} title={zh ? "会话服务不可用" : "Threads are unavailable"} hint={zh ? "当前后端尚未提供 /api/sessions。" : "This backend does not expose /api/sessions yet."} />
         ) : view === "inbox" ? (
           inboxList === null ? (

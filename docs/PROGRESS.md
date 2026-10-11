@@ -13,6 +13,10 @@
 
 > **本地 CLI 自动识别**：默认比较 Codex 安装版本，支持 Claude native npm shim、手动选择与重新扫描；Claude 检测不执行程序，见 `docs/progress/cli-autodetect.md`。
 
+> **项目与归档（2026-10-11）**：上方项目管理、下方工作区设置；项目/方向/对话归档与恢复、归档内移除/删除；数据保留和验证见 `docs/progress/project-archive.md`。
+
+> **移动端独立 API 模式（2026-10-11）**：用户新要求扩展此前“仅连接电脑”的范围；继续共用 frontend + Capacitor 薄壳，进度及略过项见 `docs/progress/mobile-local.md`、`docs/progress/mobile-shell.md`。
+
 ## 0. 一分钟了解现状
 
 - **项目**：GlossX —— 面向科研与学习的 agent harness，在 Gloss 论文阅读器基础上开发（课程项目，Group 35）。

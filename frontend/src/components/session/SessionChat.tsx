@@ -510,7 +510,7 @@ function SessionBar({ zh }: { zh: boolean }) {
   const unread = useSessions((s) => s.inbox.unread);
   const newThread = useSessions((s) => s.newThread);
   const rename = useSessions((s) => s.rename);
-  const remove = useSessions((s) => s.remove);
+  const archive = useSessions((s) => s.archive);
   const compact = useSessions((s) => s.compact);
   const fork = useSessions((s) => s.fork);
   const activeProjectId = useStore((s) => s.agentProjectId);
@@ -586,18 +586,12 @@ function SessionBar({ zh }: { zh: boolean }) {
             {activeId && <MenuSep />}
             {activeId && (
               <MenuItem
-                icon={<Trash2 size={14} />}
-                danger
-                label={zh ? "删除对话" : "Delete thread"}
-                onSelect={async () => {
+                icon={<Archive size={14} />}
+                disabled={status !== "idle"}
+                label={zh ? "归档对话" : "Archive thread"}
+                onSelect={() => {
                   close();
-                  const ok = await ask({
-                    title: zh ? "删除这个对话？" : "Delete this thread?",
-                    body: zh ? `「${label}」及其全部消息会被删除。工作区里的文件和提交不受影响。` : `“${label}” and all of its messages will be deleted. Files and commits in the workspace are kept.`,
-                    actions: [{ id: "delete", label: zh ? "删除" : "Delete", danger: true }],
-                    cancel: zh ? "取消" : "Cancel",
-                  });
-                  if (ok) void remove(activeId);
+                  void archive(activeId, true).catch(() => {});
                 }}
               />
             )}

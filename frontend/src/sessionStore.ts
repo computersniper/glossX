@@ -64,7 +64,7 @@ interface SessionsStore {
   /** Threads in inbox order (GET /api/sessions?view=inbox); null = not loaded yet. */
   inboxList: SessionSummary[] | null;
   /** Which list the Threads activity shows. */
-  sideView: "threads" | "inbox";
+  sideView: "threads" | "inbox" | "archive";
   /** Branch the next new thread starts on ("Try on a branch"); null = the workspace's current branch. */
   pendingBranch: string | null;
 
@@ -75,7 +75,7 @@ interface SessionsStore {
   newThread: (opts?: { projectId?: string | null; branch?: string | null }) => void;
   /** Open a thread in the AI pane, make its project active and mark it read. */
   openThread: (id: string) => void;
-  setSideView: (v: "threads" | "inbox") => void;
+  setSideView: (v: "threads" | "inbox" | "archive") => void;
   /** Show the Threads activity on its inbox list. */
   openInbox: () => void;
   refreshInbox: () => Promise<void>;
@@ -92,6 +92,7 @@ interface SessionsStore {
   setModel: (model: ModelChoice) => Promise<void>;
   rename: (id: string, title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  archive: (id: string, archived: boolean) => Promise<void>;
   /** Fork the active chat up to and including `messageId` (whole chat when omitted); `prefill` lands in the composer. */
   fork: (messageId?: string | null, prefill?: { text: string; attachments?: Attachment[] }, sessionId?: string) => Promise<void>;
   /** Go back to `messageId` in this chat (dropping it too unless `include`); `prefill` lands in the composer. */
@@ -482,6 +483,15 @@ export const useSessions = create<SessionsStore>((set, get) => {
       } catch (e) {
         fail(e);
       }
+    },
+
+    archive: async (id, archived) => {
+      try {
+        await sessionsApi.patch(id, { archived });
+        if (archived && get().activeId === id) { unwatch(id); get().select(null); }
+        await get().refresh();
+        await get().refreshInbox();
+      } catch (e) { fail(e); throw e; }
     },
 
     remove: async (id) => {

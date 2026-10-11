@@ -46,6 +46,8 @@ export type AgentProject = {
   category?: string;
   /** set on the project that gathers every paper of that direction */
   hub_category?: string;
+  archived?: boolean;
+  removed?: boolean;
   workspace?: { key: string; path: string; vcs?: { available?: boolean; branch?: string | null } | null } | null;
 };
 export type McpServerCfg = { name: string; command: string; args: string[]; env: Record<string, string>; enabled: boolean };
@@ -150,6 +152,11 @@ export const agentApi = {
   workflows: () => fetch("/api/agent/workflows").then((r) => j<AgentWorkflow[]>(r)),
   loops: () => fetch("/api/agent/loops").then((r) => j<AgentLoop[]>(r)),
   projects: () => fetch("/api/agent/projects").then((r) => j<AgentProject[]>(r)),
+  archivedProjects: () => fetch("/api/agent/projects?archived=true").then((r) => j<AgentProject[]>(r)),
+  projectLifecycle: (id: string, action: "archive" | "restore" | "remove") =>
+    fetch(`/api/agent/projects/${encodeURIComponent(id)}/lifecycle`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }).then((r) => j<unknown>(r)),
+  directionLifecycle: (name: string, action: "archive" | "restore" | "remove") =>
+    fetch("/api/agent/categories/lifecycle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, action }) }).then((r) => j<unknown>(r)),
   /** Projects that hold a paper. */
   projectsForPaper: (paperId: string) => fetch(`/api/agent/projects?paper_id=${encodeURIComponent(paperId)}`).then((r) => j<AgentProject[]>(r)),
   /** The paper's own project (created lazily by the backend for older papers). */

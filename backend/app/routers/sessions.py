@@ -39,6 +39,7 @@ class SessionCreateBody(BaseModel):
 
 
 class SessionPatchBody(BaseModel):
+    archived: bool | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
     mode: Mode | None = None
     provider: str | None = Field(default=None, max_length=64)
@@ -115,11 +116,12 @@ def _sse(events, named: bool) -> StreamingResponse:
 @router.get("")
 async def list_sessions(request: Request, project_id: str | None = None,
                         include_subagents: bool = False,
+                        archived: bool = False,
                         view: Literal["inbox"] | None = None):
     """Sessions, most recently updated first. ``?view=inbox`` orders them for the
     inbox: blocking attention, then unread, then the rest, each newest first."""
     return _manager(request).list(project_id=project_id, include_subagents=include_subagents,
-                                  view=view)
+                                  view=view, archived=archived)
 
 
 @router.post("")

@@ -458,6 +458,7 @@ class Runtime:
 
     def public(self, *, with_messages: bool = False) -> dict[str, Any]:
         out = summary(self.session)
+        out["archived"] = bool(self.session.get("archived"))
         out["attention"] = self.attention()
         out["blocking"] = out["attention"] in BLOCKING
         ref = getattr(self.manager, "project_ref", None)

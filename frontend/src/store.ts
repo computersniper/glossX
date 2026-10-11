@@ -431,7 +431,7 @@ export const useStore = create<State>((set, get) => ({
     if (hit) return hit;
     try {
       const p = await agentApi.paperProject(paperId);
-      if (!p || !p.id) return null;
+      if (!p || !p.id || p.archived || p.removed) return null;
       set((s) => ({
         paperProjects: { ...s.paperProjects, [paperId]: p.id },
         projects: s.projects.some((x) => x.id === p.id) ? s.projects.map((x) => (x.id === p.id ? { ...x, ...p } : x)) : [...s.projects, p],
@@ -465,7 +465,9 @@ export const useStore = create<State>((set, get) => ({
   },
   refreshProjects: async () => {
     try {
-      set({ projects: await agentApi.projects() });
+      const projects = await agentApi.projects();
+      set({ projects });
+      if (get().agentProjectId && !projects.some((p) => p.id === get().agentProjectId)) get().setAgentProjectId(null);
     } catch {
       /* ignore */
     }

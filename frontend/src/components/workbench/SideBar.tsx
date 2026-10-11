@@ -6,7 +6,7 @@ import { ScholarPanel } from "../ScholarPanel";
 import { SettingsPanel } from "../SettingsPanel";
 import { ExtensionsPanel } from "../ExtensionsPanel";
 import { CapabilityGroups, ProjectDetail } from "../AgentWorkspace";
-import { BookOpen, BookOpenText, ChevronRight, FolderKanban, FolderTree, GitBranch, Layers, MessageSquarePlus, MessagesSquare, Pencil, Plus, Search, SquarePen, Tag, Trash2, FileText, X } from "lucide-react";
+import { Archive, ArchiveRestore, BookOpen, BookOpenText, ChevronRight, FolderKanban, FolderTree, GitBranch, Layers, MessageSquarePlus, MessagesSquare, Pencil, Plus, Search, SquarePen, Tag, Trash2, FileText, X } from "lucide-react";
 import { agentApi } from "../../api/agent";
 import { HarnessSettings } from "../HarnessSettings";
 import { EmptyState, MenuButton, MenuItem, MenuLabel, MenuSep, Segmented } from "../ui";
@@ -16,6 +16,7 @@ import { ScmHeadActions, ScmView } from "./ScmView";
 import { ask } from "./dialog";
 import { Icon } from "./icons";
 import { MobileAccess } from "../MobileAccess";
+import { WorkspaceLocation } from "./WorkspaceLocation";
 
 export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
@@ -255,7 +256,10 @@ function ProjectPapers({ projectId, paperIds, kind, zh }: { projectId: string; p
 }
 
 function ProjectsView() {
-  const projects = useStore((s) => s.projects);
+  const liveProjects = useStore((s) => s.projects);
+  const [archivedProjects, setArchivedProjects] = useState<typeof liveProjects>([]);
+  const [archiveView, setArchiveView] = useState(false);
+  const projects = archiveView ? archivedProjects : liveProjects;
   const projectId = useStore((s) => s.agentProjectId);
   const setProjectId = useStore((s) => s.setAgentProjectId);
   const createProject = useStore((s) => s.createProject);
@@ -274,6 +278,42 @@ function ProjectsView() {
   useEffect(() => {
     void refreshProjects();
   }, []);
+  useEffect(() => {
+    if (archiveView) void agentApi.archivedProjects().then(setArchivedProjects).catch((e) => notify(String(e)));
+  }, [archiveView, liveProjects]);
+
+  async function manage(id: string, action: "archive" | "restore" | "remove", direction = false) {
+    if (action !== "restore") {
+      const ok = await ask({
+        title: action === "archive" ? (zh ? `归档${direction ? "整个方向" : "项目"}？` : `Archive ${direction ? "direction" : "project"}?`) : (zh ? `移除${direction ? "整个方向" : "项目"}？` : `Remove ${direction ? "direction" : "project"}?`),
+        body: action === "archive"
+          ? (zh ? "项目及其对话将移入归档，可随时恢复。归档方向会包含该方向下的全部项目。" : "Move the project and its threads into the archive. A direction includes every project under it. You can restore them later.")
+          : (zh ? "移除后不再显示项目，无法恢复。论文库、工作区文件及 Git 历史保留，对话仍可在对话归档中管理。" : "Permanently remove the project from the list. Library papers, workspace files and Git history are kept; threads remain in the thread archive."),
+        actions: [{ id: "ok", label: action === "archive" ? (zh ? "归档" : "Archive") : (zh ? "移除" : "Remove"), danger: action === "remove", primary: action === "archive" }],
+        cancel: zh ? "取消" : "Cancel",
+      });
+      if (ok !== "ok") return;
+    }
+    try {
+      if (direction) await agentApi.directionLifecycle(id, action);
+      else await agentApi.projectLifecycle(id, action);
+      await refreshProjects();
+      const st = useStore.getState();
+      if (st.agentProjectId && !st.projects.some((p) => p.id === st.agentProjectId)) st.setAgentProjectId(null);
+      await useSessions.getState().refresh();
+      setArchivedProjects(await agentApi.archivedProjects());
+    } catch (e: any) { notify(String(e?.message || e)); }
+  }
+  const actions = (id: string, direction = false) => (
+    <span onClick={(e) => e.stopPropagation()}>
+      <MenuButton className="gx-icon-btn" chevron={false} placement="bottom-end" width={180} title={zh ? "项目操作" : "Project actions"} label={<span>⋯</span>}>
+        {(close) => <>
+          <MenuItem icon={archiveView ? <ArchiveRestore size={14} /> : <Archive size={14} />} label={archiveView ? (zh ? "恢复" : "Restore") : (zh ? "归档" : "Archive")} onSelect={() => { close(); void manage(id, archiveView ? "restore" : "archive", direction); }} />
+          {archiveView && <MenuItem icon={<Trash2 size={14} />} danger label={zh ? "移除项目" : "Remove project"} onSelect={() => { close(); void manage(id, "remove", direction); }} />}
+        </>}
+      </MenuButton>
+    </span>
+  );
 
   async function add() {
     if (!name.trim()) return;
@@ -296,7 +336,7 @@ function ProjectsView() {
   const unfiled = shown.filter((p) => !p.category && !p.hub_category);
   const research = unfiled.filter((p) => p.kind !== "paper");
   const paper = unfiled.filter((p) => p.kind === "paper");
-  const active = projects.find((p) => p.id === projectId);
+  const active = liveProjects.find((p) => p.id === projectId);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("glossx.categories.collapsed") || "[]")); } catch { return new Set(); }
   });
@@ -333,17 +373,18 @@ function ProjectsView() {
     ].filter(Boolean).join(" · ");
     const I = p.hub_category ? Layers : p.kind === "paper" ? BookOpen : FolderKanban;
     return (
-      <div key={p.id} className={`wb-item gx-proj-row${projectId === p.id ? " active" : ""}${p.hub_category ? " hub" : ""}`} onClick={() => setProjectId(p.id)} title={p.description || p.name}>
+      <div key={p.id} className={`wb-item gx-proj-row${projectId === p.id ? " active" : ""}${p.hub_category ? " hub" : ""}`} onClick={() => { if (!archiveView) setProjectId(p.id); }} title={p.description || p.name}>
         <I size={14} strokeWidth={1.7} className="gx-proj-icon" />
         <div className="gx-proj-text">
           <div className="gx-proj-name">{p.hub_category ? (zh ? "整个方向" : "Whole direction") : p.name}</div>
           {(meta || branch) && <div className="wb-item-meta">{meta}{branch && <span className="gx-branch"><GitBranch size={10} /><span>{branch}</span></span>}</div>}
         </div>
-        {!p.hub_category && (
+        {!archiveView && !p.hub_category && (
           <span className="gx-proj-tag" onClick={(e) => e.stopPropagation()}>
             <CategoryMenu zh={zh} categories={categories} value={p.category || ""} onPick={(c) => void file(p.id, c)} />
           </span>
         )}
+        {actions(p.id)}
       </div>
     );
   };
@@ -365,10 +406,11 @@ function ProjectsView() {
           ) : <span className="gx-cat-name" title={c}>{c}</span>}
           <i>{zh ? `${papers} 篇` : `${papers}`}</i>
           <span className="spacer" />
-          <button type="button" className="gx-icon-btn" title={zh ? "重命名方向" : "Rename direction"} onClick={(e) => { e.stopPropagation(); setRenaming(c); }}><Pencil size={11} /></button>
-          <button type="button" className="gx-btn ghost sm gx-cat-hub" title={zh ? "把这个方向的全部论文放进一个研究项目，一起读、一起问" : "Gather every paper of this direction in one research project"} onClick={(e) => { e.stopPropagation(); void openHub(c); }}>
+          {actions(c, true)}
+          {!archiveView && <button type="button" className="gx-icon-btn" title={zh ? "重命名方向" : "Rename direction"} onClick={(e) => { e.stopPropagation(); setRenaming(c); }}><Pencil size={11} /></button>}
+          {!archiveView && <button type="button" className="gx-btn ghost sm gx-cat-hub" title={zh ? "把这个方向的全部论文放进一个研究项目，一起读、一起问" : "Gather every paper of this direction in one research project"} onClick={(e) => { e.stopPropagation(); void openHub(c); }}>
             <Layers size={11} /> {zh ? "合在一起看" : "View together"}
-          </button>
+          </button>}
         </div>
         {open && <>{hub && row(hub)}{rest.map(row)}</>}
       </div>
@@ -377,10 +419,12 @@ function ProjectsView() {
 
   return (
     <div className="wb-side-body gx-projects">
+      <div className="gx-project-switch"><Segmented size="sm" value={archiveView ? "archive" : "active"} onChange={(v) => setArchiveView(v === "archive")} options={[{ value: "active", label: zh ? "项目" : "Projects" }, { value: "archive", label: zh ? "归档" : "Archived" }]} /></div>
+      {!archiveView &&
       <div className="wb-import">
         <input className="wb-input" placeholder={T.ph} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />
         <button className="gx-btn sm" onClick={() => void add()} disabled={!name.trim()}>{T.add}</button>
-      </div>
+      </div>}
       {projects.length > 8 && (
         <label className="wb-filter">
           <Search size={13} />
@@ -389,14 +433,14 @@ function ProjectsView() {
         </label>
       )}
       <div className="wb-list wb-list-compact gx-proj-list">
-        {projects.length === 0 && <EmptyState icon={<FolderKanban size={20} />} title={zh ? "还没有项目" : "No projects yet"} hint={T.empty} />}
+        {projects.length === 0 && <EmptyState icon={<FolderKanban size={20} />} title={archiveView ? (zh ? "暂无归档项目" : "No archived projects") : (zh ? "还没有项目" : "No projects yet")} hint={archiveView ? undefined : T.empty} />}
         {categories.map(group)}
         {categories.length > 0 && unfiled.length > 0 && <div className="gx-menu-heading gx-cat-unfiled">{zh ? "未分类" : "Unfiled"}</div>}
         {research.length > 0 && <div className="gx-menu-heading">{T.research}<i>{research.length}</i></div>}
         {research.map(row)}
         {paper.length > 0 && <div className="gx-menu-heading">{T.paper}<i>{paper.length}</i></div>}
         {paper.map(row)}
-        {projects.length > 0 && !q && (
+        {!archiveView && projects.length > 0 && !q && (
           <div className={`wb-item gx-proj-row general${!projectId ? " active" : ""}`} onClick={() => setProjectId(null)}>
             <MessagesSquare size={14} strokeWidth={1.7} className="gx-proj-icon" />
             <div className="gx-proj-text">
@@ -406,8 +450,10 @@ function ProjectsView() {
           </div>
         )}
       </div>
-      {active && (
-        <div className="wb-project agent-panel">
+      {!archiveView && active && (
+        <div key={active.id} className="wb-project agent-panel">
+          <h4 className="agent-h">{zh ? "工作区设置" : "Workspace settings"}</h4>
+          <strong className="gx-workspace-name" title={active.name}>{active.hub_category ? `${active.hub_category} · ${zh ? "整个方向" : "Whole direction"}` : active.name}</strong>
           <div className="gx-proj-detail-head">
             <span className={`gx-tag${active.kind === "paper" ? " warn" : ""}`}>{active.hub_category ? (zh ? `方向：${active.hub_category}` : `Direction: ${active.hub_category}`) : active.kind === "paper" ? (zh ? "论文工作区" : "Paper workspace") : zh ? "研究项目" : "Research project"}</span>
             {!active.hub_category && <CategoryMenu zh={zh} categories={categories} value={active.category || ""} onPick={(c) => void file(active.id, c)} labelled />}
@@ -416,10 +462,12 @@ function ProjectsView() {
             <button type="button" className="gx-btn sm" onClick={() => useSessions.getState().newThread({ projectId: active.id })}><SquarePen size={12} /> {zh ? "新对话" : "New thread"}</button>
           </div>
           {active.workspace?.path && <code className="gx-proj-path" title={active.workspace.path}>{active.workspace.path}</code>}
+          <WorkspaceLocation key={active.id} projectId={active.id} />
           <ProjectPapers projectId={active.id} paperIds={active.paper_ids || []} kind={active.kind} zh={zh} />
-          <ProjectDetail projectId={active.id} onOpenRun={openRunTab} showTitle={false} />
+          <details className="gx-workspace-memory"><summary>{zh ? "项目记忆与运行" : "Memory and runs"}</summary><ProjectDetail key={active.id} projectId={active.id} onOpenRun={openRunTab} showTitle={false} /></details>
         </div>
       )}
+      {!archiveView && !active && <div className="wb-project agent-panel"><h4 className="agent-h">{zh ? "工作区设置" : "Workspace settings"}</h4><div className="muted">{zh ? "在上方选择项目，设置会显示在这里。" : "Select a project above to configure its workspace here."}</div></div>}
     </div>
   );
 }
