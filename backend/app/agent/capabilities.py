@@ -83,6 +83,10 @@ class Capability:
     output_schema: dict[str, str] = field(default_factory=dict)
     timeout: float = DEFAULT_TIMEOUT
     meta: dict[str, Any] = field(default_factory=dict)
+    # what must be installed or configured for the handler to work (e.g. "codex CLI")
+    requirements: list[str] = field(default_factory=list)
+    # what the call changes outside the run, in a few words ("" = read-only)
+    side_effects: str = ""
 
     def approval_permissions(self, auto_approve: set[str] | frozenset[str] = frozenset()) -> list[str]:
         """Permissions of this capability that still need a human approval."""
@@ -100,6 +104,8 @@ class Capability:
             "requires_approval": bool(self.approval_permissions(auto_approve)),
             "trust": self.trust,
             "cost": self.cost,
+            "requirements": list(self.requirements),
+            "side_effects": self.side_effects,
         }
 
 

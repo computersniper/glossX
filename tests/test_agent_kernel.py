@@ -72,6 +72,7 @@ class FakeLLM:
             ("critic of a GlossX reading team", "critic"),  # mentions readers: match first
             ("reader sub-agent", "reader"),
             ("careful research agent", "synth"),
+            ("academic translator", "translate"),
         ]
         for needle, name in table:
             if needle in system:
@@ -110,6 +111,8 @@ class FakeLLM:
             return {"choice": "generic", "confidence": 0.7, "reason": "focused question"}
         if role == "judge":
             return {"verdict": "supported", "confidence": 0.9, "note": "relevant"}
+        if role == "translate":
+            return "译文: " + user[:40]
         if role == "critic":
             return {"conflicts": [{"finding_ids": ["r0.f0", "r1.f0"], "issue": "different BLEU"},
                                   {"finding_ids": ["r9.f9"], "issue": "made up"}],
@@ -375,3 +378,46 @@ def test_run_api_accepts_every_registered_loop():
         assert RunCreateBody(goal="x", loop=f"loop:{loop_id}").loop == f"loop:{loop_id}"
     with pytest.raises(ValidationError):
         RunCreateBody(goal="x", loop="loop:nope")
+
+
+# -- shared tools and capability cards -----------------------------------------
+def _ctx():
+    from app.agent.capabilities import RunContext
+
+    return RunContext(run_id="r1", paper_ids=["p1"], spans=MemorySpanStore())
+
+
+def test_translate_keeps_span_ids_attached(fake_llm):
+    llm = fake_llm()
+    cap = build_registry(connections={}).get("paper.translate")
+    out = asyncio.run(cap.handler({"span_ids": ["p1#1", "nope#9"], "language": "Chinese"}, _ctx()))
+    assert out["span_ids"] == ["p1#1"]
+    assert "[S:p1#1]" in llm.users("translate")[0]
+    with pytest.raises(ValueError):
+        asyncio.run(cap.handler({}, _ctx()))
+
+
+def test_highlight_anchors_spans_with_their_bbox(monkeypatch):
+    from app.library import store
+
+    saved = []
+    monkeypatch.setattr(store, "add_highlight",
+                        lambda pid, h: saved.append((pid, h)) or {"id": f"h{len(saved)}", **h})
+    cap = build_registry(connections={}).get("paper.highlight")
+    out = asyncio.run(cap.handler({"span_ids": ["p1#1", "p1#99"], "category": "result"}, _ctx()))
+    assert [h["span_id"] for h in out["highlights"]] == ["p1#1"] and out["skipped"] == ["p1#99"]
+    pid, h = saved[0]
+    assert pid == "p1" and h["page"] == 1 and h["rects"] == [[0, 0, 10, 10]] and h["kind"] == "agent"
+    assert cap.side_effects and not cap.approval_permissions()
+
+
+def test_cards_show_full_schemas_only_for_the_best_matches():
+    reg = build_registry(connections={})
+    state = SimpleNamespace(registry=reg, ctx=SimpleNamespace(project_id=None),
+                            gate=SimpleNamespace(auto_approved=lambda: set()))
+    lines = core.cards_text(state, "search evidence passages in papers", k=12).splitlines()
+    assert len(lines) == 12
+    assert all('args: {' in line for line in lines[:core.FULL_SCHEMA_CARDS])
+    assert all('args: [' in line for line in lines[core.FULL_SCHEMA_CARDS:])
+    described = reg.get("library.import").describe()
+    assert described["side_effects"] == "adds a paper to the library" and described["requirements"] == []

@@ -10,11 +10,13 @@ import asyncio
 import time
 from typing import Any
 
+from ..features.highlight import CATEGORY_COLORS as HIGHLIGHT_COLORS
 from ..features.citations import _ensure_raw_refs, resolve_references
 from ..features.explain import explain_selection
+from ..features.translate import translate_text
 from ..features.summarize import summarize_paper
 from ..library import store
-from ..pdf import structure
+from ..pdf import ingest, structure
 from ..features.common import json_complete
 from ..providers import registry as providers
 from ..search import scholar
@@ -307,6 +309,62 @@ def _project_of(ctx: RunContext) -> str:
     return ctx.project_id
 
 
+async def _paper_translate(args: dict[str, Any], ctx: RunContext) -> Any:
+    span_ids = args.get("span_ids")
+    span_ids = [str(s) for s in span_ids] if isinstance(span_ids, list) else []
+    text = _str_arg(args, "text", required=False)[:6000]
+    spans = [s for s in (ctx.spans.get(sid) for sid in span_ids[:12]) if s]
+    if not text and not spans:
+        raise ValueError("give 'text' or 'span_ids' to translate")
+    language = _str_arg(args, "language", required=False) or None
+    out: dict[str, Any] = {"language": language or "output language"}
+    if text:
+        out["translation"] = await translate_text(text, language=language,
+                                                  provider=ctx.provider)
+    if spans:
+        # one call for all spans; markers keep each translation tied to its span id
+        joined = "\n".join(f"[S:{s['id']}] {' '.join(s['text'].split())}" for s in spans)
+        out["span_translations"] = await translate_text(joined, language=language, provider=ctx.provider)
+        out["span_ids"] = [s["id"] for s in spans]
+    return out
+
+
+def _highlight_rects(paper_id: str, span: dict) -> tuple[int, list] | None:
+    bbox = span.get("bbox")
+    if isinstance(span.get("page"), int) and isinstance(bbox, list) and len(bbox) == 4:
+        return span["page"], [bbox]
+    loc = ingest.locate_text(store.pdf_path(paper_id), span.get("text", "")[:200])
+    return (loc["page"], loc["rects"]) if loc else None
+
+
+async def _paper_highlight(args: dict[str, Any], ctx: RunContext) -> Any:
+    span_ids = args.get("span_ids")
+    if not isinstance(span_ids, list) or not span_ids:
+        raise ValueError("'span_ids' must be a non-empty list of evidence span ids")
+    note = _str_arg(args, "note", required=False)[:500]
+    category = (_str_arg(args, "category", required=False) or "result").lower()
+    if category not in HIGHLIGHT_COLORS:
+        category = "result"
+    saved, skipped = [], []
+    for sid in [str(x) for x in span_ids][:20]:
+        span = ctx.spans.get(sid)
+        if not span or not store.get_paper(span["paper_id"]):
+            skipped.append(sid)
+            continue
+        where = await asyncio.to_thread(_highlight_rects, span["paper_id"], span)
+        if not where:
+            skipped.append(sid)
+            continue
+        page, rects = where
+        h = store.add_highlight(span["paper_id"], {
+            "page": page, "rects": rects, "color": HIGHLIGHT_COLORS[category],
+            "category": category, "text": span["text"][:2000],
+            "note": note or f"GlossX run {ctx.run_id}", "kind": "agent",
+        })
+        saved.append({"id": h["id"], "span_id": sid, "paper_id": span["paper_id"], "page": page})
+    return {"highlights": saved, "skipped": skipped}
+
+
 CRITIC_SYSTEM = (
     "You are the critic of a GlossX reading team. Several reader sub-agents each "
     "read one paper and reported findings with cited excerpts. Cross-check them: "
@@ -475,6 +533,7 @@ BUILTINS: list[Capability] = [
         handler=_library_import,
         permissions=["library:write", "network"],
         cost="network",
+        side_effects="adds a paper to the library",
     ),
     Capability(
         name="library.search",
@@ -496,6 +555,32 @@ BUILTINS: list[Capability] = [
         handler=_agent_reader,
         permissions=["library:read", "llm"],
         cost="llm",
+    ),
+    Capability(
+        name="paper.translate",
+        kind="tool",
+        card="Translate a passage or evidence spans (by span id) into another language, keeping span ids attached.",
+        input_schema={
+            "text": "str (optional): text to translate",
+            "span_ids": "list[str] (optional): evidence span ids to translate",
+            "language": "str (optional): target language, defaults to the output language",
+        },
+        handler=_paper_translate,
+        permissions=["library:read", "llm"],
+        cost="llm",
+    ),
+    Capability(
+        name="paper.highlight",
+        kind="tool",
+        card="Highlight evidence spans in the PDF reader so the user can see where a claim comes from.",
+        input_schema={
+            "span_ids": "list[str]: evidence span ids to highlight",
+            "category": "str (optional): contribution|method|result|limitation|definition|background",
+            "note": "str (optional): note shown with the highlight",
+        },
+        handler=_paper_highlight,
+        permissions=["library:read", "highlight:write"],
+        side_effects="writes highlights to the library",
     ),
     Capability(
         name="agent.critic",
@@ -526,6 +611,7 @@ BUILTINS: list[Capability] = [
         input_schema={"text": "str: the note to remember"},
         handler=_memory_note,
         permissions=["memory:write"],
+        side_effects="writes a project memory note",
     ),
 ]
 

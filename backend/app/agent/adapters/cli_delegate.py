@@ -239,6 +239,7 @@ def delegate_capabilities(conns: dict[str, Any]) -> list[Capability]:
     if (cli.get("claude") or {}).get("enabled"):
         caps.append(Capability(
             name="delegate.claude_code",
+            requirements=["Claude Code CLI"],
             kind="agent",
             card="Delegate a coding or experiment task to Claude Code with tools enabled, inside this run's sandbox workspace.",
             input_schema=dict(schema),
@@ -247,12 +248,14 @@ def delegate_capabilities(conns: dict[str, Any]) -> list[Capability]:
             permissions=["code:execute"],
             cost="llm",
             source="cli",
+            side_effects="runs code in the run's sandbox workspace",
             trust="external",
             timeout=DELEGATE_TIMEOUT + 30,
         ))
     if (cli.get("codex") or {}).get("enabled"):
         caps.append(Capability(
             name="delegate.codex",
+            requirements=["Codex CLI"],
             kind="agent",
             card="Delegate a coding or experiment task to OpenAI Codex CLI with tools enabled, inside this run's sandbox workspace.",
             input_schema=dict(schema),
@@ -261,6 +264,7 @@ def delegate_capabilities(conns: dict[str, Any]) -> list[Capability]:
             permissions=["code:execute"],
             cost="llm",
             source="cli",
+            side_effects="runs code in the run's sandbox workspace",
             trust="external",
             timeout=DELEGATE_TIMEOUT + 30,
         ))
