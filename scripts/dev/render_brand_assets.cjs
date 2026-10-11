@@ -13,8 +13,8 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const svg = fs.readFileSync(path.join(ROOT, "docs/logo-x.svg"), "utf8");
-const oldBounds = { x0: 2.5, y0: 2.5, x1: 92.2, y1: 86.3 };   // X at the top left
-const newBounds = { x0: 15.7, y0: 3.8, x1: 92.2, y1: 86.3 };  // X at the lower right
+const oldBounds = { x0: 15.7, y0: 3.8, x1: 92.2, y1: 86.3 };  // smaller X at the lower right
+const newBounds = { x0: 15.7, y0: 3.8, x1: 92.2, y1: 86.5 };  // larger X under the lamp and its rays
 
 const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
   const p = path.join(dir, e.name);

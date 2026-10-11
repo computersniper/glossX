@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
   <defs>
-    <linearGradient id="gx-x" x1="60.1" y1="62.5" x2="79.1" y2="81.5" gradientUnits="userSpaceOnUse">
+    <linearGradient id="gx-x" x1="59.4" y1="57" x2="85.4" y2="83" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#a78bfa"/>
       <stop offset="1" stop-color="#7aa2f7"/>
     </linearGradient>
@@ -11,7 +11,7 @@
     <!-- the page gives way around the X so the two never touch -->
     <mask id="gx-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96">
       <rect width="96" height="96" fill="#fff"/>
-      <circle cx="69.6" cy="72" r="16.5" fill="#000"/>
+      <circle cx="72.4" cy="70" r="20.5" fill="#000"/>
     </mask>
   </defs>
   <!-- the Gloss mark: a page lit by a lamp ... -->
@@ -32,9 +32,9 @@
     <line x1="84.8" y1="40.8" x2="80.8" y2="37.2"/>
     <line x1="54.4" y1="10.4" x2="58" y2="14"/>
   </g>
-  <!-- ... and the X of the agent edition at the page's lower right, under the lamp and sized like it -->
-  <g stroke="url(#gx-x)" stroke-width="5.8" stroke-linecap="round">
-    <line x1="60.1" y1="62.5" x2="79.1" y2="81.5"/>
-    <line x1="79.1" y1="62.5" x2="60.1" y2="81.5"/>
+  <!-- ... and the X of the agent edition at the page's lower right, centred under the lamp and its rays -->
+  <g stroke="url(#gx-x)" stroke-width="7" stroke-linecap="round">
+    <line x1="59.4" y1="57" x2="85.4" y2="83"/>
+    <line x1="85.4" y1="57" x2="59.4" y2="83"/>
   </g>
 </svg>
