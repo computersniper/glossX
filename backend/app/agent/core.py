@@ -166,13 +166,23 @@ def err(error: BaseException) -> str:
 
 
 def planner_kinds_excluded(state: RunState) -> set[str]:
-    excluded = set(PLANNER_EXCLUDED_KINDS)
-    if not state.ctx.project_id:
-        excluded.add("memory")
-    return excluded
+    return set(PLANNER_EXCLUDED_KINDS)
 
 
 FULL_SCHEMA_CARDS = 8
+
+
+def planner_can_use(state: RunState, cap) -> bool:
+    """Project memory needs a project; the learner model is global."""
+    if cap.kind in PLANNER_EXCLUDED_KINDS:
+        return False
+    return state.ctx.project_id is not None or not cap.name.startswith("memory.")
+
+
+def planner_ranked(state: RunState, query: str, k: int) -> list:
+    """Capabilities the planner may use, best BM25 match first."""
+    ranked = state.registry.ranked(query, k + 8, exclude_kinds=planner_kinds_excluded(state))
+    return [cap for cap in ranked if planner_can_use(state, cap)][:k]
 
 
 def cards_text(state: RunState, query: str, k: int = 16) -> str:
@@ -184,7 +194,7 @@ def cards_text(state: RunState, query: str, k: int = 16) -> str:
     """
     auto = state.gate.auto_approved()
     lines = []
-    ranked = state.registry.ranked(query, k, exclude_kinds=planner_kinds_excluded(state))
+    ranked = planner_ranked(state, query, k)
     for n, cap in enumerate(ranked):
         if n < FULL_SCHEMA_CARDS:
             schema = json.dumps(cap.input_schema, ensure_ascii=False)
@@ -219,7 +229,6 @@ def normalize_steps(
 ) -> list[dict]:
     """Validate planner output: known capabilities, unique ids, sane deps."""
     registry, emit = state.registry, state.emit
-    excluded = planner_kinds_excluded(state)
     steps: list[dict] = []
     if not isinstance(raw, list):
         return steps
@@ -232,7 +241,7 @@ def normalize_steps(
             continue
         name = str(s.get("capability") or "").strip()
         cap = registry.get(name)
-        if not cap or cap.kind in excluded:
+        if not cap or not planner_can_use(state, cap):
             emit(event(phase, "info", f"dropped step with unknown capability '{name}'",
                        capability=name or None))
             continue

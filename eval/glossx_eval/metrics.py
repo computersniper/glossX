@@ -144,6 +144,17 @@ def citation_report(
     }
 
 
+def cohen_kappa(pairs: list[tuple[str, str]]) -> float:
+    """Cohen's kappa for two raters' nominal labels."""
+    if not pairs:
+        return math.nan
+    n = len(pairs)
+    observed = sum(a == b for a, b in pairs) / n
+    left, right = Counter(a for a, _ in pairs), Counter(b for _, b in pairs)
+    expected = sum(left[k] * right[k] for k in left) / (n * n)
+    return 1.0 if expected == 1 else (observed - expected) / (1 - expected)
+
+
 def bootstrap_ci(values: list[float], iters: int = 2000, alpha: float = 0.05,
                  seed: int = 0) -> tuple[float, float, float]:
     """Mean and a percentile bootstrap confidence interval over tasks."""

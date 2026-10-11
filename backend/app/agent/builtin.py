@@ -386,6 +386,23 @@ async def _paper_highlight(args: dict[str, Any], ctx: RunContext) -> Any:
     return {"highlights": saved, "skipped": skipped}
 
 
+async def _learner_profile(args: dict[str, Any], ctx: RunContext) -> Any:
+    from . import learner
+
+    query = _str_arg(args, "query", required=False) or ctx.goal
+    concepts = learner.profile(query, k=_int_arg(args, "k", 8, 1, 30))
+    return {"query": query, "concepts": concepts,
+            "note": "mastery is 0.5 for untested concepts; below 0.4 means the learner struggles"}
+
+
+async def _learner_record(args: dict[str, Any], ctx: RunContext) -> Any:
+    from . import learner
+
+    entry = learner.record(_str_arg(args, "concept"), _str_arg(args, "outcome"),
+                           _str_arg(args, "note", required=False))
+    return {"status": "saved", "concept": entry["name"], "mastery": entry["mastery"]}
+
+
 CRITIC_SYSTEM = (
     "You are the critic of a GlossX reading team. Several reader sub-agents each "
     "read one paper and reported findings with cited excerpts. Cross-check them: "
@@ -626,6 +643,25 @@ BUILTINS: list[Capability] = [
         handler=_agent_critic,
         permissions=["library:read", "llm"],
         cost="llm",
+    ),
+    Capability(
+        name="learner.profile",
+        kind="memory",
+        card="Learner model: which concepts the user has mastered or struggles with (quiz history), to adapt explanations.",
+        input_schema={"query": "str (optional): topic to look up, defaults to the goal",
+                      "k": "int (optional, default 8)"},
+        handler=_learner_profile,
+        permissions=["memory:read"],
+    ),
+    Capability(
+        name="learner.record",
+        kind="memory",
+        card="Record how the learner did on a concept: a quiz answer correct or wrong, or that it was explained.",
+        input_schema={"concept": "str: the concept", "outcome": "str: correct|wrong|explained",
+                      "note": "str (optional): what went wrong or right"},
+        handler=_learner_record,
+        permissions=["memory:write"],
+        side_effects="updates the learner model",
     ),
     Capability(
         name="memory.recall",

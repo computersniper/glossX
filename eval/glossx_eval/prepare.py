@@ -99,10 +99,10 @@ def build_qasper(out: Path, n: int, seed: int, blob: bytes | None = None, delay:
     return kept
 
 
-def import_papers(tasks_path: Path, base_url: str) -> dict[str, str]:
+def import_papers(tasks_path: Path, base_url: str) -> dict[str, str | None]:
     import httpx  # a backend dependency
 
-    ids: dict[str, str] = {}
+    ids: dict[str, str | None] = {}  # None: GlossX refused the file
     files = sorted({p for t in load_tasks(tasks_path) for p in t.papers})
     with httpx.Client(base_url=base_url, timeout=300) as client:
         for rel in files:
@@ -111,6 +111,10 @@ def import_papers(tasks_path: Path, base_url: str) -> dict[str, str]:
             if name in ids or not path.exists():
                 continue
             resp = client.post("/api/papers/upload", files={"file": (name, path.read_bytes(), "application/pdf")})
+            if 400 <= resp.status_code < 500:  # e.g. a corrupted PDF from glossx_eval.faults
+                ids[name] = None
+                print(f"rejected {name}: {resp.text[:200]}", file=sys.stderr)
+                continue
             resp.raise_for_status()
             ids[name] = resp.json()["id"]
             print(f"imported {name} -> {ids[name]}", file=sys.stderr)

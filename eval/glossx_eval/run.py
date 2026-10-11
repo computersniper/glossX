@@ -39,6 +39,11 @@ def score(task: Task, out: Output, paper_text) -> dict[str, Any]:
         s["pred_label"] = metrics.parse_verdict(out.answer)
         s["gold_label"] = gold.get("label")
         s["label_correct"] = s["pred_label"] == s["gold_label"]
+    if task.gold.get("fault"):
+        from . import faults
+
+        s.update(faults.score(task, out.answer))
+        s["graceful"] = not out.error  # finished with an answer instead of crashing or timing out
     if task.kind == "route":
         s["route_correct"] = (out.raw.get("route") or {}).get("workflow") == gold.get("workflow")
     if paper_text is not None:
