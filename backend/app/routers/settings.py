@@ -25,6 +25,18 @@ async def get_local_cli(refresh: bool = False):
     return {"tools": await asyncio.to_thread(snapshot, refresh), "claude_executed": False}
 
 
+@router.get("/quota")
+async def get_quota(provider: str | None = None, fresh: bool = False):
+    """5-hour / weekly usage limits of the accounts Claude Code and Codex are
+    signed in to (``?provider=local_claude|local_codex``; both when omitted)."""
+    from ..providers import quota
+
+    names = [provider] if provider else ["local_claude", "local_codex"]
+    if any(name not in ("local_claude", "local_codex") for name in names):
+        raise HTTPException(400, "Usage limits are only available for local_claude and local_codex")
+    return {"quotas": [await quota.quota(name, fresh=fresh) for name in names]}
+
+
 class SettingsPatch(BaseModel):
     paper_workspace_root: str | None = None
     confirm_exit: bool | None = None

@@ -8,6 +8,7 @@ import { formatTokens } from "../session/toolMeta";
 import { MenuButton, MenuItem, MenuLabel, Spinner } from "../ui";
 import { BranchSwitcher, ProjectSwitcher } from "./BranchSwitcher";
 import { CacheIndicator } from "../session/CacheUsage";
+import { QuotaIndicator } from "./QuotaIndicator";
 import { useZoom, zoomReset } from "../../zoom";
 
 /** Three representative colors per theme for the picker swatches. */
@@ -56,6 +57,7 @@ export function StatusBar() {
   return (
     <footer className="wb-status">
       <ProviderSwitcher />
+      <QuotaIndicator />
       {model && <span className="wb-status-item muted" title={`${provider} · ${model}`}>{model}</span>}
       <ProjectSwitcher className="wb-status-item" placement="top-start" />
       <BranchSwitcher />
