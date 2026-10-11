@@ -26,6 +26,8 @@ npx cap open ios       # Xcode: pick your team under Signing, then Run (iPhone o
 npx cap open android   # Android Studio: Run, or ./gradlew assembleDebug in android/
 ```
 
+See [docs/glossx-mobile.md](../docs/glossx-mobile.md) for the plan and how the code is split across platforms.
+
 `www/` is the app's own connect page; everything else comes from the computer,
 so frontend changes reach the phone without rebuilding the app. The
 **Mobile build** workflow builds a debug APK (a workflow artifact) and checks
