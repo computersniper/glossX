@@ -11,3 +11,10 @@
 - 验证47项后端相关测试通过，覆盖旧PATH遮蔽、版本排序/缓存、手动优先、Claude无任何子进程、失效安装、真实shim解析及原有会话/进程清理。TypeScript和Vite build通过。`scripts/dev/ui_cli_detection.cjs` 使用隔离服务验证API、显示、手动选择保存回读、清空回到自动；无pageerror。
 - 未重打Windows exe，也未测试真实Claude模型/认证（遵循用户要求）。macOS目录路径只作代码覆盖，暂无该平台实机；非标准自定义安装目录仍可手动填写。未知版本不声称是最新。
 - 本轮未创建research-git胶囊；没有`.rgit`，需用户先运行`rgit init`才能另做捕捉。
+
+## 后续 CI 修复
+
+- `8909065` 的 Linux CI（run 38081004646）4 failed / 277 passed / 11 skipped；Windows Preview（run 38081004662）成功。
+- 漏更新 `tests/test_local_claude_sessions.py` 的共享模拟 helper（影响3项测试）与 `tests/test_prompt_cache.py` 的 Codex resume测试。它们仍 mock 旧的 resolve_cli_command，自动识别后的 `_command` 已绕过该 mock，CI无CLI导致 FileNotFoundError。
+- 仅修复两个测试文件，统一 mock 异步 `_command`，其余子进程、会话与用量断言保留。无须在CI安装CLI，也不运行真实Claude。此前验证子集没有包含这两份文件，是这一轮漏检。
+- 开工前fetch，基线8909065，备份backup/ci-cli-mocks-20261011。此次执行完整后端测试：281 passed / 11 skipped，退出0；另外禁止真实CLI识别的隔离探针中两文件20项全部通过。未重测前端：本次没有产品代码变化。

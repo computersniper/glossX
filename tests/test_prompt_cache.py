@@ -255,7 +255,9 @@ def test_codex_classic_resume_uses_durable_delta_and_harness_overrides_are_local
         return Process(command)
     monkeypatch.setattr(local_codex.app_config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(local_codex, "ensure_codex_sandbox", lambda: tmp_path)
-    monkeypatch.setattr(local_codex, "resolve_cli_command", lambda _: ["codex"])
+    async def command():
+        return ["codex"]
+    monkeypatch.setattr(local_codex, "_command", command)
     monkeypatch.setattr(local_codex, "_cfg", lambda: {"timeout": 10})
     monkeypatch.setattr(local_codex.asyncio, "create_subprocess_exec", spawn)
     async def run_first():
