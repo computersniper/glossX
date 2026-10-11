@@ -30,6 +30,9 @@ from .base import (
     anthropic_usage,
     normalize_usage,
     report_stream_usage,
+    communicate_lines,
+    report_progress,
+    wants_progress,
 )
 
 async def _command() -> list[str]:
@@ -202,9 +205,13 @@ class LocalClaudeProvider(Provider):
         prompt = render_transcript(messages) + _image_prompt_suffix(image_paths)
         model = _pick_model(model)
         cmd = await _command()
+        # With someone watching, stream events so thinking shows up as it happens;
+        # the final ``result`` event carries the same fields as ``json`` output.
+        live = wants_progress()
         cmd += [
             "-p",
-            "--output-format", "json",
+            *(["--output-format", "stream-json", "--verbose", "--include-partial-messages"] if live
+              else ["--output-format", "json"]),
             "--tools", "Read" if image_paths else "",
             "--model", model,
         ]
@@ -237,10 +244,22 @@ class LocalClaudeProvider(Provider):
                 cwd=cwd,
                 **subprocess_group_options(),
             )
+            result: dict = {}
+
+            def on_line(line: bytes) -> None:
+                evt = json.loads(line)
+                if evt.get("type") == "result":
+                    result.update(evt)
+                else:
+                    _report_event(evt)
+
             try:
-                out, err = await asyncio.wait_for(
-                    proc.communicate(prompt.encode()), timeout=_timeout()
-                )
+                if live:
+                    out, err = await communicate_lines(proc, prompt.encode(), _timeout(), on_line)
+                else:
+                    out, err = await asyncio.wait_for(
+                        proc.communicate(prompt.encode()), timeout=_timeout()
+                    )
             except asyncio.TimeoutError:
                 await terminate_process_tree(proc)
                 raise RuntimeError(f"claude CLI timed out after {_timeout()}s")
@@ -250,7 +269,10 @@ class LocalClaudeProvider(Provider):
                 if session_id and _session_is_unavailable(detail):
                     raise ClaudeSessionUnavailableError(detail)
                 raise RuntimeError(f"claude CLI exited {proc.returncode}: {detail}")
-            data = json.loads(out.decode())
+            data = result if live else json.loads(out.decode())
+            if live and not data:
+                detail = (err + b"\n" + out).decode(errors="replace")[-2000:]
+                raise RuntimeError(f"claude CLI reported no result: {detail}")
             if data.get("is_error"):
                 detail = str(data.get("result", ""))[:2000]
                 if session_id and _session_is_unavailable(detail):
@@ -357,6 +379,23 @@ class LocalClaudeProvider(Provider):
             step = 24
             for i in range(0, len(text), step):
                 yield text[i : i + step]
+
+
+def _report_event(evt: dict) -> None:
+    """Report thinking deltas and tool use from a claude stream-json event."""
+    if evt.get("type") == "stream_event":
+        inner = evt.get("event", {}) or {}
+        if inner.get("type") == "content_block_delta":
+            delta = inner.get("delta", {}) or {}
+            if delta.get("type") == "thinking_delta":
+                report_progress("thinking", str(delta.get("thinking") or ""))
+        return
+    if evt.get("type") == "assistant":
+        for block in (evt.get("message", {}) or {}).get("content", []) or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                args = block.get("input") or {}
+                detail = next((str(args[k]) for k in ("file_path", "path", "command", "pattern", "url", "query") if args.get(k)), "")
+                report_progress("step", f"{block.get('name') or 'Tool'} {detail}".strip())
 
 
 def _extract_delta(evt: dict) -> tuple[str, str]:

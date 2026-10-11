@@ -150,10 +150,55 @@ function UserMessage({ m, zh, canFork, prevId }: { m: Extract<SessionMessage, { 
   );
 }
 
+/** Live seconds since `from` (ms epoch), ticking while `live`. */
+function useElapsed(from: number | undefined, live: boolean) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [live]);
+  return from ? Math.max(0, Math.round((now - from) / 1000)) : 0;
+}
+
+/** "Thinking… 12s" while the model works, "Thought for 12s" afterwards; click
+ *  to see its reasoning and the steps it took, as in the coding agents. */
+function Thoughts({ m, zh }: { m: Extract<SessionMessage, { type: "assistant" }>; zh: boolean }) {
+  const live = !!m.streaming && !m.text;
+  const [open, setOpen] = useState(false);
+  const elapsed = useElapsed(m.created_at ? m.created_at * 1000 : undefined, live);
+  const body = useRef<HTMLDivElement>(null);
+  const steps = m.steps || [];
+  const has = !!m.thinking || steps.length > 0;
+  useEffect(() => { if (open && live && body.current) body.current.scrollTop = body.current.scrollHeight; }, [open, live, m.thinking, steps.length]);
+  if (!live && !has) return null;
+  const secs = live ? elapsed : Math.max(1, Math.round((m.thought_ms || 0) / 1000));
+  const label = live ? (zh ? `思考中 · ${secs} 秒` : `Thinking · ${secs}s`) : (zh ? `已思考 ${secs} 秒` : `Thought for ${secs}s`);
+  const last = steps[steps.length - 1];
+  return (
+    <div className={`gx-thoughts${open ? " open" : ""}${live ? " live" : ""}`}>
+      <button type="button" className="gx-thoughts-head" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!has && !live}>
+        {live && <span className="gx-thinking-dots"><i /><i /><i /></span>}
+        <span>{label}</span>
+        {!open && live && last && <em>{last}</em>}
+        <ChevronRight size={12} className="gx-chevron" />
+      </button>
+      {open && (
+        <div className="gx-thoughts-body" ref={body}>
+          {steps.length > 0 && <ol className="gx-thoughts-steps">{steps.map((s, i) => <li key={i}>{s}</li>)}</ol>}
+          {m.thinking && <div className="gx-thoughts-text">{m.thinking}</div>}
+          {!has && <div className="gx-thoughts-empty">{zh ? "这个渠道不提供思考过程，等待模型回复中…" : "This channel does not share its reasoning; waiting for the reply…"}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AssistantMessage({ m, zh, spans, canFork, old }: { m: Extract<SessionMessage, { type: "assistant" }>; zh: boolean; spans: Map<string, SpanRef>; canFork: boolean; old: boolean }) {
   const fork = useSessions((s) => s.fork);
   return (
     <div className={`gx-msg assistant${m.streaming ? " streaming" : ""}${old ? " compacted" : ""}`}>
+      <Thoughts m={m} zh={zh} />
       {m.text && <Prose text={m.text} spans={spans} />}
       {m.interrupted && <div className="gx-msg-flag">{zh ? "已中断" : "Interrupted"}</div>}
       {m.error && !m.interrupted && <div className="gx-msg-flag bad">{m.error}</div>}
@@ -647,7 +692,7 @@ export function SessionChat() {
   const hiddenCount = showCompacted ? 0 : compacted;
   const orphanApprovals = approvals.filter((a) => !messages.some((m) => m.id === a.tool_call_id));
   const last = messages[messages.length - 1];
-  const thinking = status === "running" && !(last?.type === "assistant" && last.streaming && last.text) && !(last?.type === "tool_call" && (last.status === "running" || last.status === "pending"));
+  const thinking = status === "running" && !(last?.type === "assistant" && last.streaming) && !(last?.type === "tool_call" && (last.status === "running" || last.status === "pending"));
 
   useLayoutEffect(() => {
     const el = scrollRef.current;

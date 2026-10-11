@@ -1236,3 +1236,17 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 /* the thread list in the right pane */
 .wb-ai-threads { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .wb-ai-threads > .wb-pane-head { flex-shrink: 0; }
+
+/* "Thinking… / Thought for Ns" with the model's reasoning and steps */
+.gx-thoughts { margin: 0 0 6px; font-size: var(--gx-fs-sm); color: var(--gx-text-3); }
+.gx-thoughts-head { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 2px 0; background: none; border: 0; color: inherit; cursor: pointer; font: inherit; }
+.gx-thoughts-head:disabled { cursor: default; }
+.gx-thoughts-head:hover:not(:disabled) { color: var(--gx-text-2); }
+.gx-thoughts-head em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-family: var(--gx-mono); font-size: 11px; opacity: .8; }
+.gx-thoughts-head .gx-chevron { flex: none; transition: transform .15s; }
+.gx-thoughts.open .gx-thoughts-head .gx-chevron { transform: rotate(90deg); }
+.gx-thoughts-body { margin: 4px 0 2px; padding: 8px 10px; max-height: 320px; overflow: auto; border-left: 2px solid var(--gx-line); background: color-mix(in srgb, var(--gx-text) 3%, transparent); border-radius: 0 var(--gx-r-sm) var(--gx-r-sm) 0; }
+.gx-thoughts-steps { margin: 0 0 8px; padding-left: 18px; font-family: var(--gx-mono); font-size: 11.5px; line-height: 1.6; color: var(--gx-text-2); }
+.gx-thoughts-steps:last-child { margin-bottom: 0; }
+.gx-thoughts-text { white-space: pre-wrap; line-height: 1.6; color: var(--gx-text-2); }
+.gx-thoughts-empty { font-style: italic; }

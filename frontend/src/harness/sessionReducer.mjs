@@ -4,7 +4,7 @@
 export const EVENT_NAMES = [
   "message.created", "message.delta", "message.completed", "tool.updated", "todos.updated",
   "approval.requested", "approval.resolved", "input.requested", "input.resolved", "context.updated", "session.updated",
-  "turn.completed", "error", "browser.updated", "usage.updated",
+  "turn.completed", "error", "browser.updated", "usage.updated", "message.progress",
 ];
 
 const TERMINAL_TOOL = new Set(["done", "error", "denied"]);
@@ -131,6 +131,26 @@ export function applySessionEvent(state, name, payload) {
         const base = typeof p.offset === "number" && p.offset >= 0 && p.offset <= prev.length ? prev.slice(0, p.offset) : prev;
         messages[i] = { ...messages[i], text: base + delta, streaming: true };
       }
+      return { ...state, messages };
+    }
+    case "message.progress": {
+      // what the model is doing while it works: reasoning text and steps
+      const id = String(p.id ?? "");
+      const text = typeof p.text === "string" ? p.text : "";
+      const i = state.messages.findIndex((m) => m.id === id);
+      if (i < 0 || !text) return state;
+      const messages = state.messages.slice();
+      const prev = messages[i];
+      const at = typeof p.at === "number" && p.at >= 0 ? p.at : null;
+      if (p.kind === "thinking") {
+        const before = prev.thinking || "";
+        if (at !== null && at < before.length) return state; // already have it (replay)
+        messages[i] = { ...prev, thinking: before + text };
+      } else if (p.kind === "step") {
+        const steps = prev.steps || [];
+        if (at !== null && at < steps.length) return state;
+        messages[i] = { ...prev, steps: [...steps, text] };
+      } else return state;
       return { ...state, messages };
     }
     case "message.completed": {

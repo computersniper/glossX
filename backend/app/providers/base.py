@@ -88,6 +88,84 @@ def runtime_option(name: str, default: Any = None) -> Any:
     return _RUNTIME_OPTIONS.get().get(name, default)
 
 
+# -- live progress (what a local CLI is doing while it works) ---------------------
+# A sink receives ``{"kind": "thinking", "text": delta}`` (reasoning as it
+# streams) or ``{"kind": "step", "text": "..."}`` (one action the CLI took).
+_PROGRESS: ContextVar[Any] = ContextVar("gloss_provider_progress", default=None)
+
+
+@contextmanager
+def progress_sink(callback: Any):
+    token = _PROGRESS.set(callback)
+    try:
+        yield
+    finally:
+        _PROGRESS.reset(token)
+
+
+def wants_progress() -> bool:
+    return _PROGRESS.get() is not None
+
+
+def report_progress(kind: str, text: str) -> None:
+    sink = _PROGRESS.get()
+    if sink is None or not text:
+        return
+    try:
+        sink({"kind": kind, "text": text})
+    except Exception:  # noqa: BLE001 - progress is best effort
+        pass
+
+
+async def communicate_lines(proc: Any, stdin: bytes | None, timeout: float, on_line: Any) -> tuple[bytes, bytes]:
+    """``proc.communicate`` that also hands each stdout line to ``on_line`` as it
+    arrives. Raises ``asyncio.TimeoutError`` like ``wait_for`` would."""
+    import asyncio
+
+    async def feed() -> None:
+        if proc.stdin is None:
+            return
+        try:
+            if stdin:
+                proc.stdin.write(stdin)
+                await proc.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            proc.stdin.close()
+
+    out: list[bytes] = []
+
+    def emit(line: bytes) -> None:
+        try:
+            on_line(line)
+        except Exception:  # noqa: BLE001 - a bad line must not break the call
+            pass
+
+    async def read_out() -> None:
+        # Chunks, not readline(): one JSON event can exceed the stream's line limit.
+        pending = b""
+        while True:
+            chunk = await proc.stdout.read(65536)
+            if not chunk:
+                if pending:
+                    emit(pending)
+                return
+            out.append(chunk)
+            pending += chunk
+            *lines, pending = pending.split(b"\n")
+            for line in lines:
+                emit(line)
+
+    async def run() -> bytes:
+        results = await asyncio.gather(feed(), read_out(), proc.stderr.read())
+        await proc.wait()
+        return results[2]
+
+    err = await asyncio.wait_for(run(), timeout=timeout)
+    return b"".join(out), err
+
+
 def estimate_text_tokens(text: str) -> int:
     """Return a clearly-labelled best-effort token estimate.
 

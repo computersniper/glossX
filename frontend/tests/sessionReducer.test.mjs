@@ -109,3 +109,14 @@ test("line diff and unified diff parsing", () => {
   assert.deepEqual(parsed.map((r) => [r.kind, r.text]), [["hunk", "@@ -1,2 +1,2 @@"], ["ctx", "one"], ["del", "two"], ["add", "2"]]);
   assert.equal(parsed[2].a, 2);
 });
+
+test("live progress appends thinking and steps once, even when replayed", () => {
+  const progress = [
+    ["message.progress", { id: "m1", kind: "thinking", text: "Look ", at: 0 }],
+    ["message.progress", { id: "m1", kind: "thinking", text: "closer", at: 5 }],
+    ["message.progress", { id: "m1", kind: "step", text: "Read notes.md", at: 0 }],
+  ];
+  const s = run([["message.created", { id: "m1", type: "assistant", text: "" }], ...progress, ...progress]);
+  assert.equal(s.messages[0].thinking, "Look closer");
+  assert.deepEqual(s.messages[0].steps, ["Read notes.md"]);
+});

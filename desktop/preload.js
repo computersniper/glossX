@@ -4,12 +4,16 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 ipcRenderer.on("glossx:close-request", () => window.dispatchEvent(new CustomEvent("glossx:close-request")));
+ipcRenderer.on("glossx:action", (_event, request) => window.dispatchEvent(new CustomEvent("glossx:action", {
+  detail: { action: String(request?.action || ""), id: String(request?.id || "") },
+})));
 
 contextBridge.exposeInMainWorld("glossxDesktop", {
   shell: "electron",
   platform: process.platform,
   command: (action) => ipcRenderer.invoke("glossx:window", String(action)),
   setTitleBar: (bar) => ipcRenderer.invoke("glossx:titlebar", { color: String(bar.color), symbolColor: String(bar.symbolColor), height: Number(bar.height) }),
+  recent: (entry) => ipcRenderer.invoke("glossx:recent", { kind: String(entry.kind), id: String(entry.id), title: String(entry.title || "") }),
   cancelExit: () => ipcRenderer.invoke("glossx:exit-cancel"),
   confirmExit: (dontAskAgain) => ipcRenderer.invoke("glossx:exit-confirm", dontAskAgain === true),
   browser: {
