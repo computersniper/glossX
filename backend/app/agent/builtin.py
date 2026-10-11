@@ -218,6 +218,27 @@ async def _library_import(args: dict[str, Any], ctx: RunContext) -> Any:
     }
 
 
+async def _library_import_web(args: dict[str, Any], ctx: RunContext) -> Any:
+    from ..harness.web import web_fetch
+    from ..library import documents, service
+
+    url = _str_arg(args, "url")[:2000]
+    page = await web_fetch(url, max_chars=200_000)  # refuses local and private addresses
+    text = str(page.get("text") or "").strip()
+    if not text:
+        raise ValueError(page.get("note") or "the page has no readable text")
+    title = str(page.get("title") or "").strip() or url
+    body = f"# {title}\n\nSource: {page.get('final_url') or url}\n\n{text}"
+    pdf, _ = await asyncio.to_thread(documents.to_pdf, "page.txt", body.encode("utf-8"))
+    paper = await asyncio.to_thread(service.create_from_pdf_bytes, pdf,
+                                    {"source": "web", "url": page.get("final_url") or url, "title": title[:300]})
+    ctx.imported[url] = paper["id"]
+    if paper["id"] not in ctx.paper_ids:
+        ctx.paper_ids.append(paper["id"])
+    return {"status": "completed", "paper_id": paper["id"], "title": paper.get("title", title),
+            "truncated": bool(page.get("truncated"))}
+
+
 async def _library_search(args: dict[str, Any], ctx: RunContext) -> Any:
     query = _str_arg(args, "query")
     k = _int_arg(args, "k", 8, 1, 20)
@@ -534,6 +555,16 @@ BUILTINS: list[Capability] = [
         permissions=["library:write", "network"],
         cost="network",
         side_effects="adds a paper to the library",
+    ),
+    Capability(
+        name="library.import_web",
+        kind="source",
+        card="Save a web page (blog post, documentation, news) into the library as a citable source and add it to the run scope.",
+        input_schema={"url": "str: http(s) URL of the page"},
+        handler=_library_import_web,
+        permissions=["library:write", "network"],
+        cost="network",
+        side_effects="adds the page to the library",
     ),
     Capability(
         name="library.search",

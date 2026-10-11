@@ -97,7 +97,7 @@ function LibraryView() {
         <button className="gx-icon-btn bordered" title={T.upload} onClick={() => fileRef.current?.click()} disabled={uploadBusy}>
           <Icon name="upload" size={14} />
         </button>
-        <input ref={fileRef} type="file" accept="application/pdf" multiple hidden onChange={(e) => onUpload(e.target.files)} />
+        <input ref={fileRef} type="file" accept="application/pdf,.md,.markdown,.html,.htm,.pptx" multiple hidden onChange={(e) => onUpload(e.target.files)} />
       </div>
       <ImportQueue />
       <label className="wb-filter">
