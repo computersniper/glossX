@@ -19,6 +19,9 @@ import { MenuBar } from "./MenuBar";
 import { InboxBell, inboxTitle } from "./ThreadsView";
 import { MOD_KEY, isMobileClient, isTouchClient, leaveComputer, useCompact } from "../../mobile";
 import type { Activity } from "../../store";
+import { api } from "../../api/client";
+import { workspaceApi } from "../../api/harness";
+import { hasFiles } from "../../dnd";
 
 const NARROW = "(max-width: 1099px)";
 
@@ -49,6 +52,8 @@ function Sash({ dir, value, sign, onChange }: { dir: "x" | "y"; value: number; s
         // pointer events so a finger or Apple Pencil can drag it on a tablet
         if (e.button !== 0) return;
         e.preventDefault();
+        // keep the pointer even over an iframe (shared browser, PDF) in a browser tab
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* already released */ }
         const origin = dir === "x" ? e.clientX : e.clientY;
         const start = value;
         document.body.style.userSelect = "none";
@@ -66,6 +71,70 @@ function Sash({ dir, value, sign, onChange }: { dir: "x" | "y"; value: number; s
         window.addEventListener("pointercancel", up);
       }}
     />
+  );
+}
+
+const LIBRARY_TYPES = /\.(pdf|md|markdown|html?|pptx|docx|xlsx|odt|ods|odp|goodnotes)$/i;
+
+/**
+ * Files dragged in from the computer anywhere in the window. The explorer, the
+ * library and the composer take them where they land; anywhere else papers and
+ * documents go to the library and other files to the workspace's uploads/ —
+ * and the browser never navigates away to show the file instead.
+ */
+function WindowDrop({ zh }: { zh: boolean }) {
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    let depth = 0;
+    const enter = (e: DragEvent) => { if (hasFiles(e)) { depth += 1; setDragging(true); } };
+    const leave = (e: DragEvent) => { if (hasFiles(e)) { depth = Math.max(0, depth - 1); if (!depth) setDragging(false); } };
+    const over = (e: DragEvent) => { if (hasFiles(e)) e.preventDefault(); };
+    const end = () => { depth = 0; setDragging(false); };
+    const drop = (e: DragEvent) => {
+      end();
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer?.files || []);
+      if (!files.length) return;
+      const st = useStore.getState();
+      const papers = files.filter((f) => LIBRARY_TYPES.test(f.name));
+      const others = files.filter((f) => !LIBRARY_TYPES.test(f.name));
+      void (async () => {
+        try {
+          for (const f of papers) {
+            const p = await api.uploadPaper(f);
+            st.notify((zh ? "已导入论文库：" : "Added to the library: ") + (p.title || f.name).slice(0, 40));
+          }
+          if (papers.length) await st.loadPapers();
+          if (others.length) {
+            const res = await workspaceApi.upload(st.agentProjectId, others, "uploads");
+            st.notify(zh ? `已上传 ${res.files.length} 个文件到工作区 uploads/` : `Uploaded ${res.files.length} file${res.files.length === 1 ? "" : "s"} to the workspace's uploads/`);
+            window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
+          }
+        } catch (err: any) {
+          st.notify((zh ? "导入失败：" : "Import failed: ") + String(err?.message || err));
+        }
+      })();
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    window.addEventListener("dragend", end);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+      window.removeEventListener("dragend", end);
+    };
+  }, [zh]);
+  if (!dragging) return null;
+  return (
+    <div className="gx-window-drop" aria-hidden>
+      {zh ? "拖到论文库导入 · 拖到工作区文件夹上传 · 拖到输入框作为附件 · 其他位置：论文和文档进论文库，其余进工作区 uploads/"
+        : "Library: import · Explorer folder: upload · Composer: attach · Elsewhere: papers and documents to the library, other files to uploads/"}
+    </div>
   );
 }
 
@@ -181,6 +250,7 @@ export function Workbench() {
   const layout = useStore((s) => s.layout);
   const setLayout = useStore((s) => s.setLayout);
   const showActivity = useStore((s) => s.showActivity);
+  const dragHover = useRef(0);
   const openPalette = useStore((s) => s.openPalette);
   const zh = useStore((s) => s.uiLang) === "zh";
   const narrow = useNarrow();
@@ -236,11 +306,10 @@ export function Workbench() {
             <ModeToggle />
           </div>
           <MenuBar />
-          <span className="wb-title-sep" />
-          <ProjectSwitcher />
         </div>
         <div className="wb-title-center">
           <TitleNavigation zh={zh} />
+          <ProjectSwitcher />
           <button className="wb-title-search" onClick={() => openPalette("commands")}>
             <Icon name="search" size={13} />
             <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, threads…"}</span>
@@ -284,6 +353,16 @@ export function Workbench() {
               title={zh ? a.zh : a.en}
               aria-label={zh ? a.zh : a.en}
               onClick={() => showActivity(a.id)}
+              // hovering a drag over an icon opens that view, so a paper can reach Projects
+              onDragEnter={() => {
+                window.clearTimeout(dragHover.current);
+                dragHover.current = window.setTimeout(() => {
+                  const l = useStore.getState().layout;
+                  if (l.activity !== a.id || !l.sideOpen) showActivity(a.id);
+                }, 450);
+              }}
+              onDragLeave={() => window.clearTimeout(dragHover.current)}
+              onDrop={() => window.clearTimeout(dragHover.current)}
             >
               <Icon name={a.icon} size={19} strokeWidth={1.6} />
             </button>
@@ -344,6 +423,7 @@ export function Workbench() {
         </div>
       </div>
       {compact ? <TabBar zh={zh} /> : <StatusBar />}
+      <WindowDrop zh={zh} />
       <CommandPalette />
       <DialogHost />
     </div>

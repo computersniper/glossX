@@ -18,6 +18,7 @@ import { Icon } from "./icons";
 import { MobileAccess } from "../MobileAccess";
 import { WorkspaceLocation } from "./WorkspaceLocation";
 import { openWorkspaceFolder } from "./openFolder";
+import { draggedItem, hasFiles, readDrag, startDrag, useDropZone, type DragItem } from "../../dnd";
 
 export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
@@ -106,8 +107,10 @@ function LibraryView() {
     }
   }
 
+  const libraryDrop = useDropZone(hasFiles, (e) => void onUpload(Array.from(e.dataTransfer.files)));
+
   return (
-    <div className="wb-side-body">
+    <div className={`wb-side-body gx-library${libraryDrop.over ? " gx-drop-over" : ""}`} {...libraryDrop.props} data-drop-hint={zh ? "松开导入到论文库" : "Drop to add to the library"}>
       <div className="wb-import">
         <input
           className="wb-input"
@@ -142,6 +145,8 @@ function LibraryView() {
           <div
             key={p.id}
             className={`wb-item${activeTabKey === `paper:${p.id}` ? " active" : ""}${openIds.has(p.id) ? " open" : ""}`}
+            draggable
+            onDragStart={(e) => startDrag(e, { type: "paper", id: p.id, label: p.title || p.id })}
             onClick={() => void act("open", p.id)}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -379,6 +384,47 @@ function ProjectsView() {
   const file = async (id: string, category: string) => {
     try { await agentApi.patchProject(id, { category }); await refreshProjects(); } catch (e: any) { notify(String(e?.message || e)); }
   };
+  // drop a thread (move it), a paper (link it) or a project (file it under a direction)
+  const [dropOn, setDropOn] = useState<string | null>(null);
+  const projectAccepts = (target: (typeof projects)[number] | null, item: DragItem | null) =>
+    !!item && !archiveView && (item.type === "thread" ? (item.projectId || null) !== (target?.id || null)
+      : item.type === "paper" ? !!target && target.kind !== "paper" && !target.hub_category && !(target.paper_ids || []).includes(item.id)
+      : false);
+  const dropProps = (key: string, accepts: (item: DragItem | null) => boolean, onDrop: (item: DragItem) => Promise<unknown>) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!accepts(draggedItem())) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = draggedItem()?.type === "paper" ? "copy" : "move";
+      if (dropOn !== key) setDropOn(key);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropOn((k) => (k === key ? null : k));
+    },
+    onDrop: (e: React.DragEvent) => {
+      setDropOn(null);
+      const item = readDrag(e);
+      if (!accepts(item) || !item) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void onDrop(item).catch((err) => notify(String(err?.message || err)));
+    },
+  });
+  const dropOnProject = (target: (typeof projects)[number] | null) => dropProps(`p:${target?.id || ""}`, (item) => projectAccepts(target, item), async (item) => {
+    if (item.type === "thread") {
+      await useSessions.getState().moveProject(item.id, target?.id || null);
+      notify(zh ? `已把「${item.label}」移到${target ? `「${target.name}」` : "通用"}` : `Moved “${item.label}” to ${target ? `“${target.name}”` : "General"}`);
+    } else if (item.type === "paper" && target) {
+      await agentApi.addProjectPaper(target.id, item.id);
+      await refreshProjects();
+      notify(zh ? `已把论文加入「${target.name}」` : `Added the paper to “${target.name}”`);
+    }
+  });
+  const dropOnCategory = (category: string) => dropProps(`c:${category}`, (item) => {
+    if (archiveView || item?.type !== "project") return false;
+    const p = projects.find((x) => x.id === item.id);
+    return !!p && !p.hub_category && (p.category || "") !== category;
+  }, async (item) => { if (item.type === "project") await file(item.id, category); });
   const openHub = async (category: string) => {
     try {
       const hub = await agentApi.categoryHub(category);
@@ -402,7 +448,10 @@ function ProjectsView() {
     ].filter(Boolean).join(" · ");
     const I = p.hub_category ? Layers : p.kind === "paper" ? BookOpen : FolderKanban;
     return (
-      <div key={p.id} className={`wb-item gx-proj-row${projectId === p.id ? " active" : ""}${p.hub_category ? " hub" : ""}`} onClick={() => { if (!archiveView) setProjectId(p.id); }} title={p.description || p.name}>
+      <div key={p.id} className={`wb-item gx-proj-row${projectId === p.id ? " active" : ""}${p.hub_category ? " hub" : ""}${dropOn === `p:${p.id}` ? " gx-drop-target" : ""}`} onClick={() => { if (!archiveView) setProjectId(p.id); }} title={p.description || p.name}
+        draggable={!archiveView && !p.hub_category}
+        onDragStart={(e) => startDrag(e, { type: "project", id: p.id, label: p.name })}
+        {...dropOnProject(p)}>
         <I size={14} strokeWidth={1.7} className="gx-proj-icon" />
         <div className="gx-proj-text">
           <div className="gx-proj-name">{p.hub_category ? (zh ? "整个方向" : "Whole direction") : p.name}</div>
@@ -426,7 +475,7 @@ function ProjectsView() {
     const open = !collapsed.has(c) || !!q;
     return (
       <div key={`cat:${c}`} className="gx-cat">
-        <div className={`gx-cat-head${open ? " open" : ""}`} onClick={() => toggle(c)}>
+        <div className={`gx-cat-head${open ? " open" : ""}${dropOn === `c:${c}` ? " gx-drop-target" : ""}`} onClick={() => toggle(c)} {...dropOnCategory(c)}>
           <ChevronRight size={12} className="gx-cat-chev" />
           {renaming === c ? (
             <input className="wb-input gx-cat-rename" autoFocus defaultValue={c} onClick={(e) => e.stopPropagation()}
@@ -464,13 +513,13 @@ function ProjectsView() {
       <div className="wb-list wb-list-compact gx-proj-list" style={!archiveView ? { flex: `${split} 1 0` } : undefined}>
         {projects.length === 0 && <EmptyState icon={<FolderKanban size={20} />} title={archiveView ? (zh ? "暂无归档项目" : "No archived projects") : (zh ? "还没有项目" : "No projects yet")} hint={archiveView ? undefined : T.empty} />}
         {categories.map(group)}
-        {categories.length > 0 && unfiled.length > 0 && <div className="gx-menu-heading gx-cat-unfiled">{zh ? "未分类" : "Unfiled"}</div>}
+        {categories.length > 0 && <div className={`gx-menu-heading gx-cat-unfiled${dropOn === "c:" ? " gx-drop-target" : ""}`} {...dropOnCategory("")}>{zh ? "未分类" : "Unfiled"}</div>}
         {research.length > 0 && <div className="gx-menu-heading">{T.research}<i>{research.length}</i></div>}
         {research.map(row)}
         {paper.length > 0 && <div className="gx-menu-heading">{T.paper}<i>{paper.length}</i></div>}
         {paper.map(row)}
         {!archiveView && projects.length > 0 && !q && (
-          <div className={`wb-item gx-proj-row general${!projectId ? " active" : ""}`} onClick={() => setProjectId(null)}>
+          <div className={`wb-item gx-proj-row general${!projectId ? " active" : ""}${dropOn === "p:" ? " gx-drop-target" : ""}`} onClick={() => setProjectId(null)} {...dropOnProject(null)}>
             <MessagesSquare size={14} strokeWidth={1.7} className="gx-proj-icon" />
             <div className="gx-proj-text">
               <div className="gx-proj-name">{T.general}</div>

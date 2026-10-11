@@ -435,6 +435,83 @@ def write_text(
                              session_id=session_id, tool_call_id=tool_call_id)
 
 
+MAX_UPLOAD_BYTES = 200_000_000
+
+
+def _free_name(directory: Path, name: str) -> Path:
+    """``name`` in ``directory``, or ``stem (2).ext`` etc. when it is taken."""
+    target = directory / name
+    stem, suffix = Path(name).stem, Path(name).suffix
+    n = 2
+    while target.exists():
+        target = directory / f"{stem} ({n}){suffix}"
+        n += 1
+    return target
+
+
+def save_upload(
+    key: str,
+    root: Path,
+    dir_rel: Any,
+    name: str,
+    data: bytes,
+    *,
+    source: str = "user",
+) -> dict[str, Any]:
+    """Store a dropped / uploaded file in ``dir_rel``; never overwrites (a taken
+    name gets a `` (2)`` suffix). Text files get a checkpoint like any edit."""
+    clean = Path(str(name or "").replace("\\", "/")).name.strip()
+    if not clean or clean in {".", ".."} or "\0" in clean:
+        raise WorkspaceError("invalid file name")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise WorkspaceError(f"file is larger than {MAX_UPLOAD_BYTES} bytes")
+    directory = resolve(root, dir_rel or ".")
+    if directory.exists() and not directory.is_dir():
+        raise WorkspaceError("not a directory")
+    blocked = is_protected_rel(relpath(root, directory / clean))
+    if blocked:
+        raise WorkspaceError(blocked)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = _free_name(directory, clean)
+    target.write_bytes(data)
+    rel = relpath(root, target)
+    checkpoint = None
+    text = _maybe_text(target, MAX_TEXT_BYTES)
+    if text is not None:
+        checkpoint = record_checkpoint(key, rel, None, text, source=source)
+    return {"path": rel, "size": len(data), "checkpoint": checkpoint}
+
+
+def move(key: str, root: Path, src_rel: Any, dest_dir_rel: Any, *, source: str = "user") -> dict[str, Any]:
+    """Move a file or folder into another folder of the same workspace. Text
+    files keep their history as a delete + create checkpoint pair."""
+    src = resolve(root, src_rel)
+    if src == root or not src.exists():
+        raise WorkspaceError(f"not a file: {src_rel}")
+    dest_dir = resolve(root, dest_dir_rel or ".")
+    if not dest_dir.is_dir():
+        raise WorkspaceError("not a directory")
+    if src.is_dir() and (dest_dir == src or src in dest_dir.parents):
+        raise WorkspaceError("cannot move a folder into itself")
+    for rel in (relpath(root, src), relpath(root, dest_dir / src.name)):
+        blocked = is_protected_rel(rel)
+        if blocked:
+            raise WorkspaceError(blocked)
+    if src.parent == dest_dir:
+        return {"path": relpath(root, src), "moved": False}
+    target = _free_name(dest_dir, src.name)
+    files = [src] if src.is_file() else [p for p in src.rglob("*") if p.is_file()]
+    texts = {p: _maybe_text(p, MAX_TEXT_BYTES) for p in files[:200]}
+    src.rename(target)
+    for old, text in texts.items():
+        if text is None:
+            continue
+        new = target / old.relative_to(src) if old != src else target
+        record_checkpoint(key, relpath(root, old), text, None, source=source)
+        record_checkpoint(key, relpath(root, new), None, text, source=source)
+    return {"path": relpath(root, target), "moved": True}
+
+
 def snapshot(root: Path) -> dict[str, Any]:
     """Text contents of small workspace files (for change detection after exec)."""
     files: dict[str, str] = {}

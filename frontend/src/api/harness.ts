@@ -401,6 +401,16 @@ export const workspaceApi = {
     request<any>(`${W(projectId)}/checkpoints/${enc(id)}`).then((r) => (r?.checkpoint ?? r) as Checkpoint),
   revert: (projectId: string | null | undefined, id: string) =>
     request<any>(`${W(projectId)}/checkpoints/${enc(id)}/revert`, { method: "POST", json: {} }),
+  /** Files dropped from the computer; a taken name gets a " (2)" suffix. */
+  upload: (projectId: string | null | undefined, files: File[], dir = "") => {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f, f.name);
+    fd.append("dir", dir);
+    return request<{ files: { path: string; size: number }[] }>(`${W(projectId)}/upload`, { method: "POST", body: fd });
+  },
+  /** Drag a file or folder onto another folder. */
+  move: (projectId: string | null | undefined, path: string, dir: string) =>
+    request<{ path: string; moved: boolean }>(`${W(projectId)}/move`, { method: "POST", json: { path, dir } }),
 };
 
 // ---- version control (docs/glossx-workspaces.md §3) ----

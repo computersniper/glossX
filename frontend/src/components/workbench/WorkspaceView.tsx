@@ -1,5 +1,6 @@
 // Side bar: file tree of the active project's workspace + its checkpoints.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { draggedItem, hasFiles, readDrag, startDrag, useDropZone } from "../../dnd";
 import {
   ChevronRight, File, FileCode, FileJson, FilePlus, FileSpreadsheet, FileText, Folder, FolderCog, FolderOpen, FolderTree, History, Image,
   NotebookText, Presentation, RefreshCw, Undo2, type LucideIcon,
@@ -81,42 +82,94 @@ function fileIcon(name: string): LucideIcon {
   return File;
 }
 
-function TreeRows({ nodes, depth, open, toggle, project }: { nodes: Node[]; depth: number; open: Set<string>; toggle: (p: string) => void; project: string }) {
+/** Drop files from the computer (upload) or a dragged explorer entry (move) into `dir`. */
+export async function dropIntoWorkspace(project: string, dir: string, e: DragEvent): Promise<string[]> {
+  const { notify, uiLang } = useStore.getState();
+  const zh = uiLang === "zh";
+  try {
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length) {
+      const res = await workspaceApi.upload(project, files, dir);
+      notify(zh ? `已上传 ${res.files.length} 个文件${dir ? `到 ${dir}` : ""}` : `Uploaded ${res.files.length} file${res.files.length === 1 ? "" : "s"}${dir ? ` to ${dir}` : ""}`);
+      return res.files.map((f) => f.path);
+    }
+    const item = readDrag(e);
+    if (item?.type === "file" && item.project === project) {
+      const res = await workspaceApi.move(project, item.path, dir);
+      if (res.moved) {
+        notify(zh ? `已移动到 ${res.path}` : `Moved to ${res.path}`);
+        // an open tab on a moved text file would now point at nothing
+        const st = useStore.getState();
+        for (const t of st.openTabs) {
+          if (t.kind !== "file") continue;
+          const p = t.id.split("|").slice(1).join("|");
+          if (t.id.startsWith(`${project}|`) && (p === item.path || p.startsWith(`${item.path}/`))) st.closeTab(`file:${t.id}`);
+        }
+      }
+      return [res.path];
+    }
+  } catch (err: any) {
+    notify((zh ? "拖放失败：" : "Drop failed: ") + String(err?.message || err));
+  } finally {
+    window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
+  }
+  return [];
+}
+
+const acceptsWorkspaceDrop = (project: string) => (e: DragEvent) => {
+  if (hasFiles(e)) return true;
+  const item = draggedItem();
+  return item?.type === "file" && item.project === project;
+};
+
+function TreeRow({ n, depth, open, toggle, project }: { n: Node; depth: number; open: Set<string>; toggle: (p: string) => void; project: string }) {
   const zh = useStore((s) => s.uiLang) === "zh";
   const openFileTab = useStore((s) => s.openFileTab);
   const activeTabKey = useStore((s) => s.activeTabKey);
+  const isOpen = open.has(n.path);
+  const agentDir = n.type === "dir" && n.path === AGENT_DIR;
+  const instructions = n.type === "file" && n.path === INSTRUCTIONS_FILE;
+  const I = agentDir ? FolderCog : n.type === "dir" ? (isOpen ? FolderOpen : Folder) : instructions ? NotebookText : fileIcon(n.name);
+  const active = n.type === "file" && activeTabKey === `file:${project}|${n.path}`;
+  // folders take drops; over a file row the drop goes to the folder around it
+  const target = n.path;
+  const drop = useDropZone((e) => {
+    if (n.type !== "dir" || !acceptsWorkspaceDrop(project)(e)) return false;
+    const item = draggedItem();
+    return !(item?.type === "file" && (item.path === n.path || target === item.path || target.startsWith(`${item.path}/`)));
+  }, (e) => {
+    void dropIntoWorkspace(project, target, e);
+    if (n.type === "dir" && !isOpen) toggle(n.path);
+  }, () => (hasItemDrag() ? "move" : "copy"));
   return (
-    <>
-      {nodes.map((n) => {
-        const isOpen = open.has(n.path);
-        const agentDir = n.type === "dir" && n.path === AGENT_DIR;
-        const instructions = n.type === "file" && n.path === INSTRUCTIONS_FILE;
-        const I = agentDir ? FolderCog : n.type === "dir" ? (isOpen ? FolderOpen : Folder) : instructions ? NotebookText : fileIcon(n.name);
-        const active = n.type === "file" && activeTabKey === `file:${project}|${n.path}`;
-        return (
-          <div key={n.path} role="none">
-            <button
-              type="button"
-              role="treeitem"
-              aria-expanded={n.type === "dir" ? isOpen : undefined}
-              className={`gx-tree-row ${n.type}${active ? " active" : ""}${agentDir ? " agent" : ""}${instructions ? " instructions" : ""}`}
-              style={{ paddingLeft: 8 + depth * 14 }}
-              title={agentDir
-                ? (zh ? "智能体配置：这个项目的设置、命令、子智能体和记忆" : "Agent config: this project’s settings, commands, subagents and memory")
-                : instructions ? (zh ? "项目说明：智能体在每个对话开始时读取" : "Project instructions: the agent reads this at the start of every thread") : n.path}
-              onClick={() => (n.type === "dir" ? toggle(n.path) : openFileTab(project, n.path))}
-            >
-              <ChevronRight size={12} className={`gx-tree-caret${isOpen ? " open" : ""}${n.type === "file" ? " none" : ""}`} />
-              <I size={14} strokeWidth={1.6} className="gx-tree-icon" />
-              <span>{n.name}</span>
-              {agentDir && <em className="gx-tree-tag">{zh ? "智能体配置" : "agent config"}</em>}
-            </button>
-            {n.type === "dir" && isOpen && <TreeRows nodes={n.children} depth={depth + 1} open={open} toggle={toggle} project={project} />}
-          </div>
-        );
-      })}
-    </>
+    <div role="none" className={drop.over ? "gx-drop-over" : undefined} {...drop.props}>
+      <button
+        type="button"
+        role="treeitem"
+        draggable
+        onDragStart={(e) => startDrag(e, { type: "file", project, path: n.path, label: n.name, dir: n.type === "dir" })}
+        aria-expanded={n.type === "dir" ? isOpen : undefined}
+        className={`gx-tree-row ${n.type}${active ? " active" : ""}${agentDir ? " agent" : ""}${instructions ? " instructions" : ""}`}
+        style={{ paddingLeft: 8 + depth * 14 }}
+        title={agentDir
+          ? (zh ? "智能体配置：这个项目的设置、命令、子智能体和记忆" : "Agent config: this project’s settings, commands, subagents and memory")
+          : instructions ? (zh ? "项目说明：智能体在每个对话开始时读取" : "Project instructions: the agent reads this at the start of every thread") : n.path}
+        onClick={() => (n.type === "dir" ? toggle(n.path) : openFileTab(project, n.path))}
+      >
+        <ChevronRight size={12} className={`gx-tree-caret${isOpen ? " open" : ""}${n.type === "file" ? " none" : ""}`} />
+        <I size={14} strokeWidth={1.6} className="gx-tree-icon" />
+        <span>{n.name}</span>
+        {agentDir && <em className="gx-tree-tag">{zh ? "智能体配置" : "agent config"}</em>}
+      </button>
+      {n.type === "dir" && isOpen && <TreeRows nodes={n.children} depth={depth + 1} open={open} toggle={toggle} project={project} />}
+    </div>
   );
+}
+
+const hasItemDrag = () => draggedItem()?.type === "file";
+
+function TreeRows({ nodes, depth, open, toggle, project }: { nodes: Node[]; depth: number; open: Set<string>; toggle: (p: string) => void; project: string }) {
+  return <>{nodes.map((n) => <TreeRow key={n.path} n={n} depth={depth} open={open} toggle={toggle} project={project} />)}</>;
 }
 
 function Checkpoints({ project, items, zh, onChanged }: { project: string; items: Checkpoint[]; zh: boolean; onChanged: () => void }) {
@@ -232,6 +285,7 @@ export function WorkspaceView() {
   }, [refresh]);
 
   const tree = useMemo(() => buildTree(entries || []), [entries]);
+  const rootDrop = useDropZone((e) => state === "ok" && tab === "files" && acceptsWorkspaceDrop(project)(e), (e) => void dropIntoWorkspace(project, "", e), () => (hasItemDrag() ? "move" : "copy"));
   const toggle = (p: string) => setOpen((s) => {
     const next = new Set(s);
     if (!next.delete(p)) next.add(p);
@@ -279,7 +333,7 @@ export function WorkspaceView() {
         />
       </div>
       <WorkspaceLocation projectId={projectId} />
-      <div className="gx-ws-body" role={tab === "files" ? "tree" : undefined}>
+      <div className={`gx-ws-body${rootDrop.over ? " gx-drop-over" : ""}`} role={tab === "files" ? "tree" : undefined} {...rootDrop.props}>
         {state === "loading" ? (
           <div className="gx-chat-loading"><div className="gx-skel w60" /><div className="gx-skel w75" /><div className="gx-skel w40" /><div className="gx-skel w60" /></div>
         ) : state !== "ok" ? (

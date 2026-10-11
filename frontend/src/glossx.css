@@ -1299,25 +1299,30 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .wb.compact .gx-quota-chip { flex-shrink: 0; max-width: 105px; font-size: 11px; padding: 4px; }
 .wb.compact .gx-quota-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Equal outer columns keep the search itself centered, even with window controls. */
-.wb-titlebar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 40%) minmax(0, 1fr); }
+/* Equal outer columns keep the project switcher and search centered, even with window controls. */
+.wb-titlebar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 48%) minmax(0, 1fr); }
 .wb-title-left, .wb-title-right, .wb-title-center { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .wb-title-right { justify-content: flex-end; }
-.wb-title-left .wb-project-switch { min-width: 0; }
+.wb-title-center .wb-project-switch { flex: 0 1 auto; min-width: 0; max-width: 200px; height: 26px; border: 1px solid var(--gx-line-soft); }
 .gx-project-switch { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.wb-title-center { gap: 4px; padding-right: 64px; }
+.wb-title-center { gap: 6px; padding-right: 64px; }
 .wb-title-navigation { display: flex; gap: 0; flex: 0 0 60px; }
 .wb-title-navigation .wb-icon-btn { width: 30px; min-width: 30px; }
 .wb-title-navigation .wb-icon-btn:disabled { opacity: .3; cursor: default; }
 .wb-titlebar .wb-title-center .wb-title-search { flex: 1 1 0; min-width: 0; width: 100%; }
 @media (max-width: 1399px) {
-  .wb-title-left .wb-menubar, .wb-title-left .wb-title-sep { display: none; }
+  .wb-title-left .wb-menubar { display: none; }
+  .wb-title-center .wb-project-switch { max-width: 160px; }
+}
+@media (max-width: 1099px) {
+  .wb-title-center { padding-right: 0; }
+  .wb-title-center .wb-project-switch { max-width: 150px; }
 }
 @media (max-width: 720px) {
-  .wb-titlebar { grid-template-columns: minmax(0, 1fr) 130px minmax(0, 1fr); gap: 4px; }
-  .wb-title-center { padding-right: 0; }
+  .wb-titlebar { grid-template-columns: minmax(0, 1fr) 190px minmax(0, 1fr); gap: 4px; }
+  .wb-title-center { padding-right: 0; gap: 2px; }
   .wb-title-left { gap: 3px; }
-  .wb-title-left .wb-project-switch { max-width: 40px; }
+  .wb-title-center .wb-project-switch { max-width: 96px; padding: 4px 6px; }
   .wb-title-right { gap: 3px; }
 }
 .wb.compact .wb-side-host { position: absolute; inset: 0; z-index: 15; width: auto !important; }
@@ -1461,3 +1466,36 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .mobile-manual > code { display: block; overflow-wrap: anywhere; }
 .mobile-manual > .mobile-code { font-size: 18px; letter-spacing: .06em; }
 .mobile-manual > button { margin-top: 8px; }
+
+/* ---- drag and drop (dnd.ts): works in a browser tab as in the desktop app ---- */
+.wb-tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.wb-tab.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
+.wb-tab[draggable="true"] { -webkit-user-drag: element; }
+/* only the innermost folder under the pointer lights up */
+.gx-ws-body.gx-drop-over:not(:has(.gx-drop-over)) { box-shadow: inset 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.gx-ws-body .gx-drop-over:not(:has(.gx-drop-over)) { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 4px; box-shadow: inset 0 0 0 1px var(--accent); }
+.gx-library, .gx-composer { position: relative; }
+.gx-library.gx-drop-over::after, .gx-composer.gx-drop-over::after {
+  content: attr(data-drop-hint); position: absolute; inset: 4px; z-index: 20; display: flex; align-items: center; justify-content: center;
+  border: 2px dashed var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--gx-s1) 82%, transparent);
+  color: var(--accent); font-size: var(--gx-fs-sm, 13px); font-weight: 600; pointer-events: none;
+}
+.gx-composer.uploading { opacity: .7; }
+.gx-drop-target { background: color-mix(in srgb, var(--accent) 14%, transparent) !important; box-shadow: inset 0 0 0 1px var(--accent); border-radius: 6px; }
+.gx-window-drop {
+  position: fixed; left: 50%; top: 48px; transform: translateX(-50%); z-index: 1000; max-width: calc(100vw - 32px);
+  padding: 8px 14px; border-radius: 10px; background: var(--gx-s2); border: 1px solid var(--accent); color: var(--gx-text);
+  box-shadow: var(--gx-shadow-pop); font-size: 12px; pointer-events: none; text-align: center;
+}
+.wb-item[draggable="true"], .gx-th-row[draggable="true"], .gx-tree-row[draggable="true"] { -webkit-user-drag: element; }
+
+/* nothing open: an empty editor (Welcome is a tab you open) */
+.wb-empty-editor { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; background: var(--gx-s0, var(--gx-bg)); user-select: none; }
+.wb-empty-mark { opacity: .13; filter: grayscale(1); }
+.wb-empty-editor dl { margin: 0; display: grid; gap: 2px; min-width: 260px; }
+.wb-empty-editor dl button { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 5px 10px; border: 0; border-radius: 5px; background: none; color: var(--gx-text-3, var(--gx-text-2)); font: inherit; font-size: 12.5px; cursor: pointer; }
+.wb-empty-editor dl button:hover { background: var(--gx-hover); color: var(--gx-text); }
+.wb-empty-editor dt, .wb-empty-editor dd { margin: 0; }
+.wb-empty-editor kbd { font: inherit; font-size: 11px; padding: 1px 6px; border: 1px solid var(--gx-line); border-radius: 4px; }
+.gx-session-bar .gx-new-thread { flex-shrink: 0; gap: 5px; padding: 0 10px; height: 26px; font-weight: 600; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--gx-line)); }
+.gx-session-bar .gx-new-thread:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }

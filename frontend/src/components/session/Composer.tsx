@@ -3,8 +3,9 @@ import {
   ArrowUp, AtSign, BookOpen, Brain, Compass, CornerDownLeft, Eye, FileCode, FileText, Map, Quote, ScrollText, Slash,
   Sparkles, Square, TextSelect, X, Zap, type LucideIcon,
 } from "lucide-react";
-import { harnessApi, type Attachment, type HarnessCommand, type Mention, type SessionMode } from "../../api/harness";
-import { useStore } from "../../store";
+import { harnessApi, workspaceApi, type Attachment, type HarnessCommand, type Mention, type SessionMode } from "../../api/harness";
+import { splitWorkspaceId, useStore } from "../../store";
+import { draggedItem, hasFiles, readDrag, useDropZone } from "../../dnd";
 import { useActiveSession, useSessions } from "../../sessionStore";
 import { MenuButton, MenuItem, MenuLabel, MenuSep, Popover, Spinner } from "../ui";
 import { formatTokens } from "./toolMeta";
@@ -432,8 +433,46 @@ export function Composer({ disabled }: { disabled?: boolean }) {
   const hasSelChip = chips.some((c) => c.kind === "selection");
   const selText = selection?.text?.trim() || "";
 
+  // papers, workspace files and editor tabs dragged in become chips; files from
+  // the computer are uploaded to the workspace's uploads/ folder first
+  const [uploading, setUploading] = useState(false);
+  const drop = useDropZone((e) => {
+    if (hasFiles(e)) return true;
+    const item = draggedItem();
+    return item?.type === "paper" || (item?.type === "file" && !item.dir) || (item?.type === "tab" && /^(paper|file):/.test(item.key));
+  }, async (e) => {
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length) {
+      setUploading(true);
+      try {
+        const res = await workspaceApi.upload(projectId, files, "uploads");
+        setChips((c) => mergeChips(c, res.files.map((f) => ({ kind: "file" as const, ref: f.path, label: f.path }))));
+        window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
+      } catch (err: any) {
+        useStore.getState().notify((zh ? "上传失败：" : "Upload failed: ") + String(err?.message || err));
+      } finally {
+        setUploading(false);
+      }
+      taRef.current?.focus();
+      return;
+    }
+    const item = readDrag(e);
+    let chip: Chip | null = null;
+    if (item?.type === "paper") chip = { kind: "paper", ref: item.id, label: item.label };
+    else if (item?.type === "file" && !item.dir) chip = { kind: "file", ref: item.path, label: item.path };
+    else if (item?.type === "tab") {
+      const [kind, ...rest] = item.key.split(":");
+      const id = rest.join(":");
+      if (kind === "paper") chip = { kind: "paper", ref: id, label: item.label };
+      if (kind === "file") { const { ref } = splitWorkspaceId(id); chip = { kind: "file", ref, label: ref }; }
+    }
+    if (chip) setChips((c) => mergeChips(c, [chip!]));
+    taRef.current?.focus();
+  });
+
   return (
-    <div className={`gx-composer${busy ? " busy" : ""}`} ref={setBox}>
+    <div className={`gx-composer${busy ? " busy" : ""}${drop.over ? " gx-drop-over" : ""}${uploading ? " uploading" : ""}`} ref={setBox} {...drop.props}
+      data-drop-hint={zh ? "松开：作为附件加入这条消息" : "Drop to attach to this message"}>
       <Popover anchor={box} open={!!picker} onClose={() => setPicker(null)} placement="top-start" width="anchor" className="gx-picker">
         <MenuLabel>
           {picker?.type === "mention" ? T.mention : T.cmd}
