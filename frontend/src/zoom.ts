@@ -67,6 +67,16 @@ export function installZoom() {
   installed = true;
   apply(useZoom.getState());
   useZoom.subscribe(apply);
+  // the workbench never scrolls as a whole: undo any programmatic scroll of
+  // the page or the layout boxes (scrollIntoView scrolls every ancestor)
+  const LAYOUT = ".app.mode-glossx, .app.mode-glossx .wb, .app.mode-glossx .wb-panes, .app.mode-glossx .wb-main";
+  document.addEventListener("scroll", (e) => {
+    if (!document.querySelector(".app.mode-glossx")) return;
+    const t = e.target;
+    const el = t === document ? document.scrollingElement : t instanceof Element ? t : null;
+    if (!el || !(el === document.documentElement || el === document.body || el.id === "root" || el.matches(LAYOUT))) return;
+    if (el.scrollTop || el.scrollLeft) { el.scrollTop = 0; el.scrollLeft = 0; }
+  }, true);
   window.addEventListener("keydown", (e) => {
     const action = zoomKey(e);
     if (!action) return;
