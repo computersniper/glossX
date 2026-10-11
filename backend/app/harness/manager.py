@@ -299,6 +299,34 @@ class SessionManager:
     def get(self, session_id: str) -> dict[str, Any]:
         return self._rt(session_id).public(with_messages=True)
 
+    def digest(self, session_id: str, *, max_messages: int = 10, max_chars: int = 9000) -> str:
+        """A read-only recap of a session's recent conversation, for a side chat:
+        the latest user and assistant texts (no tool output, no attachment bodies)."""
+        rt = self._rt(session_id)
+        session = rt.session
+        lines: list[str] = []
+        for msg in reversed(session.get("messages") or []):
+            if msg.get("local") or msg.get("type") not in ("user", "assistant"):
+                continue
+            text = " ".join(str(msg.get("text") or "").split())
+            if not text:
+                continue
+            who = "User" if msg["type"] == "user" else "Agent"
+            labels = [a.get("label") or a.get("ref") for a in msg.get("attachments") or [] if a.get("ok")]
+            extra = f" [attached: {', '.join(str(l)[:60] for l in labels[:5])}]" if labels else ""
+            lines.append(f"{who}: {text[:900]}{'…' if len(text) > 900 else ''}{extra}")
+            if len(lines) >= max_messages:
+                break
+        lines.reverse()
+        head = f"Thread: {session.get('title') or 'untitled'}"
+        papers = [p for p in session.get("scope_papers") or []][:8]
+        if papers:
+            from ..library import store as library
+            titles = [(library.get_paper(p) or {}).get("title") or p for p in papers]
+            head += "\nPapers in scope: " + "; ".join(t[:80] for t in titles)
+        body = "\n".join(lines) or "(no messages yet)"
+        return (head + "\n" + body)[-max_chars:]
+
     def patch(self, session_id: str, fields: dict[str, Any]) -> dict[str, Any]:
         rt = self._rt(session_id)
         session = rt.session

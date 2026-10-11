@@ -42,6 +42,10 @@ export type AgentProject = {
   /** "paper" = created automatically for one paper; "research" = made by the user (may hold several papers). */
   kind?: "paper" | "research" | (string & {});
   paper_ids?: string[];
+  /** research direction the project is filed under ("" = unfiled) */
+  category?: string;
+  /** set on the project that gathers every paper of that direction */
+  hub_category?: string;
   workspace?: { key: string; path: string; vcs?: { available?: boolean; branch?: string | null } | null } | null;
 };
 export type McpServerCfg = { name: string; command: string; args: string[]; env: Record<string, string>; enabled: boolean };
@@ -164,6 +168,24 @@ export const agentApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, description }),
     }).then((r) => j<AgentProject>(r)),
+  patchProject: (id: string, patch: { name?: string; category?: string }) =>
+    fetch(`/api/agent/projects/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((r) => j<AgentProject>(r)),
+  categoryHub: (name: string) =>
+    fetch("/api/agent/categories/hub", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then((r) => j<AgentProject>(r)),
+  renameCategory: (name: string, newName: string) =>
+    fetch("/api/agent/categories/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, new_name: newName }),
+    }).then((r) => j<{ changed: number }>(r)),
   getProject: (id: string) => fetch(`/api/agent/projects/${encodeURIComponent(id)}`).then((r) => j<AgentProject>(r)),
   addMemory: (id: string, text: string) =>
     fetch(`/api/agent/projects/${encodeURIComponent(id)}/memory`, {

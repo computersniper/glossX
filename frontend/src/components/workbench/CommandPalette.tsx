@@ -181,7 +181,7 @@ export function CommandPalette() {
       { id: "zoomReset", group: G.view, icon: Search, label: L("View: Reset zoom", "视图：重置缩放"), keys: "Ctrl+0", run: zoomReset },
       { id: "contentZoomReset", group: G.view, icon: Search, label: L("Editor: Reset font zoom", "编辑器：重置字体缩放"), run: contentZoomReset },
       { id: "agentMode", group: G.view, icon: Sparkles, label: L("AI pane: Agent", "AI 面板：智能体"), run: () => st.setLayout({ aiOpen: true, aiMode: "agent" }) },
-      { id: "chatMode", group: G.view, icon: MessageSquare, label: L("AI pane: Paper chat", "AI 面板：论文对话"), run: () => st.setLayout({ aiOpen: true, aiMode: "chat" }) },
+      { id: "chatMode", group: G.view, icon: MessageSquare, label: L("Side chat (stays out of the thread)", "辅助对话（不进入主对话）"), run: () => st.openSideChat() },
       { id: "toolsMode", group: G.view, icon: Wrench, label: L("AI pane: Paper tools", "AI 面板：论文工具"), run: () => st.setLayout({ aiOpen: true, aiMode: "tools" }) },
       { id: "trace", group: G.view, icon: ListTree, label: L("Show run trace", "显示运行轨迹"), run: () => st.setLayout({ bottomOpen: true, bottomTab: "trace" }) },
       { id: "tasks", group: G.view, icon: Activity, label: L("Show tasks", "显示任务"), run: () => st.setLayout({ bottomOpen: true, bottomTab: "tasks" }) },
