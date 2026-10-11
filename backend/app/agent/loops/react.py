@@ -60,8 +60,7 @@ async def run(state: RunState) -> None:
             emit(event("reflect", "info", "budget exhausted; stopping"))
             break
         last = wc.observations[-1]["summary"][:300] if wc.observations else ""
-        candidates = registry.ranked(f"{wc.goal} {last}", TOP_K,
-                                     exclude_kinds=core.planner_kinds_excluded(state))
+        candidates = core.planner_ranked(state, f"{wc.goal} {last}", TOP_K)
         options = [{"id": c.name, "card": c.card} for c in candidates]
         options.append({"id": DONE, "card": "The observations already answer the goal; stop and write the answer."})
         emit(event("plan", "started", f"turn {turn}: choosing the next action"))

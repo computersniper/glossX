@@ -69,8 +69,10 @@ class FakeLLM:
             ("decider of GlossX", "decide"),
             ("strict fact checker", "verify"),
             ("strict judge", "judge"),
+            ("critic of a GlossX reading team", "critic"),  # mentions readers: match first
             ("reader sub-agent", "reader"),
             ("careful research agent", "synth"),
+            ("academic translator", "translate"),
         ]
         for needle, name in table:
             if needle in system:
@@ -109,6 +111,14 @@ class FakeLLM:
             return {"choice": "generic", "confidence": 0.7, "reason": "focused question"}
         if role == "judge":
             return {"verdict": "supported", "confidence": 0.9, "note": "relevant"}
+        if role == "translate":
+            return "译文: " + user[:40]
+        if role == "critic":
+            return {"conflicts": [{"finding_ids": ["r0.f0", "r1.f0"], "issue": "different BLEU"},
+                                  {"finding_ids": ["r9.f9"], "issue": "made up"}],
+                    "unsupported": [],
+                    "challenges": [{"paper_id": "p2", "question": "Which test set gives 25.2 BLEU?"},
+                                   {"paper_id": "p9", "question": "not a paper the team read"}]}
         if role == "reader":
             pid = "p1" if "p1#" in user else "p2"
             return {"relevance": 0.8, "findings": [{"claim": "a score", "span_ids": [f"{pid}#1"]}]}
@@ -216,7 +226,7 @@ def test_normalize_steps_drops_unknown_capabilities_and_bad_deps():
 def test_builtin_workflows_validate_and_use_known_capabilities():
     manifests = {m["id"]: m for m in builtin_manifests()}
     assert {"literature-review", "cross-paper-qa", "claim-verification", "tutoring",
-            "reproduction"} <= set(manifests)
+            "reproduction", "team-review"} <= set(manifests)
     reg = build_registry(connections={"cli_agents": {"codex": {"enabled": True},
                                                      "claude": {"enabled": True}}})
     for manifest in manifests.values():
@@ -309,6 +319,20 @@ def test_cross_paper_qa_workflow_reads_every_scope_paper(fake_llm):
     assert result["claims"]
 
 
+def test_team_review_runs_a_critic_and_a_rebuttal_round(fake_llm):
+    llm = fake_llm()
+    run = make_run(workflow="workflow.team-review")
+    result, _ = drive(run)
+    critic_input = llm.users("critic")
+    assert len(critic_input) == 1 and "[r0.f0]" in critic_input[0] and "[r1.f0]" in critic_input[0]
+    readers = llm.users("reader")
+    # one reader per paper, then one rebuttal for the critic's valid challenge (p9 is dropped)
+    assert len(readers) == 3 and "Which test set gives 25.2 BLEU?" in readers[2]
+    critic_step = next(s for s in run.plan["steps"] if s.get("workflow_step") == "critic")
+    assert critic_step["status"] == "completed"
+    assert result["claims"]
+
+
 def test_claim_verification_workflow_runs_on_reflexion(fake_llm):
     fake_llm(synth={"answer": "Verdict: SUPPORTED\n\n28.4 BLEU [S:p1#1].",
                     "claims": [{"text": "28.4 BLEU", "span_ids": ["p1#1"]}]},
@@ -354,3 +378,107 @@ def test_run_api_accepts_every_registered_loop():
         assert RunCreateBody(goal="x", loop=f"loop:{loop_id}").loop == f"loop:{loop_id}"
     with pytest.raises(ValidationError):
         RunCreateBody(goal="x", loop="loop:nope")
+
+
+# -- shared tools and capability cards -----------------------------------------
+def _ctx():
+    from app.agent.capabilities import RunContext
+
+    return RunContext(run_id="r1", paper_ids=["p1"], spans=MemorySpanStore())
+
+
+def test_translate_keeps_span_ids_attached(fake_llm):
+    llm = fake_llm()
+    cap = build_registry(connections={}).get("paper.translate")
+    out = asyncio.run(cap.handler({"span_ids": ["p1#1", "nope#9"], "language": "Chinese"}, _ctx()))
+    assert out["span_ids"] == ["p1#1"]
+    assert "[S:p1#1]" in llm.users("translate")[0]
+    with pytest.raises(ValueError):
+        asyncio.run(cap.handler({}, _ctx()))
+
+
+def test_highlight_anchors_spans_with_their_bbox(monkeypatch):
+    from app.library import store
+
+    saved = []
+    monkeypatch.setattr(store, "add_highlight",
+                        lambda pid, h: saved.append((pid, h)) or {"id": f"h{len(saved)}", **h})
+    cap = build_registry(connections={}).get("paper.highlight")
+    out = asyncio.run(cap.handler({"span_ids": ["p1#1", "p1#99"], "category": "result"}, _ctx()))
+    assert [h["span_id"] for h in out["highlights"]] == ["p1#1"] and out["skipped"] == ["p1#99"]
+    pid, h = saved[0]
+    assert pid == "p1" and h["page"] == 1 and h["rects"] == [[0, 0, 10, 10]] and h["kind"] == "agent"
+    assert cap.side_effects and not cap.approval_permissions()
+
+
+def test_cards_show_full_schemas_only_for_the_best_matches():
+    reg = build_registry(connections={})
+    state = SimpleNamespace(registry=reg, ctx=SimpleNamespace(project_id=None),
+                            gate=SimpleNamespace(auto_approved=lambda: set()))
+    lines = core.cards_text(state, "search evidence passages in papers", k=12).splitlines()
+    assert len(lines) == 12
+    assert all('args: {' in line for line in lines[:core.FULL_SCHEMA_CARDS])
+    assert all('args: [' in line for line in lines[core.FULL_SCHEMA_CARDS:])
+    described = reg.get("library.import").describe()
+    assert described["side_effects"] == "adds a paper to the library" and described["requirements"] == []
+
+
+# -- learner model ---------------------------------------------------------------
+@pytest.fixture
+def learner_dir(monkeypatch, tmp_path):
+    from app import config
+
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    return tmp_path
+
+
+def test_learner_mastery_moves_with_quiz_answers(learner_dir):
+    from app.agent import learner
+
+    assert learner.record("Self-attention", "explained")["mastery"] == 0.5
+    learner.record("self-attention ", "correct")
+    entry = learner.record("SELF-ATTENTION", "correct", note="got the scaling factor")
+    assert entry["correct"] == 2 and entry["explained"] == 1 and entry["mastery"] == 0.75
+    learner.record("Beam search", "wrong")
+    names = [c["name"] for c in learner.profile("attention heads")]
+    assert names == ["Self-attention"]
+    assert {c["name"] for c in learner.profile()} == {"Self-attention", "Beam search"}
+    with pytest.raises(ValueError):
+        learner.record("x", "maybe")
+    assert (learner_dir / "learner.json").exists()
+
+
+def test_learner_capabilities_are_global_but_project_memory_is_not(learner_dir):
+    reg = build_registry(connections={})
+    no_project = SimpleNamespace(registry=reg, emit=lambda e: None, ctx=SimpleNamespace(project_id=None),
+                                 gate=SimpleNamespace(auto_approved=lambda: set()))
+    steps = core.normalize_steps([
+        {"id": "a", "capability": "learner.profile", "args": {"query": "attention"}},
+        {"id": "b", "capability": "memory.recall", "args": {"query": "attention"}},
+    ], no_project, prefix="s", taken=set(), phase="plan")
+    assert [s["capability"] for s in steps] == ["learner.profile"]
+    names = [c.name for c in core.planner_ranked(no_project, "learner memory recall concepts", 40)]
+    assert "learner.profile" in names and not any(n.startswith("memory.") for n in names)
+    in_project = SimpleNamespace(**{**vars(no_project), "ctx": SimpleNamespace(project_id="proj1")})
+    assert core.planner_can_use(in_project, reg.get("memory.recall"))
+
+    record = reg.get("learner.record")
+    out = asyncio.run(record.handler({"concept": "BLEU", "outcome": "correct"}, _ctx()))
+    assert out["status"] == "saved" and out["mastery"] == round(2 / 3, 3)
+    out = asyncio.run(reg.get("learner.profile").handler({"query": "BLEU score"}, _ctx()))
+    assert out["concepts"][0]["name"] == "BLEU"
+
+
+def test_tutoring_workflow_reads_the_learner_profile(fake_llm, learner_dir):
+    from app.agent import learner
+
+    learner.record("BLEU", "wrong", note="confuses BLEU with accuracy")
+    llm = fake_llm()
+    run = make_run(goal="Teach me how BLEU is used to compare the Transformer and ConvS2S",
+                   workflow="workflow.tutoring")
+    result, _ = drive(run)
+    profile = [s for s in run.plan["steps"] if s.get("workflow_step") == "profile"]
+    assert profile and profile[0]["status"] == "completed"
+    writer = llm.users("synth")[0]
+    assert "confuses BLEU with accuracy" in writer and "mastery score" in writer
+    assert result["claims"]

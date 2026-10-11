@@ -106,7 +106,7 @@ export function Library() {
           <input
             ref={fileRef}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,.md,.markdown,.html,.htm,.pptx"
             multiple
             hidden
             onChange={(e) => onUpload(e.target.files)}

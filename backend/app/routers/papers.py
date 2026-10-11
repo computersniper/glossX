@@ -11,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ..library import importers, service, store
+from ..library import documents, importers, service, store
 from ..library.import_jobs import (
     ImportCleanupError,
     ImportJobManager,
@@ -56,10 +56,13 @@ async def list_papers():
 @router.post("/upload")
 async def upload_paper(file: UploadFile = File(...)):
     data = await file.read()
+    meta = {"source": "upload", "title": ""}
     try:
-        paper = await run_in_threadpool(
-            service.create_from_pdf_bytes, data, {"source": "upload", "title": ""}
-        )
+        if data[:5] != b"%PDF-" and documents.is_supported(file.filename or ""):
+            # Markdown, text, HTML and slides are rendered to a PDF so their spans stay clickable
+            data, title = await run_in_threadpool(documents.to_pdf, file.filename or "", data)
+            meta = {"source": "document", "title": title}
+        paper = await run_in_threadpool(service.create_from_pdf_bytes, data, meta)
     except ValueError as e:
         raise HTTPException(400, str(e))
     await run_in_threadpool(_seed_paper_project, paper["id"])

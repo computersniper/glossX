@@ -396,6 +396,8 @@ class McpManager:
                     trust="external",
                     timeout=CALL_TIMEOUT,
                     meta={"server": cfg["name"], "tool": tool_name},
+                    requirements=[f"MCP server {cfg['name']}"],
+                    side_effects="whatever the external MCP tool does",
                 ))
         return caps
 

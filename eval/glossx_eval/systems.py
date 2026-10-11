@@ -187,10 +187,11 @@ class PiSystem(CommandSystem):
 @dataclass
 class GlossXSystem:
     """GlossX through its HTTP API. Papers must already be imported into the
-    library; ``paper_ids`` maps a task's paper file name to its library id."""
+    library; ``paper_ids`` maps a task's paper file name to its library id
+    (``None`` when GlossX refused the file at import)."""
 
     base_url: str = "http://127.0.0.1:8000"
-    paper_ids: dict[str, str] = field(default_factory=dict)
+    paper_ids: dict[str, str | None] = field(default_factory=dict)
     workflow: str = "auto"
     loop: str = "auto"
     provider: str | None = None
@@ -206,7 +207,14 @@ class GlossXSystem:
             return json.loads(resp.read().decode())
 
     def run(self, task: Task, workdir: Path, timeout_s: float) -> Output:
-        ids = [self.paper_ids[Path(p).name] for p in task.papers if Path(p).name in self.paper_ids]
+        names = [Path(p).name for p in task.papers]
+        rejected = [n for n in names if n in self.paper_ids and self.paper_ids[n] is None]
+        if rejected and len(rejected) == len(names):
+            # GlossX refused every paper at import (unreadable PDF): that refusal is its answer
+            verdict = "Verdict: NOT ENOUGH EVIDENCE\n" if task.kind == "claim" else ""
+            return Output(answer=f"{verdict}GlossX could not import {', '.join(rejected)}: the PDF is unreadable.",
+                          raw={"import_rejected": rejected})
+        ids = [self.paper_ids[n] for n in names if self.paper_ids.get(n)]
         start = time.monotonic()
         body = {
             "goal": f"{KIND_INSTRUCTIONS[task.kind]}\n\n{task.question}", "paper_ids": ids,
