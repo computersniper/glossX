@@ -172,13 +172,30 @@ def planner_kinds_excluded(state: RunState) -> set[str]:
     return excluded
 
 
+FULL_SCHEMA_CARDS = 8
+
+
 def cards_text(state: RunState, query: str, k: int = 16) -> str:
+    """Planner-facing capability list, best BM25 match first.
+
+    Progressive disclosure: the top ``FULL_SCHEMA_CARDS`` capabilities carry
+    their full argument schema; the rest list only argument names, which keeps
+    large external schemas (MCP tools) out of the planner's window.
+    """
     auto = state.gate.auto_approved()
     lines = []
-    for cap in state.registry.ranked(query, k, exclude_kinds=planner_kinds_excluded(state)):
-        schema = json.dumps(cap.input_schema, ensure_ascii=False)
-        flag = ", needs approval" if cap.approval_permissions(auto) else ""
-        lines.append(f"- {cap.name} ({cap.kind}, cost {cap.cost}{flag}): {cap.card} args: {schema}")
+    ranked = state.registry.ranked(query, k, exclude_kinds=planner_kinds_excluded(state))
+    for n, cap in enumerate(ranked):
+        if n < FULL_SCHEMA_CARDS:
+            schema = json.dumps(cap.input_schema, ensure_ascii=False)
+        else:
+            schema = "[" + ", ".join(cap.input_schema) + "]"
+        flags = ""
+        if cap.approval_permissions(auto):
+            flags += ", needs approval"
+        if cap.side_effects:
+            flags += f", side effect: {cap.side_effects}"
+        lines.append(f"- {cap.name} ({cap.kind}, cost {cap.cost}{flags}): {cap.card} args: {schema}")
     return "\n".join(lines)
 
 

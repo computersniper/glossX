@@ -92,7 +92,8 @@ def from_scifact(claims: Iterable[dict[str, Any]], corpus: dict[int, dict[str, A
     """SciFact ``claims_*.jsonl`` rows + ``corpus.jsonl`` keyed by doc_id.
 
     The label is SUPPORTED / REFUTED from the evidence sets, else NOT ENOUGH
-    EVIDENCE; cited abstracts become the task's documents (as text files).
+    EVIDENCE; cited abstracts become the task's documents (one small PDF each,
+    so every system reads the same files; see ``prepare.abstract_pdf``).
     """
     for row in claims:
         labels = {e["label"] for sets in (row.get("evidence") or {}).values() for e in sets}
@@ -101,7 +102,7 @@ def from_scifact(claims: Iterable[dict[str, Any]], corpus: dict[int, dict[str, A
         docs = [str(d) for d in row.get("cited_doc_ids", [])]
         yield Task(
             id=f"scifact-{row['id']}", suite="scifact", kind="claim", question=row["claim"],
-            papers=[f"abstracts/{d}.txt" for d in docs],
+            papers=[f"abstracts/{d}.pdf" for d in docs],
             gold={"label": label, "evidence": row.get("evidence") or {},
                   "titles": {d: (corpus.get(int(d)) or {}).get("title", "") for d in docs}},
         )

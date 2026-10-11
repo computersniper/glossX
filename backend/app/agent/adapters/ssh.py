@@ -191,6 +191,8 @@ def ssh_capabilities(conns: dict[str, Any]) -> list[Capability]:
             source="ssh",
             trust="external",
             timeout=RUN_TIMEOUT + 180,
+            requirements=["ssh client", "a configured remote host"],
+            side_effects="runs commands on a remote host",
         ),
         Capability(
             name="remote.ssh.hosts",

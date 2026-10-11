@@ -119,3 +119,30 @@ def test_command_system_passes_the_prompt_as_one_argument(tmp_path):
         Task(id="t", suite="s", kind="qa", question="Q? it's \"quoted\""))[:20]
     missing = CommandSystem("nope", "definitely-not-installed-agent {prompt}")
     assert "not installed" in missing.run(Task(id="t", suite="s", kind="qa", question="Q"), tmp_path, 5).error
+
+
+def test_prepare_scifact_renders_each_abstract_as_a_pdf(tmp_path):
+    import io
+    import tarfile
+
+    import fitz
+    from glossx_eval import prepare
+
+    claims = [
+        {"id": 1, "claim": "A causes B.", "evidence": {"7": [{"label": "SUPPORT", "sentences": [0]}]}, "cited_doc_ids": [7]},
+        {"id": 2, "claim": "C is mixed.", "cited_doc_ids": [7, 8], "evidence": {
+            "7": [{"label": "SUPPORT", "sentences": [0]}], "8": [{"label": "CONTRADICT", "sentences": [0]}]}},
+    ]
+    corpus = [{"doc_id": 7, "title": "On A", "abstract": ["A causes B in mice."] * 80},
+              {"doc_id": 8, "title": "On C", "abstract": ["C does not."]}]
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, rows in (("data/claims_dev.jsonl", claims), ("data/corpus.jsonl", corpus)):
+            data = "\n".join(json.dumps(r) for r in rows).encode()
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    tasks = prepare.build_scifact(tmp_path, 10, 0, blob=buf.getvalue())
+    assert [t.gold["label"] for t in tasks] == ["SUPPORTED"]  # MIXED is left out
+    with fitz.open(tmp_path / tasks[0].papers[0]) as doc:
+        assert "A causes B in mice." in doc[0].get_text()  # long abstract still fits

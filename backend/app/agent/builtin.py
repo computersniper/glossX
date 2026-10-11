@@ -10,11 +10,13 @@ import asyncio
 import time
 from typing import Any
 
+from ..features.highlight import CATEGORY_COLORS as HIGHLIGHT_COLORS
 from ..features.citations import _ensure_raw_refs, resolve_references
 from ..features.explain import explain_selection
+from ..features.translate import translate_text
 from ..features.summarize import summarize_paper
 from ..library import store
-from ..pdf import structure
+from ..pdf import ingest, structure
 from ..features.common import json_complete
 from ..providers import registry as providers
 from ..search import scholar
@@ -216,6 +218,27 @@ async def _library_import(args: dict[str, Any], ctx: RunContext) -> Any:
     }
 
 
+async def _library_import_web(args: dict[str, Any], ctx: RunContext) -> Any:
+    from ..harness.web import web_fetch
+    from ..library import documents, service
+
+    url = _str_arg(args, "url")[:2000]
+    page = await web_fetch(url, max_chars=200_000)  # refuses local and private addresses
+    text = str(page.get("text") or "").strip()
+    if not text:
+        raise ValueError(page.get("note") or "the page has no readable text")
+    title = str(page.get("title") or "").strip() or url
+    body = f"# {title}\n\nSource: {page.get('final_url') or url}\n\n{text}"
+    pdf, _ = await asyncio.to_thread(documents.to_pdf, "page.txt", body.encode("utf-8"))
+    paper = await asyncio.to_thread(service.create_from_pdf_bytes, pdf,
+                                    {"source": "web", "url": page.get("final_url") or url, "title": title[:300]})
+    ctx.imported[url] = paper["id"]
+    if paper["id"] not in ctx.paper_ids:
+        ctx.paper_ids.append(paper["id"])
+    return {"status": "completed", "paper_id": paper["id"], "title": paper.get("title", title),
+            "truncated": bool(page.get("truncated"))}
+
+
 async def _library_search(args: dict[str, Any], ctx: RunContext) -> Any:
     query = _str_arg(args, "query")
     k = _int_arg(args, "k", 8, 1, 20)
@@ -305,6 +328,134 @@ def _project_of(ctx: RunContext) -> str:
     if not ctx.project_id or not projects.exists(ctx.project_id):
         raise ValueError("this run does not belong to a project")
     return ctx.project_id
+
+
+async def _paper_translate(args: dict[str, Any], ctx: RunContext) -> Any:
+    span_ids = args.get("span_ids")
+    span_ids = [str(s) for s in span_ids] if isinstance(span_ids, list) else []
+    text = _str_arg(args, "text", required=False)[:6000]
+    spans = [s for s in (ctx.spans.get(sid) for sid in span_ids[:12]) if s]
+    if not text and not spans:
+        raise ValueError("give 'text' or 'span_ids' to translate")
+    language = _str_arg(args, "language", required=False) or None
+    out: dict[str, Any] = {"language": language or "output language"}
+    if text:
+        out["translation"] = await translate_text(text, language=language,
+                                                  provider=ctx.provider)
+    if spans:
+        # one call for all spans; markers keep each translation tied to its span id
+        joined = "\n".join(f"[S:{s['id']}] {' '.join(s['text'].split())}" for s in spans)
+        out["span_translations"] = await translate_text(joined, language=language, provider=ctx.provider)
+        out["span_ids"] = [s["id"] for s in spans]
+    return out
+
+
+def _highlight_rects(paper_id: str, span: dict) -> tuple[int, list] | None:
+    bbox = span.get("bbox")
+    if isinstance(span.get("page"), int) and isinstance(bbox, list) and len(bbox) == 4:
+        return span["page"], [bbox]
+    loc = ingest.locate_text(store.pdf_path(paper_id), span.get("text", "")[:200])
+    return (loc["page"], loc["rects"]) if loc else None
+
+
+async def _paper_highlight(args: dict[str, Any], ctx: RunContext) -> Any:
+    span_ids = args.get("span_ids")
+    if not isinstance(span_ids, list) or not span_ids:
+        raise ValueError("'span_ids' must be a non-empty list of evidence span ids")
+    note = _str_arg(args, "note", required=False)[:500]
+    category = (_str_arg(args, "category", required=False) or "result").lower()
+    if category not in HIGHLIGHT_COLORS:
+        category = "result"
+    saved, skipped = [], []
+    for sid in [str(x) for x in span_ids][:20]:
+        span = ctx.spans.get(sid)
+        if not span or not store.get_paper(span["paper_id"]):
+            skipped.append(sid)
+            continue
+        where = await asyncio.to_thread(_highlight_rects, span["paper_id"], span)
+        if not where:
+            skipped.append(sid)
+            continue
+        page, rects = where
+        h = store.add_highlight(span["paper_id"], {
+            "page": page, "rects": rects, "color": HIGHLIGHT_COLORS[category],
+            "category": category, "text": span["text"][:2000],
+            "note": note or f"GlossX run {ctx.run_id}", "kind": "agent",
+        })
+        saved.append({"id": h["id"], "span_id": sid, "paper_id": span["paper_id"], "page": page})
+    return {"highlights": saved, "skipped": skipped}
+
+
+CRITIC_SYSTEM = (
+    "You are the critic of a GlossX reading team. Several reader sub-agents each "
+    "read one paper and reported findings with cited excerpts. Cross-check them: "
+    "find findings that conflict across papers, findings their cited excerpts do "
+    "not support, and important gaps for the question. For each problem worth "
+    "settling, address a challenge to the reader of one paper: a precise question "
+    "that rereading that paper could answer."
+)
+CRITIC_SHAPE = (
+    '{"conflicts": [{"finding_ids": ["r0.f0", "r1.f0"], "issue": "..."}], '
+    '"unsupported": [{"finding_id": "r0.f1", "issue": "..."}], '
+    '"challenges": [{"paper_id": "<paper id>", "question": "..."}]}'
+)
+MAX_CHALLENGES = 6
+
+
+async def _agent_critic(args: dict[str, Any], ctx: RunContext) -> Any:
+    readings = args.get("readings")
+    if isinstance(readings, dict):
+        readings = [readings]
+    readings = [r for r in readings if isinstance(r, dict)] if isinstance(readings, list) else []
+    if not readings:
+        raise ValueError("'readings' must be a list of reader results")
+    question = _str_arg(args, "question", required=False) or ctx.goal
+    lines: list[str] = []
+    finding_ids: set[str] = set()
+    cited: list[str] = []
+    papers: dict[str, str] = {}
+    for i, reading in enumerate(readings[:8]):
+        pid = str(reading.get("paper_id") or "")
+        papers[pid] = str(reading.get("title") or pid)
+        lines.append(f"READER r{i} on paper {pid} ({papers[pid]}):")
+        for j, f in enumerate((reading.get("findings") or [])[:12]):
+            if not isinstance(f, dict):
+                continue
+            ids = [str(x) for x in f.get("span_ids") or []]
+            cited.extend(ids)
+            finding_ids.add(f"r{i}.f{j}")
+            lines.append(f"  [r{i}.f{j}] {f.get('claim', '')} (cites: {', '.join(ids) or 'nothing'})")
+    evidence = ctx.spans.materialize(list(dict.fromkeys(cited)), max_tokens=3000)
+    user = (
+        f"QUESTION:\n{question}\n\nFINDINGS:\n{wrap_untrusted('reader-findings', chr(10).join(lines))}\n\n"
+        f"CITED EXCERPTS:\n{wrap_untrusted('evidence-spans', evidence or '(none)')}"
+    )
+    out = await json_complete(f"{CRITIC_SYSTEM}\n\n{UNTRUSTED_RULE}", user, CRITIC_SHAPE, provider=ctx.provider)
+    out = out if isinstance(out, dict) else {}
+
+    def rows(key: str) -> list[dict]:
+        value = out.get(key)
+        return [r for r in value if isinstance(r, dict)] if isinstance(value, list) else []
+
+    conflicts = [
+        {"finding_ids": [str(x) for x in r.get("finding_ids") or [] if str(x) in finding_ids],
+         "issue": str(r.get("issue") or "")[:400]}
+        for r in rows("conflicts")
+    ]
+    unsupported = [
+        {"finding_id": str(r.get("finding_id")), "issue": str(r.get("issue") or "")[:400]}
+        for r in rows("unsupported") if str(r.get("finding_id")) in finding_ids
+    ]
+    # challenges go back to readers, so they must name a paper the team actually read
+    challenges = [
+        {"paper_id": str(r.get("paper_id")), "question": " ".join(str(r.get("question") or "").split())[:500]}
+        for r in rows("challenges") if str(r.get("paper_id")) in papers and str(r.get("question") or "").strip()
+    ][:MAX_CHALLENGES]
+    return {
+        "conflicts": [c for c in conflicts if c["finding_ids"]],
+        "unsupported": unsupported,
+        "challenges": challenges,
+    }
 
 
 async def _memory_recall(args: dict[str, Any], ctx: RunContext) -> Any:
@@ -403,6 +554,17 @@ BUILTINS: list[Capability] = [
         handler=_library_import,
         permissions=["library:write", "network"],
         cost="network",
+        side_effects="adds a paper to the library",
+    ),
+    Capability(
+        name="library.import_web",
+        kind="source",
+        card="Save a web page (blog post, documentation, news) into the library as a citable source and add it to the run scope.",
+        input_schema={"url": "str: http(s) URL of the page"},
+        handler=_library_import_web,
+        permissions=["library:write", "network"],
+        cost="network",
+        side_effects="adds the page to the library",
     ),
     Capability(
         name="library.search",
@@ -426,6 +588,46 @@ BUILTINS: list[Capability] = [
         cost="llm",
     ),
     Capability(
+        name="paper.translate",
+        kind="tool",
+        card="Translate a passage or evidence spans (by span id) into another language, keeping span ids attached.",
+        input_schema={
+            "text": "str (optional): text to translate",
+            "span_ids": "list[str] (optional): evidence span ids to translate",
+            "language": "str (optional): target language, defaults to the output language",
+        },
+        handler=_paper_translate,
+        permissions=["library:read", "llm"],
+        cost="llm",
+    ),
+    Capability(
+        name="paper.highlight",
+        kind="tool",
+        card="Highlight evidence spans in the PDF reader so the user can see where a claim comes from.",
+        input_schema={
+            "span_ids": "list[str]: evidence span ids to highlight",
+            "category": "str (optional): contribution|method|result|limitation|definition|background",
+            "note": "str (optional): note shown with the highlight",
+        },
+        handler=_paper_highlight,
+        permissions=["library:read", "highlight:write"],
+        side_effects="writes highlights to the library",
+    ),
+    Capability(
+        name="agent.critic",
+        kind="agent",
+        card="Critic sub-agent: cross-check several readers' findings for conflicts and unsupported claims, and return challenges for readers to settle by rereading.",
+        input_schema={
+            "readings": "list: agent.reader results to cross-check",
+            "question": "str (optional): the question the team works on (defaults to the goal)",
+        },
+        output_schema={"conflicts": "[{finding_ids, issue}]", "unsupported": "[{finding_id, issue}]",
+                       "challenges": "[{paper_id, question}]"},
+        handler=_agent_critic,
+        permissions=["library:read", "llm"],
+        cost="llm",
+    ),
+    Capability(
         name="memory.recall",
         kind="memory",
         card="Recall earlier findings and notes saved in this run's research project.",
@@ -440,6 +642,7 @@ BUILTINS: list[Capability] = [
         input_schema={"text": "str: the note to remember"},
         handler=_memory_note,
         permissions=["memory:write"],
+        side_effects="writes a project memory note",
     ),
 ]
 

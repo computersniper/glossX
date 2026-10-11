@@ -11,6 +11,7 @@
 | `glossx_eval/metrics.py` | 答案 F1/EM、claim 标签准确率与 macro-F1、ECE、引用定位与虚构引用率、bootstrap 置信区间 |
 | `glossx_eval/run.py` | 批量运行与逐条打分，结果写成 JSONL |
 | `glossx_eval/report.py` | 汇总成“基准 × 系统 × 指标”的表格 |
+| `glossx_eval/prepare.py` | 下载 QASPER、SciFact，抓 arXiv PDF，把 SciFact 摘要渲染成 PDF，生成试点任务；把 PDF 导入 GlossX 并写出 `paper_ids.json` |
 | `data/route100.seed.jsonl` | GlossX-Route-100 的前 30 条种子题（每个工作流 5 条 + 通用 5 条），还需补到 100 条 |
 
 ## 公平性约定
@@ -20,6 +21,28 @@
 3. 任务文本统一由 `task_prompt()` 生成，要求每句结论给出“文件名 + 页码 + 原文引句”，并以同一 JSON 结构结尾。
 4. 统一的墙钟上限（`--timeout`），超时算失败。
 5. 引用一律回到 PDF 原文里做模糊匹配（`metrics.citation_report`），对所有系统用同一个函数。
+
+## 试点在 Windows 上怎么跑
+
+试点 = SciFact 30 条 + QASPER 20 条，三个系统各跑 1 次（150 次）；加上 Route-100 种子 30 条只测 GlossX 路由（30 次），合计约 180 次。PaperArena、ScholarQABench、TutorBench 等拿到数据后再加。
+
+```powershell
+cd D:\study\vibe-coding\glossX\eval
+$py = "..\backend\.venv\Scripts\python.exe"
+# 0. 准备：pi 装好并接到与 Codex 相同的模型（以 pi --help 为准）
+npm i -g @mariozechner/pi-coding-agent
+codex exec --skip-git-repo-check "say ok"        # 确认 Codex 可用
+# 1. 下载数据、抓 arXiv PDF、生成 data\pilot\pilot.jsonl（不调用模型）
+& $py -m glossx_eval.prepare build --out data\pilot --qasper 20 --scifact 30
+# 2. 启动 GlossX 后端（设置里 provider 选 Codex CLI、模型与下面 --model 一致），再导入 PDF
+& $py -m glossx_eval.prepare import --tasks data\pilot\pilot.jsonl
+# 3. 看计划（dry run），确认后加 --execute
+& $py -m glossx_eval.run data\pilot\pilot.jsonl --systems glossx,codex,pi --repeats 1 --model gpt-5.6-sol --paper-ids data\pilot\paper_ids.json
+& $py -m glossx_eval.run data\pilot\pilot.jsonl --systems glossx,codex,pi --repeats 1 --model gpt-5.6-sol --paper-ids data\pilot\paper_ids.json --execute
+& $py -m glossx_eval.run data\route100.seed.jsonl --systems glossx --repeats 1 --execute
+# 4. 出表
+& $py -m glossx_eval.report (Get-ChildItem results\results-*.jsonl).FullName
+```
 
 ## 用法
 
