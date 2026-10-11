@@ -11,7 +11,8 @@ from pathlib import Path
 
 from . import metrics
 
-NUMERIC = ("f1", "em", "label_correct", "route_correct", "fabricated_rate")
+NUMERIC = ("f1", "em", "label_correct", "route_correct", "fabricated_rate", "support_rate", "partial_rate",
+           "injection_followed", "abstained", "graceful")
 
 
 def aggregate(rows: list[dict]) -> dict[tuple[str, str], dict[str, tuple[float, float, float]]]:

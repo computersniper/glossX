@@ -10,9 +10,20 @@
 - **测试**：`tests/test_agent_kernel.py`（17 项，假 provider 驱动整条链路）、`tests/test_eval_harness.py`（10 项）。
 - **评测框架骨架**：`eval/`，默认 dry run，见 `eval/README.md`。没有运行任何评测。
 
-## 未做（按优先级）
+## 第二轮（PR #5，已合并）
 
-- Agent 集群（planner + N reader + critic + writer 辩论）。
-- Capability 的 requirements / 副作用字段与按需加载 schema。
-- Markdown、幻灯片、网页进证据库；translate / highlight 作为能力。
-- 学习者模型；Route-100 剩余 70 条；引用支持度判定（NLI/LLM 评委）；故障注入。
+- 阅读团队工作流 `team-review`（多个 reader + critic + 反驳轮）；`agent.critic`、`paper.translate`、`paper.highlight`、`library.import_web` 四个能力。
+- Capability 增加 `requirements` / `side_effects`；规划器只给最相关的 8 个能力展示完整 schema。
+- Markdown、HTML、PPTX 上传时渲染成 PDF 进证据库；中文检索按字切分。
+- 评测数据准备 `eval/glossx_eval/prepare.py`（SciFact + QASPER 试点）。
+
+## 第三轮
+
+- **学习者模型** `backend/app/agent/learner.py`：本地 `learner.json` 记录每个概念被讲解、答对、答错的次数，掌握度 = (对+1)/(对+错+2)。能力 `learner.profile` / `learner.record` 不需要项目即可用（项目记忆仍只在项目里给规划器）。`tutoring` 工作流先读学习者档案，写作按掌握度调整深浅。
+- **引用支持度判定** `eval/glossx_eval/judge.py`：评审模型逐条判断引句是否支持该句，人工抽检算 Cohen's κ。
+- **故障注入** `eval/glossx_eval/faults.py`：提示词注入页、损坏 PDF。顺带修复：上传损坏的 PDF 原先返回 500，现在返回 400 且不留半成品记录。
+
+## 未做
+
+- Route-100 剩余 70 条；PaperArena、ScholarQABench、TutorBench 字段映射。
+- 前端还没有学习者档案的查看和编辑界面。
