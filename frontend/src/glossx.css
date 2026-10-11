@@ -329,7 +329,7 @@
 
 /* popover + menu */
 .gx-pop {
-  position: fixed; z-index: 400; min-width: 180px; max-width: calc(100vw - 16px); max-height: min(70vh, 520px); overflow-y: auto; padding: 5px;
+  position: fixed; z-index: 400; min-width: 180px; max-width: calc(calc(100vw / var(--gx-app-zoom, 1)) - 16px); max-height: min(calc(70vh / var(--gx-app-zoom, 1)), 520px); overflow-y: auto; padding: 5px;
   background: color-mix(in srgb, var(--gx-s2) 94%, var(--fg)); border: 1px solid var(--gx-line); border-radius: 10px; box-shadow: var(--gx-shadow-pop);
   animation: gx-pop-in var(--gx-fast) var(--gx-ease);
 }
@@ -410,7 +410,7 @@
    Keep every flex ancestor shrinkable, so tall settings/editor content is
    handled by its own scroll container rather than the document. */
 html:has(.app.mode-glossx), body:has(.app.mode-glossx) { overflow: hidden; }
-.app.mode-glossx { height: 100dvh; min-height: 0; }
+.app.mode-glossx { height: calc(100dvh / var(--gx-app-zoom, 1)); min-height: 0; }
 .wb-main { flex: 1; min-height: 0; min-width: 0; display: flex; }
 
 /* activity bar */
@@ -568,12 +568,12 @@ html:has(.app.mode-glossx), body:has(.app.mode-glossx) { overflow: hidden; }
   radial-gradient(1100px 420px at 18% -8%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
   radial-gradient(700px 380px at 96% 4%, color-mix(in srgb, var(--gx-mark) 6%, transparent), transparent 70%),
   var(--gx-s0); }
-.wb-welcome-inner { width: 100%; max-width: 860px; margin: 0 auto; padding: clamp(28px, 7vh, 72px) 40px 48px; }
+.wb-welcome-inner { width: 100%; max-width: 860px; margin: 0 auto; padding: clamp(28px, calc(7vh / var(--gx-app-zoom, 1)), 72px) 40px 48px; }
 .wb-hero-kicker { display: flex; align-items: center; gap: 8px; color: var(--gx-text-2); font-size: var(--gx-fs-sm); }
 .wb-hero-kicker span { font-weight: 600; color: var(--gx-text); letter-spacing: .01em; }
 .wb-hero-kicker i { font-style: normal; font-family: var(--gx-serif); color: var(--gx-mark); }
 .wb-hero-kicker em { font-style: normal; padding-left: 8px; border-left: 1px solid var(--gx-line); color: var(--gx-text-3); letter-spacing: .06em; text-transform: uppercase; font-size: var(--gx-fs-2xs); font-weight: 600; }
-.wb-hero h1 { margin: 18px 0 10px; max-width: 16em; font-family: var(--gx-serif); font-size: clamp(30px, 4.2vw, 44px); font-weight: 500; line-height: 1.12; letter-spacing: -.02em; color: var(--gx-text); text-wrap: balance; }
+.wb-hero h1 { margin: 18px 0 10px; max-width: 16em; font-family: var(--gx-serif); font-size: clamp(30px, calc(4.2vw / var(--gx-app-zoom, 1)), 44px); font-weight: 500; line-height: 1.12; letter-spacing: -.02em; color: var(--gx-text); text-wrap: balance; }
 .wb-hero p { margin: 0; max-width: 54ch; color: var(--gx-text-2); font-size: var(--gx-fs-lg); line-height: 1.6; text-wrap: pretty; }
 .wb-hero-ask { display: flex; align-items: center; gap: 8px; margin-top: 26px; max-width: 620px; height: 48px; padding: 0 8px 0 16px; border: 1px solid var(--gx-line); border-radius: 14px; background: var(--gx-s2); box-shadow: var(--gx-shadow-2); transition: border-color var(--gx-fast), box-shadow var(--gx-fast); }
 .wb-hero-ask:focus-within { border-color: var(--gx-accent-line); box-shadow: var(--gx-shadow-2), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
@@ -667,10 +667,10 @@ button.wb-status-item:hover, button.wb-status-item.open { background: var(--gx-h
 .wb-mini-meter.live i { animation: gx-pulse 1.4s ease-in-out infinite; }
 
 /* command palette */
-.wb-pal-backdrop { position: fixed; inset: 0; z-index: 70; background: rgb(0 0 0 / .38); backdrop-filter: blur(2px); display: flex; justify-content: center; align-items: flex-start; padding-top: 13vh; animation: gx-fade var(--gx-fast); }
+.wb-pal-backdrop { position: fixed; inset: 0; z-index: 70; background: rgb(0 0 0 / .38); backdrop-filter: blur(2px); display: flex; justify-content: center; align-items: flex-start; padding-top: calc(13vh / var(--gx-app-zoom, 1)); animation: gx-fade var(--gx-fast); }
 :root[data-theme="daylight"] .wb-pal-backdrop { background: rgb(30 40 60 / .18); }
 @keyframes gx-fade { from { opacity: 0; } }
-.wb-pal { width: min(620px, calc(100vw - 32px)); max-height: min(62vh, 560px); display: flex; flex-direction: column; overflow: hidden; border-radius: 14px; border: 1px solid var(--gx-line); background: var(--gx-s2); box-shadow: var(--gx-shadow-pop); animation: gx-pal-in var(--gx-med) var(--gx-ease); }
+.wb-pal { width: min(620px, calc(calc(100vw / var(--gx-app-zoom, 1)) - 32px)); max-height: min(calc(62vh / var(--gx-app-zoom, 1)), 560px); display: flex; flex-direction: column; overflow: hidden; border-radius: 14px; border: 1px solid var(--gx-line); background: var(--gx-s2); box-shadow: var(--gx-shadow-pop); animation: gx-pal-in var(--gx-med) var(--gx-ease); }
 :root[data-theme="daylight"] .wb-pal { background: #fff; }
 @keyframes gx-pal-in { from { opacity: 0; transform: translateY(-6px) scale(.985); } }
 .wb-pal-field { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--gx-line-soft); color: var(--gx-text-3); }
@@ -702,7 +702,7 @@ button.wb-status-item:hover, button.wb-status-item.open { background: var(--gx-h
 .gx-session-title:hover, .gx-session-title.open { background: var(--gx-hover); }
 .gx-session-rename { height: 26px; font-weight: 600; }
 
-.gx-history { display: flex; flex-direction: column; max-height: min(60vh, 460px); }
+.gx-history { display: flex; flex-direction: column; max-height: min(calc(60vh / var(--gx-app-zoom, 1)), 460px); }
 .gx-history-search { flex: none; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-bottom: 1px solid var(--gx-line-soft); color: var(--gx-text-3); }
 .gx-history-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--gx-text); font: inherit; outline: none; }
 .gx-history-list { overflow-y: auto; padding: 5px; }
@@ -1285,7 +1285,7 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 /* ---- phones and tablets (the GlossX mobile app, or any small browser window) ---- */
 .wb-sash { touch-action: none; }
 /* iOS: notch and home indicator; dvh so the keyboard and browser bars don't hide the composer */
-.gx-mobile .app { height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); box-sizing: border-box; }
+.gx-mobile .app { height: calc(100dvh / var(--gx-app-zoom, 1)); padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); box-sizing: border-box; }
 .gx-mobile .wb-status { flex-basis: calc(25px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); }
 @media (pointer: coarse) {
   .wb-sash-x { flex-basis: 8px; }
@@ -1327,7 +1327,7 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 }
 .wb.compact .wb-side-host { position: absolute; inset: 0; z-index: 15; width: auto !important; }
 .wb.compact .wb-ai-host.overlay { left: 0; width: auto !important; max-width: none; border-left: 0; box-shadow: none; }
-.wb.compact .wb-bottom-host { max-height: 45vh; }
+.wb.compact .wb-bottom-host { max-height: calc(45vh / var(--gx-app-zoom, 1)); }
 .wb-tabbar { flex: 0 0 auto; display: flex; padding: 4px 4px env(safe-area-inset-bottom); background: var(--gx-chrome); border-top: 1px solid var(--gx-line-soft); }
 .wb-tabbar .wb-tab { flex: 1 1 0; min-width: 0; max-width: none; height: 52px; padding: 0 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; border-radius: 10px; background: none; color: var(--gx-text-3); font: inherit; font-size: 10.5px; -webkit-tap-highlight-color: transparent; }
 .wb-tabbar .wb-tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1483,7 +1483,7 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .gx-composer.uploading { opacity: .7; }
 .gx-drop-target { background: color-mix(in srgb, var(--accent) 14%, transparent) !important; box-shadow: inset 0 0 0 1px var(--accent); border-radius: 6px; }
 .gx-window-drop {
-  position: fixed; left: 50%; top: 48px; transform: translateX(-50%); z-index: 1000; max-width: calc(100vw - 32px);
+  position: fixed; left: 50%; top: 48px; transform: translateX(-50%); z-index: 1000; max-width: calc(calc(100vw / var(--gx-app-zoom, 1)) - 32px);
   padding: 8px 14px; border-radius: 10px; background: var(--gx-s2); border: 1px solid var(--accent); color: var(--gx-text);
   box-shadow: var(--gx-shadow-pop); font-size: 12px; pointer-events: none; text-align: center;
 }
@@ -1499,3 +1499,12 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .wb-empty-editor kbd { font: inherit; font-size: 11px; padding: 1px 6px; border: 1px solid var(--gx-line); border-radius: 4px; }
 .gx-session-bar .gx-new-thread { flex-shrink: 0; gap: 5px; padding: 0 10px; height: 26px; font-weight: 600; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--gx-line)); }
 .gx-session-bar .gx-new-thread:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+/* robust against window resizes and zoom: the status bar and the composer never
+   leave the window; panes shrink (and scroll inside) instead of pushing them out */
+.app.mode-glossx { overflow: hidden; }
+.wb { overflow: hidden; }
+.wb-panes { overflow: hidden; }
+.wb-side-host, .wb-ai-host { flex-shrink: 1; min-width: 0; min-height: 0; }
+.wb-status, .wb-titlebar, .wb-tabbar { flex-shrink: 0; }
+.wb-bottom-host { min-height: 0; flex-shrink: 1; }

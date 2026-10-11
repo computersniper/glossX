@@ -20,6 +20,7 @@ import { InboxBell, inboxTitle } from "./ThreadsView";
 import { MOD_KEY, isMobileClient, isTouchClient, leaveComputer, useCompact } from "../../mobile";
 import type { Activity } from "../../store";
 import { api } from "../../api/client";
+import { appZoom, useZoom } from "../../zoom";
 import { workspaceApi } from "../../api/harness";
 import { dropHasFolder, droppedFiles, hasFiles } from "../../dnd";
 
@@ -40,8 +41,14 @@ function useNarrow() {
       window.removeEventListener("resize", on);
     };
   }, []);
-  return window.matchMedia(NARROW).matches;
+  // in CSS pixels: with the window zoomed the panes have less room than the window
+  useZoom((z) => z.app);
+  return window.matchMedia(NARROW).matches || window.innerWidth / appZoom() < 1100;
 }
+
+/** The window's size in CSS pixels (the window zoom shrinks the room the panes have). */
+const cssW = () => window.innerWidth / appZoom();
+const cssH = () => window.innerHeight / appZoom();
 
 /** Drag handle: new size = size at drag start + sign × pointer delta. */
 function Sash({ dir, value, sign, onChange }: { dir: "x" | "y"; value: number; sign: 1 | -1; onChange: (v: number) => void }) {
@@ -58,7 +65,9 @@ function Sash({ dir, value, sign, onChange }: { dir: "x" | "y"; value: number; s
         const start = value;
         document.body.style.userSelect = "none";
         document.body.style.cursor = dir === "x" ? "col-resize" : "row-resize";
-        const move = (ev: PointerEvent) => onChange(start + sign * ((dir === "x" ? ev.clientX : ev.clientY) - origin));
+        // pointer deltas are window pixels; the panes are sized in CSS pixels
+        const z = appZoom();
+        const move = (ev: PointerEvent) => onChange(start + sign * ((dir === "x" ? ev.clientX : ev.clientY) - origin) / z);
         const up = () => {
           document.body.style.userSelect = "";
           document.body.style.cursor = "";
@@ -294,11 +303,13 @@ export function Workbench() {
     else setLayout(before.aiOpen ? { aiOpen: false } : { sideOpen: false });
   }, [layout.sideOpen, layout.aiOpen, touch, narrow, compact]);
 
-  const maxSide = Math.max(200, window.innerWidth - (narrow ? 0 : layout.aiOpen ? layout.aiWidth : 0) - MIN_EDITOR - 48);
+  const W = cssW(), H = cssH();
+  const maxSide = Math.max(200, W - (narrow ? 0 : layout.aiOpen ? Math.min(layout.aiWidth, 900) : 0) - MIN_EDITOR - 48);
   const sideW = clamp(layout.sideWidth, 200, Math.min(560, maxSide));
-  const maxAi = narrow ? window.innerWidth - 60 : Math.max(300, window.innerWidth - (layout.sideOpen ? sideW : 0) - MIN_EDITOR - 48);
+  const maxAi = narrow ? W - 60 : Math.max(300, W - (layout.sideOpen ? sideW : 0) - MIN_EDITOR - 48);
   const aiW = clamp(layout.aiWidth, 300, Math.min(900, maxAi));
-  const bottomH = clamp(layout.bottomHeight, 100, Math.max(120, window.innerHeight * 0.6));
+  // the editor keeps at least ~160px above the bottom panel, however short the window
+  const bottomH = clamp(layout.bottomHeight, 100, Math.max(100, Math.min(H * 0.6, H - 40 - 25 - 160)));
 
   return (
     <div className={`wb${narrow ? " narrow" : ""}${compact ? " compact" : ""}`}>
@@ -394,7 +405,7 @@ export function Workbench() {
                 <>
                   <Sash
                     dir="y"
-                    value={bottomH} sign={-1} onChange={(v) => setLayout({ bottomHeight: clamp(v, 100, window.innerHeight * 0.6) })}
+                    value={bottomH} sign={-1} onChange={(v) => setLayout({ bottomHeight: clamp(v, 100, cssH() * 0.6) })}
                   />
                   <div className="wb-bottom-host" style={{ height: bottomH }}>
                     <BottomPanel />
