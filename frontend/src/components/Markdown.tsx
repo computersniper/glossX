@@ -4,6 +4,27 @@ import katex from "katex";
 
 marked.setOptions({ breaks: true, gfm: true });
 
+// CommonMark won't close `**情绪：**与…`: a closing `**` after punctuation must be
+// followed by a space or punctuation, which Chinese text never has. Take a plain
+// `**…**` run as bold first, whatever surrounds it (`__` stays standard: it
+// appears inside identifiers).
+const STRONG = /^\*\*(?!\s)([^\n]*?[^\s*\\])\*\*/;
+marked.use({
+  extensions: [{
+    name: "cjkStrong",
+    level: "inline",
+    start(src: string) {
+      const i = src.indexOf("**");
+      return i < 0 ? undefined : i;
+    },
+    tokenizer(this: any, src: string) {
+      const m = STRONG.exec(src);
+      if (!m) return undefined;
+      return { type: "strong", raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+    },
+  }],
+});
+
 // Render math BEFORE markdown: marked would otherwise mangle LaTeX (underscores
 // become <em>, backslashes get altered), leaving raw $$...$$ in the output. We
 // pull every math span out, render it with KaTeX, stash a neutral placeholder,

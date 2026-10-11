@@ -29,7 +29,7 @@ from typing import Any
 from ..agent import connections as conn_mod
 from ..agent.context import span_ids_in
 from ..providers import registry as providers
-from ..providers.base import progress_sink
+from ..providers.base import native_tools, progress_sink
 from . import context as ctx_mod
 from . import execution, extensions, permissions, protocol, workspace
 from . import settings as settings_mod
@@ -607,7 +607,8 @@ async def execute_calls(rt: Runtime, table: dict[str, ToolSpec], assistant: dict
 
 
 # -- the model call ---------------------------------------------------------------------------
-async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
+async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter,
+                           table: dict[str, ToolSpec] | None = None
                            ) -> tuple[dict[str, Any], list[protocol.ParsedCall]]:
     session = rt.session
     messages = ctx_mod.provider_messages(session)
@@ -651,7 +652,9 @@ async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
     meter.main = True
     try:
         with providers.harness_session(session, lambda reason: add_note(rt, "cache_reset", f"Prompt cache reset: {reason}.", reason=reason)), \
-                progress_sink(progress):
+                progress_sink(progress), \
+                native_tools([{"name": spec.name, "description": spec.description, "parameters": spec.parameters}
+                              for spec in (table or {}).values()]):
             async for chunk in providers.stream(system, messages, provider=model.get("provider") or None,
                                                 model=model.get("model") or None,
                                                 effort=model.get("effort") or None):
@@ -676,6 +679,16 @@ async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
         meter.main = False
     raw = protocol.cut_fake_results(raw)
     text, calls = protocol.parse_message(raw)
+    if not calls and table:
+        # a model trained on native function calling may end with the bare
+        # argument object, its tool name lost on the way: recover or report it
+        text, recovered = protocol.recover_bare_call(text, {n: s.parameters for n, s in table.items()})
+        if recovered:
+            calls = [recovered]
+            if not recovered.error:
+                # history shows the call the way the protocol writes it
+                raw = (text + "\n" if text else "") + protocol.OPEN + json.dumps(
+                    {"name": recovered.name, "arguments": recovered.arguments}, ensure_ascii=False) + protocol.CLOSE
     msg["text"] = text
     msg["streaming"] = False
     msg["thought_ms"] = int((time.monotonic() - started) * 1000)
@@ -738,7 +751,7 @@ async def run_turn(rt: Runtime, *, agent: dict[str, Any] | None = None,
                     compacted_at = info["rounds"]
                     await ctx_mod.compact(rt, auto=True)
                 rt.emit("context.updated", dict(session["context"]))
-                last_assistant, calls = await stream_assistant(rt, system, meter)
+                last_assistant, calls = await stream_assistant(rt, system, meter, table)
                 info["message_id"] = last_assistant["id"]
                 ctx_mod.recount(session)
                 rt.emit("context.updated", dict(session["context"]))

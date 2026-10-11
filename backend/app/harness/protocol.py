@@ -93,6 +93,61 @@ def parse_message(raw: str) -> tuple[str, list[ParsedCall]]:
     return visible, calls
 
 
+_BARE_START = re.compile(r'\{\s*"[A-Za-z_][\w-]*"\s*:')
+
+
+def _loads_lenient(blob: str) -> Any:
+    try:
+        return json.loads(blob)
+    except ValueError:
+        pass
+    # relays sometimes double the quotes around a string value: {"q":""text""}
+    fixed = re.sub(r'([:\[,]\s*)""(?=[^",}\]\s])', r'\1"', blob)
+    fixed = re.sub(r'(?<=[^"\\\s:\[,])""(\s*[,}\]])', r'"\1', fixed)
+    try:
+        return json.loads(fixed)
+    except ValueError:
+        return None
+
+
+def recover_bare_call(text: str, tools: dict[str, dict[str, Any]]) -> tuple[str, ParsedCall | None]:
+    """A message that ends with a bare JSON object instead of a ``<tool_call>``
+    block -- typical of models trained on native function calling, whose tool
+    name gets lost on the way. Returns ``(text without the object, call)``: the
+    tool inferred from the argument names when exactly one fits, else a call
+    whose error tells the model how to write it. ``(text, None)`` otherwise."""
+    body = (text or "").rstrip()
+    if not body.endswith("}"):
+        return text, None
+    for match in _BARE_START.finditer(body):
+        blob = body[match.start():]
+        data = _loads_lenient(blob)
+        if data is None and blob.count("{") != blob.count("}"):
+            continue
+        before = body[:match.start()].rstrip()
+        if isinstance(data, dict):
+            name = data.get("name")
+            if isinstance(name, str) and name in tools and isinstance(data.get("arguments", {}), (dict, str)):
+                return before, _parse_one(json.dumps(data, ensure_ascii=False))
+            keys = set(data)
+        else:
+            # unparseable: read the argument names off the text
+            keys = set(re.findall(r'[{,]\s*"([A-Za-z_][\w-]*)"\s*:', blob))
+        fits = [n for n, schema in tools.items()
+                if keys and keys <= set((schema or {}).get("properties") or {})
+                and (data is None or set((schema or {}).get("required") or []) <= keys)]
+        if not fits:
+            return text, None  # an answer that merely ends with JSON
+        if len(fits) == 1 and isinstance(data, dict):
+            return before, ParsedCall(fits[0], data, None, blob[:2000])
+        hint = (f"Your message ended with a bare JSON object ({blob[:200]}) instead of a tool call"
+                + (f" (did you mean {' or '.join(fits[:4])}?)" if fits else "") + ". "
+                'To call a tool, end the message with <tool_call>{"name": "<tool name>", "arguments": {...}}</tool_call> '
+                "with valid JSON (escape quotes inside strings).")
+        return before, ParsedCall("", {}, hint, blob[:2000])
+    return text, None
+
+
 class VisibleStream:
     """Filter streamed deltas so ``<tool_call>`` blocks never reach the UI text."""
 
