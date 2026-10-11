@@ -9,6 +9,8 @@ export type DesktopApi = {
   platform: string;
   command: (action: DesktopCommand) => Promise<boolean>;
   setTitleBar: (bar: { color: string; symbolColor: string; height: number }) => Promise<boolean>;
+  /** Feeds the taskbar jump list's recent papers / projects (newer shells only). */
+  recent?: (entry: { kind: "paper" | "project"; id: string; title: string }) => Promise<boolean>;
   cancelExit: () => Promise<boolean>;
   confirmExit: (dontAskAgain: boolean) => Promise<boolean>;
   browser: {
