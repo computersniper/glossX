@@ -50,6 +50,11 @@ class ForkBody(BaseModel):
     message_id: str | None = Field(default=None, max_length=64)
 
 
+class MoveProjectBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: str | None = Field(max_length=64)
+
+
 class AttachmentBody(BaseModel):
     kind: Literal["paper", "span", "file", "run"]
     ref: str = Field(min_length=1, max_length=1000)
@@ -199,6 +204,14 @@ async def delete_session(session_id: str, request: Request):
 async def fork_session(session_id: str, request: Request, body: ForkBody | None = None):
     try:
         return _manager(request).fork(session_id, body.message_id if body else None)
+    except _HANDLED as error:
+        raise _fail(error) from error
+
+
+@router.post("/{session_id}/project")
+async def move_session_project(session_id: str, body: MoveProjectBody, request: Request):
+    try:
+        return _manager(request).move_project(session_id, body.project_id)
     except _HANDLED as error:
         raise _fail(error) from error
 

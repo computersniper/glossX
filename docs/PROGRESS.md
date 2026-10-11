@@ -15,6 +15,8 @@
 
 > **项目与归档（2026-10-11）**：上方项目管理、下方工作区设置；项目/方向/对话归档与恢复、归档内移除/删除；数据保留和验证见 `docs/progress/project-archive.md`。
 
+> **可拖动上下分区 / 会话移动**：项目列表与工作区设置间可拖动并保存比例；对话可移动到其他项目或通用，保留历史并重置旧 CLI 续接，见 `docs/progress/session-move-split.md`。
+
 > **移动端独立 API 模式（2026-10-11）**：用户新要求扩展此前“仅连接电脑”的范围；继续共用 frontend + Capacitor 薄壳，进度及略过项见 `docs/progress/mobile-local.md`、`docs/progress/mobile-shell.md`。
 
 ## 0. 一分钟了解现状

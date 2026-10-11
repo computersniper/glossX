@@ -374,6 +374,38 @@ class SessionManager:
         rt.persist()
         return rt.public(with_messages=True)
 
+    def move_project(self, session_id: str, project_id: str | None) -> dict[str, Any]:
+        rt = self._rt(session_id)
+        if rt.parent is not None or rt.session.get("parent_id"):
+            raise ValueError("move the parent thread instead of a subagent")
+        if rt.busy():
+            raise SessionBusyError("wait for this thread to finish before moving it")
+        target = self._check_project(project_id)
+        old = rt.session.get("project_id")
+        if target == old:
+            return rt.public(with_messages=True)
+        if workspace.is_relocating(old) or workspace.is_relocating(target):
+            raise SessionBusyError("wait for workspace relocation before moving this thread")
+        root = workspace.root_for(target)
+        branch = vcs.head_branch(root)
+        scope = projects.get(target).get("paper_ids", []) if target else []
+        changed_at = now()
+        descendants = [c for c in self._sessions.values() if c.session.get("parent_id") == rt.id]
+        for item in [rt, *descendants]:
+            session = item.session
+            session["project_id"] = target
+            session["branch"] = branch
+            session["scope_papers"] = list(dict.fromkeys([*scope, *session.get("scope_papers", [])]))[:30]
+            session["workspace_changed_at"] = changed_at
+            session.pop("provider_thread", None)
+            session.pop("archived_by_project", None)
+            engine.add_note(item, "cache_reset", "Thread moved to a different project. Future tools use the new workspace; earlier files and commits remain in the original workspace.", reason="project_changed")
+            item.persist()
+            item.emit("session.updated", item.public(with_messages=True))
+        vcs.ensure_repo_in_background(workspace.key_for(target))
+        self.inbox_changed()
+        return rt.public(with_messages=True)
+
     def project_archived(self, project_id: str, archived: bool) -> None:
         """Restore only threads archived by this project, not individually
         archived threads. Called after all project busy checks have passed."""
@@ -464,6 +496,8 @@ class SessionManager:
         if not removed:
             return {"removed": 0, "reverted": [], "conflicts": [], "session": rt.public(with_messages=True)}
         since = min(float(m.get("created_at") or 0) for m in removed) or None
+        if restore_files and since and since < float(session.get("workspace_changed_at") or 0):
+            raise ValueError("cannot restore file edits across a project move; use the original workspace history")
         reverted: list[str] = []
         conflicts: list[str] = []
         if restore_files and since:

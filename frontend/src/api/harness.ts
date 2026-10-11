@@ -236,6 +236,7 @@ export const sessionsApi = {
   patch: (id: string, body: { archived?: boolean; title?: string; mode?: SessionMode; model?: string | { provider?: string | null; model?: string | null; effort?: string | null } }) =>
     request<SessionSummary>(S(id), { method: "PATCH", json: body }),
   remove: (id: string) => request<unknown>(S(id), { method: "DELETE" }),
+  moveProject: (id: string, projectId: string | null) => request<SessionSummary>(`${S(id)}/project`, { method: "POST", json: { project_id: projectId } }),
   /** Copy the session up to and including `messageId` (the whole session when omitted). */
   fork: (id: string, messageId?: string | null) => request<SessionSummary>(`${S(id)}/fork`, { method: "POST", json: messageId ? { message_id: messageId } : {} }),
   rewind: (id: string, messageId: string, opts: { include?: boolean; restoreFiles?: boolean } = {}) =>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type Activity } from "../../store";
 import { useLibraryImport } from "../Library";
 import { ImportQueue } from "../ImportQueue";
@@ -255,7 +255,35 @@ function ProjectPapers({ projectId, paperIds, kind, zh }: { projectId: string; p
   );
 }
 
+function ProjectDivider({ ratio, onChange, zh }: { ratio: number; onChange: (ratio: number) => void; zh: boolean }) {
+  const drag = useRef<{ y: number; ratio: number; height: number } | null>(null);
+  const clamp = (v: number) => Math.max(0.15, Math.min(0.85, v));
+  return <div className="gx-project-sash" role="separator" aria-orientation="horizontal" tabIndex={0}
+    aria-label={zh ? "调整项目列表与工作区设置高度" : "Resize projects and workspace settings"}
+    aria-valuemin={15} aria-valuemax={85} aria-valuenow={Math.round(ratio * 100)}
+    onPointerDown={(e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const list = e.currentTarget.previousElementSibling;
+      const detail = e.currentTarget.nextElementSibling;
+      drag.current = { y: e.clientY, ratio, height: (list?.getBoundingClientRect().height || 0) + (detail?.getBoundingClientRect().height || 0) };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }}
+    onPointerMove={(e) => { const d = drag.current; if (d && d.height > 0) onChange(clamp(d.ratio + (e.clientY - d.y) / d.height)); }}
+    onPointerUp={(e) => { drag.current = null; if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
+    onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}
+    onKeyDown={(e) => {
+      if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+      e.preventDefault();
+      onChange(e.key === "Home" ? 0.15 : e.key === "End" ? 0.85 : clamp(ratio + (e.key === "ArrowDown" ? 0.03 : -0.03)));
+    }} />;
+}
+
 function ProjectsView() {
+  const [split, setSplit] = useState(() => {
+    try { const value = Number(localStorage.getItem("glossx.projects.split") || "0.5"); return Number.isFinite(value) ? Math.max(0.15, Math.min(0.85, value)) : 0.5; } catch { return 0.5; }
+  });
+  useEffect(() => { try { localStorage.setItem("glossx.projects.split", String(split)); } catch { /* storage unavailable */ } }, [split]);
   const liveProjects = useStore((s) => s.projects);
   const [archivedProjects, setArchivedProjects] = useState<typeof liveProjects>([]);
   const [archiveView, setArchiveView] = useState(false);
@@ -432,7 +460,7 @@ function ProjectsView() {
           <span>{shown.length}</span>
         </label>
       )}
-      <div className="wb-list wb-list-compact gx-proj-list">
+      <div className="wb-list wb-list-compact gx-proj-list" style={!archiveView ? { flex: `${split} 1 0` } : undefined}>
         {projects.length === 0 && <EmptyState icon={<FolderKanban size={20} />} title={archiveView ? (zh ? "暂无归档项目" : "No archived projects") : (zh ? "还没有项目" : "No projects yet")} hint={archiveView ? undefined : T.empty} />}
         {categories.map(group)}
         {categories.length > 0 && unfiled.length > 0 && <div className="gx-menu-heading gx-cat-unfiled">{zh ? "未分类" : "Unfiled"}</div>}
@@ -450,8 +478,9 @@ function ProjectsView() {
           </div>
         )}
       </div>
+      {!archiveView && <ProjectDivider ratio={split} onChange={setSplit} zh={zh} />}
       {!archiveView && active && (
-        <div key={active.id} className="wb-project agent-panel">
+        <div key={active.id} className="wb-project agent-panel" style={{ flex: `${1 - split} 1 0` }}>
           <h4 className="agent-h">{zh ? "工作区设置" : "Workspace settings"}</h4>
           <strong className="gx-workspace-name" title={active.name}>{active.hub_category ? `${active.hub_category} · ${zh ? "整个方向" : "Whole direction"}` : active.name}</strong>
           <div className="gx-proj-detail-head">
@@ -467,7 +496,7 @@ function ProjectsView() {
           <details className="gx-workspace-memory"><summary>{zh ? "项目记忆与运行" : "Memory and runs"}</summary><ProjectDetail key={active.id} projectId={active.id} onOpenRun={openRunTab} showTitle={false} /></details>
         </div>
       )}
-      {!archiveView && !active && <div className="wb-project agent-panel"><h4 className="agent-h">{zh ? "工作区设置" : "Workspace settings"}</h4><div className="muted">{zh ? "在上方选择项目，设置会显示在这里。" : "Select a project above to configure its workspace here."}</div></div>}
+      {!archiveView && !active && <div className="wb-project agent-panel" style={{ flex: `${1 - split} 1 0` }}><h4 className="agent-h">{zh ? "工作区设置" : "Workspace settings"}</h4><div className="muted">{zh ? "在上方选择项目，设置会显示在这里。" : "Select a project above to configure its workspace here."}</div></div>}
     </div>
   );
 }

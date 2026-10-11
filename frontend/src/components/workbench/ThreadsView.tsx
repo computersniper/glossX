@@ -76,6 +76,11 @@ function ThreadRow({ s, zh, inbox, groupBranch, onChange }: { s: SessionSummary;
   const rename = useSessions((st) => st.rename);
   const fork = useSessions((st) => st.fork);
   const markRead = useSessions((st) => st.markRead);
+  const projects = useStore((st) => st.projects);
+  const [moving, setMoving] = useState(false);
+  const [destination, setDestination] = useState("");
+  const [movingBusy, setMovingBusy] = useState(false);
+  const [moveError, setMoveError] = useState("");
   const projectName = useStore((st) => s.project?.name || st.projects.find((p) => p.id === s.project_id)?.name || "");
   const [editing, setEditing] = useState<string | null>(null);
   const att = attentionOf(s);
@@ -130,6 +135,7 @@ function ThreadRow({ s, zh, inbox, groupBranch, onChange }: { s: SessionSummary;
           {(close) => (
             <>
               <MenuItem icon={<Pencil size={14} />} label={zh ? "重命名" : "Rename"} onSelect={() => { close(); setEditing(title); }} />
+              <MenuItem icon={<FolderKanban size={14} />} label={zh ? "移动到项目…" : "Move to project…"} disabled={s.status !== "idle"} onSelect={() => { close(); setDestination(projects.some((p) => p.id === s.project_id) ? s.project_id! : ""); setMoveError(""); setMoving(true); }} />
               <MenuItem icon={<GitFork size={14} />} label={zh ? "分叉为新对话" : "Fork into a new thread"} disabled={s.archived || s.status !== "idle"} onSelect={() => { close(); void fork(null, undefined, s.id); }} />
               {(s.unread || s.attention === "done" || s.attention === "error") && (
                 <MenuItem icon={<CheckCheck size={14} />} label={zh ? "标为已读" : "Mark as read"} onSelect={() => { close(); void markRead(s.id, true); }} />
@@ -141,6 +147,18 @@ function ThreadRow({ s, zh, inbox, groupBranch, onChange }: { s: SessionSummary;
           )}
         </MenuButton>
       )}
+      {moving && <div className="gx-th-move">
+        <select aria-label={zh ? "目标项目" : "Destination project"} value={destination} disabled={movingBusy} onChange={(e) => setDestination(e.target.value)}>
+          <option value="">{zh ? "通用（不属于项目）" : "General (no project)"}</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.hub_category ? `${p.hub_category} · ${zh ? "整个方向" : "Whole direction"}` : p.name}</option>)}
+        </select>
+        <small>{zh ? "消息保留；后续使用目标工作区，原文件不会搬动。" : "Messages stay; future tools use the destination workspace. Existing files stay where they are."}</small>
+        {moveError && <small role="alert" className="error">{moveError}</small>}
+        <div><button className="gx-btn sm" disabled={movingBusy || destination === (s.project_id || "")} onClick={() => {
+          setMovingBusy(true); setMoveError("");
+          void useSessions.getState().moveProject(s.id, destination || null).then(() => { setMoving(false); onChange?.(); }).catch((e) => setMoveError(String(e?.message || e))).finally(() => setMovingBusy(false));
+        }}>{zh ? "移动" : "Move"}</button><button className="gx-btn ghost sm" disabled={movingBusy} onClick={() => setMoving(false)}>{zh ? "取消" : "Cancel"}</button></div>
+      </div>}
     </div>
   );
 }

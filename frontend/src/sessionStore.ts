@@ -93,6 +93,7 @@ interface SessionsStore {
   rename: (id: string, title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   archive: (id: string, archived: boolean) => Promise<void>;
+  moveProject: (id: string, projectId: string | null) => Promise<void>;
   /** Fork the active chat up to and including `messageId` (whole chat when omitted); `prefill` lands in the composer. */
   fork: (messageId?: string | null, prefill?: { text: string; attachments?: Attachment[] }, sessionId?: string) => Promise<void>;
   /** Go back to `messageId` in this chat (dropping it too unless `include`); `prefill` lands in the composer. */
@@ -489,6 +490,16 @@ export const useSessions = create<SessionsStore>((set, get) => {
       try {
         await sessionsApi.patch(id, { archived });
         if (archived && get().activeId === id) { unwatch(id); get().select(null); }
+        await get().refresh();
+        await get().refreshInbox();
+      } catch (e) { fail(e); throw e; }
+    },
+
+    moveProject: async (id, projectId) => {
+      try {
+        const session = await sessionsApi.moveProject(id, projectId);
+        patchState(id, (s) => ({ ...s, session }));
+        if (get().activeId === id) useStore.getState().setAgentProjectId(projectId);
         await get().refresh();
         await get().refreshInbox();
       } catch (e) { fail(e); throw e; }

@@ -488,8 +488,16 @@ html:has(.app.mode-glossx), body:has(.app.mode-glossx) { overflow: hidden; }
 .wb-menu button.danger, .wb-menu button.danger svg { color: var(--gx-bad); }
 .wb-project { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px; border-top: 1px solid var(--gx-line-soft); }
 .gx-project-switch { padding: 8px 12px; }
-.gx-projects > .gx-proj-list { flex: 1 1 50%; min-height: 100px; overflow-y: auto; }
-.gx-projects > .wb-project { flex: 1 1 45%; border-top: 2px solid var(--gx-line); padding-top: 8px; }
+.gx-projects > .gx-proj-list { flex: 1 1 50%; min-height: 100px; max-height: none; overflow-y: auto; }
+.gx-proj-list > * { flex-shrink: 0; }
+.gx-projects > .wb-project { flex: 1 1 45%; border-top: 0; padding-top: 8px; min-height: 100px; }
+.gx-project-sash { flex: 0 0 9px; position: relative; cursor: row-resize; touch-action: none; outline-offset: -1px; }
+.gx-project-sash::after { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 1px; background: var(--gx-line); }
+.gx-project-sash:hover::after, .gx-project-sash:focus-visible::after { background: var(--accent); height: 3px; top: 3px; }
+.gx-th-row:has(.gx-th-move) { flex-wrap: wrap; }
+.gx-th-move { flex: 0 0 100%; display: grid; gap: 6px; padding: 6px 12px 10px; box-sizing: border-box; }
+.gx-th-move select { width: 100%; min-width: 0; padding: 6px; color: var(--gx-text); background: var(--gx-s1); border: 1px solid var(--gx-line); border-radius: 5px; }
+.gx-th-move small { color: var(--gx-text-2); }
 .gx-workspace-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 8px; }
 .gx-workspace-memory { margin-top: 14px; }
 .gx-workspace-memory > summary { cursor: pointer; color: var(--gx-text-2); font-size: var(--gx-fs-xs); padding: 6px 0; }
