@@ -268,7 +268,7 @@ export function Workbench() {
       </header>
       <div className="wb-main">
         {!compact && <nav className="wb-activity" aria-label="Activity bar">
-          {ACTIVITIES.map((a) => (
+          {ACTIVITIES.filter((a) => a.id !== "mobile" || !touch).map((a) => (
             <button
               key={a.id}
               className={`wb-act${layout.activity === a.id && layout.sideOpen ? " on" : ""}`}

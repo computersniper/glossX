@@ -4,7 +4,7 @@ import { THEMES } from "../ThemePicker";
 import {
   Activity, ArrowLeft, ArrowRightLeft, Bell, Blocks, BookOpen, Check, ChevronRight, CornerDownLeft, FileText, FolderKanban, FolderTree,
   GitBranch, GitBranchPlus, GitCommitHorizontal, GitCompareArrows, GitMerge, History, Home, Languages, Library, ListTree, MessageSquare, MessagesSquare,
-  NotebookText, Palette, PanelBottom, PanelLeft, PanelRight, ScrollText, Search, Settings, SlidersHorizontal, Sparkles, SquarePen, Upload, Wrench, X, ZoomIn, ZoomOut,
+  NotebookText, Palette, PanelBottom, PanelLeft, PanelRight, ScrollText, Search, Settings, SlidersHorizontal, Smartphone, Sparkles, SquarePen, Upload, Wrench, X, ZoomIn, ZoomOut,
   type LucideIcon,
 } from "lucide-react";
 import { activityOf, useSessions } from "../../sessionStore";
@@ -189,6 +189,9 @@ export function CommandPalette() {
       { id: "nextTab", group: G.view, icon: ChevronRight, label: L("Next tab", "下一个标签页"), keys: "Ctrl+Tab", run: () => st.cycleTab(1) },
       { id: "prevTab", group: G.view, icon: ArrowLeft, label: L("Previous tab", "上一个标签页"), keys: "Ctrl+Shift+Tab", run: () => st.cycleTab(-1) },
       { id: "settings", group: G.prefs, icon: Settings, label: L("Open settings", "打开设置"), run: () => { st.setLayout({ activity: "settings", sideOpen: true }); useStore.setState({ settingsFocus: null }); } },
+      { id: "mobile", group: G.prefs, icon: Smartphone, label: L("Mobile access: use from iPhone, iPad or Android (QR code)", "手机 / 平板访问：扫码连接这台电脑"), run: () => {
+        st.setLayout({ activity: "mobile", sideOpen: true });
+      } },
       { id: "theme", group: G.prefs, icon: Palette, label: L("Switch theme…", "切换主题…"), run: toMode("theme"), keepOpen: true },
       { id: "lang", group: G.prefs, icon: Languages, label: zh ? "Switch interface language to English" : "切换界面语言为中文", run: () => st.setUiLang(zh ? "en" : "zh") },
       { id: "mode", group: G.prefs, icon: ArrowRightLeft, label: L("Switch to Gloss mode (classic reader)", "切换到 Gloss 模式（经典阅读器）"), keys: "Ctrl+Shift+M", run: () => st.setMode("gloss") },

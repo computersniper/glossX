@@ -15,6 +15,7 @@ import { WorkspaceView } from "./WorkspaceView";
 import { ScmHeadActions, ScmView } from "./ScmView";
 import { ask } from "./dialog";
 import { Icon } from "./icons";
+import { MobileAccess } from "../MobileAccess";
 
 export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
@@ -22,6 +23,7 @@ export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[
   { id: "scm", icon: "scm", en: "Source control", zh: "源代码管理" },
   { id: "projects", icon: "projects", en: "Projects", zh: "项目" },
   { id: "search", icon: "search", en: "Search (Scholar)", zh: "学术搜索" },
+  { id: "mobile", icon: "phone", en: "Mobile access", zh: "移动端访问" },
   { id: "capabilities", icon: "plugins", en: "Capabilities & Plugins", zh: "能力与插件" },
   { id: "settings", icon: "settings", en: "Settings", zh: "设置" },
 ];
@@ -503,6 +505,12 @@ function SettingsView() {
   );
 }
 
+// iPhone / iPad / Android pairing (QR code, internet access)
+function MobileView() {
+  const zh = useStore((s) => s.uiLang) === "zh";
+  return <div className="wb-side-body"><MobileAccess zh={zh} /></div>;
+}
+
 const VIEWS: Record<Activity, () => JSX.Element> = {
   library: LibraryView,
   workspace: WorkspaceView,
@@ -510,6 +518,7 @@ const VIEWS: Record<Activity, () => JSX.Element> = {
   projects: ProjectsView,
   search: SearchView,
   capabilities: CapabilitiesView,
+  mobile: MobileView,
   settings: SettingsView,
 };
 
