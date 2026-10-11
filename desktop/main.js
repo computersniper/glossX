@@ -15,6 +15,10 @@ const STARTUP_TIMEOUT_MS = 60_000;
 const TITLEBAR_HEIGHT = 40;
 const REPO_ROOT = path.resolve(__dirname, "..");
 const smokeArg = process.argv.find((arg) => arg.startsWith("--glossx-smoke="));
+// Jump list entries start GlossX again with an action (handled by the running app).
+const ACTION_ARG = "--glossx-action=";
+const ACTIONS = new Set(["new-window", "new-thread", "import", "library", "scholar", "open-paper", "open-project"]);
+const RECENT_LIMIT = 8;
 const SMOKE_REPORT = smokeArg ? path.resolve(smokeArg.slice("--glossx-smoke=".length)) : null;
 
 // The browser pages reach the network only through the backend's guard proxy;
@@ -209,6 +213,103 @@ ipcMain.handle("glossx:window", (event, action) => {
 // Quit from the menu: every window goes, after the same question as closing the last one.
 const quit = (win) => requestClose(win, true);
 
+// -- Windows taskbar jump list (right-click on the taskbar icon), as in VS Code --
+function recentPath() {
+  return path.join(app.getPath("userData"), "recent.json");
+}
+
+function readRecent() {
+  try {
+    const data = JSON.parse(fs.readFileSync(recentPath(), "utf8"));
+    return { papers: Array.isArray(data.papers) ? data.papers : [], projects: Array.isArray(data.projects) ? data.projects : [] };
+  } catch {
+    return { papers: [], projects: [] };
+  }
+}
+
+function actionArgs(action, id) {
+  const args = [`${ACTION_ARG}${action}${id ? `:${id}` : ""}`];
+  // A source checkout runs electron.exe, which needs the app folder first.
+  return app.isPackaged ? args : [app.getAppPath(), ...args];
+}
+
+function jumpItem(title, description, action, id) {
+  // The portable build runs from a temp folder; jump to the .exe the user started.
+  const program = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  return {
+    type: "task", title: title.slice(0, 120), description: description.slice(0, 260), program,
+    args: actionArgs(action, id).map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" "),
+    iconPath: program, iconIndex: 0,
+  };
+}
+
+function updateJumpList() {
+  if (process.platform !== "win32" || SMOKE_REPORT) return;
+  const recent = readRecent();
+  const categories = [];
+  if (recent.papers.length) {
+    categories.push({ type: "custom", name: "最近阅读的论文 Recent papers", items: recent.papers.map((p) => jumpItem(p.title || p.id, "在 GlossX 中打开这篇论文 / Open this paper", "open-paper", p.id)) });
+  }
+  if (recent.projects.length) {
+    categories.push({ type: "custom", name: "最近的研究项目 Recent projects", items: recent.projects.map((p) => jumpItem(p.title || p.id, "切换到这个项目的工作区 / Switch to this project", "open-project", p.id)) });
+  }
+  categories.push({
+    type: "tasks",
+    items: [
+      jumpItem("新建研究对话 New research thread", "向智能体提问或布置研究任务", "new-thread"),
+      jumpItem("导入论文 Import a paper", "arXiv、DOI、链接或 PDF", "import"),
+      jumpItem("论文库 Library", "浏览和筛选已导入的论文", "library"),
+      jumpItem("学术搜索 Scholar search", "检索文献与引用", "scholar"),
+      jumpItem("新窗口 New window", "再打开一个 GlossX 窗口", "new-window"),
+    ],
+  });
+  try {
+    const result = app.setJumpList(categories);
+    if (result !== "ok") log("Jump list:", result);
+  } catch (error) {
+    log("Jump list failed:", error);
+  }
+}
+
+// The app reports what was just opened; the newest goes first.
+ipcMain.handle("glossx:recent", (event, entry) => {
+  if (!senderWindow(event) || !entry || !["paper", "project"].includes(entry.kind)) return false;
+  const id = String(entry.id || "");
+  if (!/^[\w-]{1,64}$/.test(id)) return false;
+  const title = String(entry.title || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  const recent = readRecent();
+  const key = entry.kind === "paper" ? "papers" : "projects";
+  if (recent[key][0]?.id === id && recent[key][0]?.title === title) return true;
+  recent[key] = [{ id, title }, ...recent[key].filter((x) => x.id !== id)].slice(0, RECENT_LIMIT);
+  try {
+    fs.mkdirSync(path.dirname(recentPath()), { recursive: true });
+    fs.writeFileSync(recentPath(), JSON.stringify(recent));
+  } catch (error) { log("Could not save recent items:", error); }
+  updateJumpList();
+  return true;
+});
+
+function parseAction(argv) {
+  const raw = argv.find((arg) => arg.startsWith(ACTION_ARG));
+  if (!raw) return null;
+  const [action, id = ""] = raw.slice(ACTION_ARG.length).split(/:(.*)/s);
+  return ACTIONS.has(action) && /^[\w-]{0,64}$/.test(id) ? { action, id } : null;
+}
+
+// Run a jump list action in the window the user was working in.
+async function runAction(request) {
+  if (!request || !backendUrl) return;
+  if (request.action === "new-window") { await openWindow(); return; }
+  let win = activeWindow();
+  if (!win) win = await openWindow();
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+  const send = () => win.webContents.send("glossx:action", request);
+  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
+  else send();
+}
+
 ipcMain.handle("glossx:browser-show", (event, targetId, rect) => {
   const win = senderWindow(event);
   if (!win || typeof targetId !== "string") return false;
@@ -327,6 +428,9 @@ async function main() {
     log("Backend ready at", backendUrl);
     const first = createWindow(backendUrl);
     await first.webContents.loadURL(backendUrl);
+    updateJumpList();
+    const startAction = parseAction(process.argv);
+    if (startAction && startAction.action !== "new-window") void runAction(startAction);
     if (SMOKE_REPORT) {
       const code = await smoke(first);
       quitting = true;
@@ -351,14 +455,22 @@ async function main() {
   }
 }
 
+// Taskbar grouping and the jump list belong to this app id.
+if (process.platform === "win32") app.setAppUserModelId("io.github.computersniper.glossx");
+
 if (process.argv.includes("--version")) {
   process.stdout.write(`${APP_NAME} ${app.getVersion()} (Electron ${process.versions.electron})\n`);
   process.exit(0);
 } else if (!SMOKE_REPORT && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  // Starting GlossX again opens another window on the running app.
-  app.on("second-instance", () => void openWindow());
+  // Starting GlossX again opens another window on the running app; a jump
+  // list entry instead runs its action there.
+  app.on("second-instance", (_event, argv) => {
+    const request = parseAction(argv);
+    if (request) void runAction(request);
+    else void openWindow();
+  });
   app.whenReady().then(main);
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", () => { quitting = true; });

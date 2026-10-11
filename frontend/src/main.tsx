@@ -5,9 +5,11 @@ import "./styles.css";
 import "./glossx.css";
 import App from "./App";
 import { initDesktopChrome } from "./desktop";
+import { initDesktopActions } from "./desktopActions";
 import { installZoom } from "./zoom";
 
 initDesktopChrome();
+initDesktopActions();
 installZoom();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

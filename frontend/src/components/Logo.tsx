@@ -2,38 +2,53 @@ import { useId } from "react";
 
 // Logos use theme CSS vars so they adapt to every theme.
 //  - Gloss  (classic reader): light illuminating a page (annotation + illumination).
-//  - GlossX (agent workbench, `x`): the same page with an X — two crossing strokes
-//    that read as a four-point spark — in place of the light.
+//  - GlossX (agent workbench, `x`): the same lit page, with an X in its
+//    top-left corner.
 export function Logo({ size = 22, x = false }: { size?: number; x?: boolean }) {
   const id = useId();
   if (x) {
-    const grad = `${id}-g`, cut = `${id}-m`;
+    const grad = `${id}-g`, glow = `${id}-l`, cut = `${id}-m`;
+    const small = size < 28;
     return (
       <svg width={size} height={size} viewBox="0 0 96 96" fill="none" aria-hidden="true">
         <defs>
-          <linearGradient id={grad} x1="52" y1="10" x2="88" y2="46" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stopColor="var(--accent2)" stopOpacity="0.72" />
-            <stop offset="0.55" stopColor="var(--accent2)" />
+          <linearGradient id={grad} x1="4" y1="4" x2="26" y2="26" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="var(--accent2)" />
             <stop offset="1" stopColor="var(--accent)" />
           </linearGradient>
+          <radialGradient id={glow} cx="69.6" cy="25.6" r="24" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="var(--accent2)" stopOpacity="0.45" />
+            <stop offset="1" stopColor="var(--accent2)" stopOpacity="0" />
+          </radialGradient>
           {/* the page gives way around the X so the two never touch */}
           <mask id={cut} maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96">
             <rect width="96" height="96" fill="#fff" />
-            <circle cx="70" cy="28" r="21" fill="#000" />
+            <circle cx="15" cy="15" r="15" fill="#000" />
           </mask>
         </defs>
+        {/* the Gloss mark: a page lit by a lamp … */}
+        <circle cx="69.6" cy="25.6" r="24" fill={`url(#${glow})`} />
         <g mask={`url(#${cut})`}>
-          <rect x="14" y="22" width="50" height="62" rx="9"
-            fill="var(--accent2)" fillOpacity="0.16" stroke="var(--accent)" strokeWidth={size < 28 ? 5 : 3.5} />
-          <g stroke="var(--accent)" strokeWidth={size < 28 ? 4.5 : 3.5} strokeLinecap="round">
-            <line x1="26" y1="44" x2="52" y2="44" />
-            <line x1="26" y1="56" x2="52" y2="56" />
-            <line x1="26" y1="68" x2="42" y2="68" />
+          <rect x="18" y="24" width="46" height="60" rx="6.4"
+            fill="var(--accent2)" fillOpacity="0.14" stroke="var(--accent)" strokeWidth={small ? 6 : 4.6} />
+          <g stroke="var(--accent)" strokeWidth={small ? 5.6 : 4.4} strokeLinecap="round">
+            <line x1="29.2" y1="44" x2="52.8" y2="44" />
+            <line x1="29.2" y1="56" x2="52.8" y2="56" />
+            <line x1="29.2" y1="68" x2="44" y2="68" />
           </g>
         </g>
-        <g stroke={`url(#${grad})`} strokeWidth={size < 28 ? 9.5 : 8} strokeLinecap="round">
-          <line x1="57" y1="15" x2="83" y2="41" />
-          <line x1="83" y1="15" x2="57" y2="41" />
+        <circle cx="69.6" cy="25.6" r="10" fill="var(--accent2)" />
+        <g stroke="var(--accent2)" strokeWidth={small ? 6 : 5.2} strokeLinecap="round">
+          <line x1="69.6" y1="6.4" x2="69.6" y2="12" />
+          <line x1="85.6" y1="10" x2="81.6" y2="14" />
+          <line x1="89.6" y1="25.6" x2="84" y2="25.6" />
+          <line x1="84.8" y1="40.8" x2="80.8" y2="37.2" />
+          <line x1="54.4" y1="10.4" x2="58" y2="14" />
+        </g>
+        {/* … with the X of the agent edition in its top-left corner */}
+        <g stroke={`url(#${grad})`} strokeWidth={small ? 8.5 : 7} strokeLinecap="round">
+          <line x1="6" y1="6" x2="24" y2="24" />
+          <line x1="24" y1="6" x2="6" y2="24" />
         </g>
       </svg>
     );
