@@ -3,7 +3,7 @@
 import {
   Blocks, Bot, Command, Ellipsis, FileText, FolderKanban, FolderTree, History, Home, Library, MessageSquare,
   PanelBottom, PanelLeft, PanelRight, Plus, ScrollText, Search, Settings, Sparkles, Upload, Wrench, X, FileCode,
-  GitCompareArrows, GitCommitHorizontal, MessagesSquare, Globe, type LucideIcon,
+  GitCompareArrows, GitCommitHorizontal, MessagesSquare, Globe, MonitorSmartphone, type LucideIcon,
 } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -35,6 +35,7 @@ const ICONS: Record<string, LucideIcon> = {
   more: Ellipsis,
   command: Command,
   history: History,
+  computer: MonitorSmartphone,
 };
 
 export function Icon({ name, size = 16, strokeWidth = 1.75 }: { name: string; size?: number; strokeWidth?: number }) {

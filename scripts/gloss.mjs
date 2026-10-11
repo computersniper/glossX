@@ -234,10 +234,13 @@ async function start() {
     fail(`port ${port} on ${host} is already in use. Set GLOSS_PORT or pass --port <number>.`);
   }
   console.log(`GlossX: http://127.0.0.1:${port}`);
+  if (host === "0.0.0.0" || host === "::") {
+    console.log("    Phones and tablets: open the GlossX app and use the address and pairing code from Settings > Mobile access.");
+  }
   const child = spawn(
     VENV_PYTHON,
     ["-m", "uvicorn", "app.main:app", "--host", host, "--port", String(port)],
-    { cwd: BACKEND, env: process.env, stdio: "inherit", shell: false, detached: !IS_WINDOWS },
+    { cwd: BACKEND, env: { ...process.env, GLOSS_BIND_HOST: host }, stdio: "inherit", shell: false, detached: !IS_WINDOWS },
   );
   supervise([{ child, name: "backend" }]);
 }

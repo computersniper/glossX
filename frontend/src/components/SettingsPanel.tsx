@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { MobileAccess } from "./MobileAccess";
 import { api, type AiUsageSummary } from "../api/client";
 import { useStore } from "../store";
 import { PROVIDER_EFFORTS, effortsFor, refreshModelCatalog, useModelCatalog } from "../modelCatalog";
@@ -290,6 +291,8 @@ export function SettingsPanel() {
       >
         {LANGS.map((l) => <option key={l}>{l}</option>)}
       </select>
+
+      <MobileAccess zh={uiLang === "zh"} />
 
       <section className="usage-card" aria-label="AI token usage">
         <div className="usage-head">

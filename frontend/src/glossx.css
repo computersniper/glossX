@@ -1267,3 +1267,46 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .gx-quota-bar.warn i { background: var(--gx-warn, #d9a441); }
 .gx-quota-bar.bad i { background: var(--gx-bad, #db6262); }
 .gx-quota-row small, .gx-quota-note { color: var(--gx-text-3); font-size: 11px; }
+
+/* ---- phones and tablets (the GlossX mobile app, or any small browser window) ---- */
+.wb-sash { touch-action: none; }
+/* iOS: notch and home indicator; dvh so the keyboard and browser bars don't hide the composer */
+.gx-mobile .app { height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); box-sizing: border-box; }
+.gx-mobile .wb-status { flex-basis: calc(25px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); }
+@media (pointer: coarse) {
+  .wb-sash-x { flex-basis: 8px; }
+  .wb-sash-y { flex-basis: 8px; }
+  .wb-icon-btn { min-width: 36px; min-height: 36px; }
+  /* 16px stops iOS zooming into the field on focus */
+  .wb input, .wb textarea, .wb select { font-size: max(16px, 1em); }
+}
+.wb.compact .wb-title-toggles, .wb.compact .wb-brand .mode-toggle { display: none; }
+.wb.compact .wb-titlebar { gap: 6px; }
+.wb.compact .wb-side-host { position: absolute; inset: 0; z-index: 15; width: auto !important; }
+.wb.compact .wb-ai-host.overlay { left: 0; width: auto !important; max-width: none; border-left: 0; box-shadow: none; }
+.wb.compact .wb-bottom-host { max-height: 45vh; }
+.wb-tabbar { flex: 0 0 auto; display: flex; padding: 4px 4px env(safe-area-inset-bottom); background: var(--gx-chrome); border-top: 1px solid var(--gx-line-soft); }
+.wb-tab { flex: 1 1 0; min-width: 0; height: 52px; padding: 0 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; border-radius: 10px; background: none; color: var(--gx-text-3); font: inherit; font-size: 10.5px; -webkit-tap-highlight-color: transparent; }
+.wb-tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-tab.on { color: var(--accent); }
+.wb-tab:active { background: var(--gx-hover); }
+
+/* Gloss (classic) reader on a phone: PDF on top, the side panel below it */
+@media (max-width: 720px) {
+  .reader { flex-direction: column; }
+  .reader .outline-host, .reader .outline-expand, .reader > .divider { display: none; }
+  .reader .side-host { width: auto !important; height: 45%; border-top: 1px solid var(--line); }
+}
+.mobile-access .mobile-switch { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; white-space: nowrap; }
+.mobile-pair { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-top: 8px; }
+.mobile-qr { flex: 0 0 148px; width: 148px; padding: 6px; border-radius: 10px; background: #fff; }
+.mobile-qr svg { display: block; width: 100%; height: auto; }
+.mobile-pair-text { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mobile-pair-text label { margin: 6px 0 0; }
+.mobile-pair-text code { overflow-wrap: anywhere; font-size: 13px; }
+.mobile-pair-text .mobile-code { font-size: 18px; letter-spacing: .06em; }
+.mobile-pair-text button { align-self: flex-start; margin-top: 8px; }
+.wb.compact .gx-composer { min-width: 0; max-width: 100%; }
+.wb.compact .gx-composer-bar { overflow-x: auto; scrollbar-width: none; }
+.wb.compact .gx-composer-bar::-webkit-scrollbar { display: none; }
+.wb.compact .gx-composer-bar > * { flex-shrink: 0; }

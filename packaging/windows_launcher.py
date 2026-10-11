@@ -227,6 +227,11 @@ def main() -> int:
     try:
         from app.main import app
 
+        from app import remote_access
+
+        host_explicit = "--host" in sys.argv[1:] or bool(os.environ.get("GLOSS_HOST"))
+        args.host, args.port = remote_access.launch_target(args.host, args.port, host_explicit)
+        os.environ["GLOSS_BIND_HOST"] = args.host
         requested_port = args.port
         args.port = _select_available_port(args.host, requested_port)
         if args.port != requested_port:

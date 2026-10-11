@@ -15,6 +15,8 @@ import { DialogHost } from "./dialog";
 import { ProjectSwitcher } from "./BranchSwitcher";
 import { MenuBar } from "./MenuBar";
 import { InboxBell, inboxTitle } from "./ThreadsView";
+import { isMobileClient, leaveComputer, useCompact } from "../../mobile";
+import type { Activity } from "../../store";
 
 const NARROW = "(max-width: 1099px)";
 
@@ -41,21 +43,25 @@ function Sash({ dir, value, sign, onChange }: { dir: "x" | "y"; value: number; s
   return (
     <div
       className={`wb-sash wb-sash-${dir}`}
-      onMouseDown={(e) => {
+      onPointerDown={(e) => {
+        // pointer events so a finger or Apple Pencil can drag it on a tablet
+        if (e.button !== 0) return;
         e.preventDefault();
         const origin = dir === "x" ? e.clientX : e.clientY;
         const start = value;
         document.body.style.userSelect = "none";
         document.body.style.cursor = dir === "x" ? "col-resize" : "row-resize";
-        const move = (ev: MouseEvent) => onChange(start + sign * ((dir === "x" ? ev.clientX : ev.clientY) - origin));
+        const move = (ev: PointerEvent) => onChange(start + sign * ((dir === "x" ? ev.clientX : ev.clientY) - origin));
         const up = () => {
           document.body.style.userSelect = "";
           document.body.style.cursor = "";
-          window.removeEventListener("mousemove", move);
-          window.removeEventListener("mouseup", up);
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+          window.removeEventListener("pointercancel", up);
         };
-        window.addEventListener("mousemove", move);
-        window.addEventListener("mouseup", up);
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+        window.addEventListener("pointercancel", up);
       }}
     />
   );
@@ -63,6 +69,41 @@ function Sash({ dir, value, sign, onChange }: { dir: "x" | "y"; value: number; s
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const MIN_EDITOR = 420; // keep the PDF usable
+
+/** Phone layout: the editor fills the screen and each tab slides a pane over it. */
+const TABS: { id: Activity | "editor" | "ai"; icon: string; en: string; zh: string }[] = [
+  { id: "editor", icon: "paper", en: "Reader", zh: "阅读" },
+  { id: "library", icon: "library", en: "Library", zh: "论文库" },
+  { id: "projects", icon: "projects", en: "Projects", zh: "项目" },
+  { id: "ai", icon: "agent", en: "Agent", zh: "智能体" },
+  { id: "settings", icon: "settings", en: "Settings", zh: "设置" },
+];
+
+function TabBar({ zh }: { zh: boolean }) {
+  const layout = useStore((s) => s.layout);
+  const setLayout = useStore((s) => s.setLayout);
+  const openPalette = useStore((s) => s.openPalette);
+  const current = layout.aiOpen ? "ai" : layout.sideOpen ? layout.activity : "editor";
+  const pick = (id: (typeof TABS)[number]["id"]) => {
+    if (id === "editor" || id === current) setLayout({ sideOpen: false, aiOpen: false });
+    else if (id === "ai") setLayout({ sideOpen: false, aiOpen: true });
+    else setLayout({ activity: id, sideOpen: true, aiOpen: false });
+  };
+  return (
+    <nav className="wb-tabbar" aria-label={zh ? "导航" : "Navigation"}>
+      {TABS.map((t) => (
+        <button key={t.id} className={`wb-tab${current === t.id ? " on" : ""}`} aria-current={current === t.id ? "page" : undefined} onClick={() => pick(t.id)}>
+          <Icon name={t.icon} size={20} strokeWidth={1.7} />
+          <span>{zh ? t.zh : t.en}</span>
+        </button>
+      ))}
+      <button className="wb-tab" onClick={() => openPalette("commands")}>
+        <Icon name="more" size={20} strokeWidth={1.7} />
+        <span>{zh ? "更多" : "More"}</span>
+      </button>
+    </nav>
+  );
+}
 
 /** Workbench-only keyboard shortcuts. */
 function useWorkbenchKeys() {
@@ -141,6 +182,9 @@ export function Workbench() {
   const openPalette = useStore((s) => s.openPalette);
   const zh = useStore((s) => s.uiLang) === "zh";
   const narrow = useNarrow();
+  const compact = useCompact();
+  const mobile = isMobileClient();
+  const activeTabKey = useStore((s) => s.activeTabKey);
   useWorkbenchKeys();
   useInbox();
   const unread = useSessions((s) => s.inbox.unread);
@@ -154,6 +198,11 @@ export function Workbench() {
     return () => window.clearInterval(timer);
   }, [sessionsAvailable]);
 
+  // on a phone, opening a paper or file shows it: the pane over it steps aside
+  useEffect(() => {
+    if (compact && activeTabKey) setLayout({ sideOpen: false, aiOpen: false });
+  }, [compact, activeTabKey]);
+
   const maxSide = Math.max(200, window.innerWidth - (narrow ? 0 : layout.aiOpen ? layout.aiWidth : 0) - MIN_EDITOR - 48);
   const sideW = clamp(layout.sideWidth, 200, Math.min(560, maxSide));
   const maxAi = narrow ? window.innerWidth - 60 : Math.max(300, window.innerWidth - (layout.sideOpen ? sideW : 0) - MIN_EDITOR - 48);
@@ -161,7 +210,7 @@ export function Workbench() {
   const bottomH = clamp(layout.bottomHeight, 100, Math.max(120, window.innerHeight * 0.6));
 
   return (
-    <div className={`wb${narrow ? " narrow" : ""}`}>
+    <div className={`wb${narrow ? " narrow" : ""}${compact ? " compact" : ""}`}>
       <header className="wb-titlebar">
         <div className="wb-brand">
           <button className="wb-title-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={16} x /></button>
@@ -184,6 +233,11 @@ export function Workbench() {
         >
           <InboxBell size={16} />
         </button>
+        {mobile && (
+          <button className="wb-icon-btn wb-title-leave" title={zh ? "切换电脑" : "Switch computer"} aria-label={zh ? "切换电脑" : "Switch computer"} onClick={() => leaveComputer()}>
+            <Icon name="computer" size={16} />
+          </button>
+        )}
         <div className="wb-title-toggles">
           <button className={`wb-icon-btn${layout.sideOpen ? " on" : ""}`} title={zh ? "侧边栏 (Ctrl+B)" : "Side bar (Ctrl+B)"} onClick={() => setLayout({ sideOpen: !layout.sideOpen })}>
             <Icon name="sidebar" size={16} />
@@ -197,7 +251,7 @@ export function Workbench() {
         </div>
       </header>
       <div className="wb-main">
-        <nav className="wb-activity" aria-label="Activity bar">
+        {!compact && <nav className="wb-activity" aria-label="Activity bar">
           {ACTIVITIES.map((a) => (
             <button
               key={a.id}
@@ -213,7 +267,7 @@ export function Workbench() {
           <button className="wb-act" title={zh ? "命令面板 (Ctrl+K)" : "Command palette (Ctrl+K)"} onClick={() => openPalette("commands")}>
             <Icon name="command" size={18} strokeWidth={1.6} />
           </button>
-        </nav>
+        </nav>}
         <div className="wb-column">
           <div className="wb-panes">
             {layout.sideOpen && (
@@ -221,10 +275,10 @@ export function Workbench() {
                 <div className="wb-side-host" style={{ width: sideW }}>
                   <SideBar />
                 </div>
-                <Sash
+                {!compact && <Sash
                   dir="x"
                   value={sideW} sign={1} onChange={(v) => setLayout({ sideWidth: clamp(v, 200, 560) })}
-                />
+                />}
               </>
             )}
             <div className="wb-center">
@@ -243,7 +297,7 @@ export function Workbench() {
             </div>
             {layout.aiOpen && (
               <>
-                {narrow && <div className="wb-ai-scrim" onMouseDown={() => setLayout({ aiOpen: false })} />}
+                {narrow && !compact && <div className="wb-ai-scrim" onMouseDown={() => setLayout({ aiOpen: false })} />}
                 {!narrow && (
                   <Sash
                     dir="x"
@@ -251,7 +305,7 @@ export function Workbench() {
                   />
                 )}
                 <div className={`wb-ai-host${narrow ? " overlay" : ""}`} style={{ width: aiW }}>
-                  {narrow && (
+                  {narrow && !compact && (
                     <Sash
                       dir="x"
                       value={aiW} sign={-1} onChange={(v) => setLayout({ aiWidth: clamp(v, 300, 900) })}
@@ -264,7 +318,7 @@ export function Workbench() {
           </div>
         </div>
       </div>
-      <StatusBar />
+      {compact ? <TabBar zh={zh} /> : <StatusBar />}
       <CommandPalette />
       <DialogHost />
     </div>
