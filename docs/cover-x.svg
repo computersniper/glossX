@@ -24,9 +24,9 @@
   <rect width="1200" height="420" rx="24" fill="url(#glow)"/>
 
   <!-- mark: the Gloss lamp-lit page with the X of the agent edition -->
-  <g transform="translate(140 76) scale(2.1)">
+  <g transform="translate(112 76) scale(2.1)">
   <defs>
-    <linearGradient id="cv-x" x1="4" y1="4" x2="26" y2="26" gradientUnits="userSpaceOnUse">
+    <linearGradient id="cv-x" x1="60.1" y1="62.5" x2="79.1" y2="81.5" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#a78bfa"/>
       <stop offset="1" stop-color="#7aa2f7"/>
     </linearGradient>
@@ -37,7 +37,7 @@
     <!-- the page gives way around the X so the two never touch -->
     <mask id="cv-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96">
       <rect width="96" height="96" fill="#fff"/>
-      <circle cx="15" cy="15" r="15" fill="#000"/>
+      <circle cx="69.6" cy="72" r="16.5" fill="#000"/>
     </mask>
   </defs>
   <!-- the Gloss mark: a page lit by a lamp ... -->
@@ -58,10 +58,10 @@
     <line x1="84.8" y1="40.8" x2="80.8" y2="37.2"/>
     <line x1="54.4" y1="10.4" x2="58" y2="14"/>
   </g>
-  <!-- ... with the X of the agent edition in its top-left corner -->
-  <g stroke="url(#cv-x)" stroke-width="7" stroke-linecap="round">
-    <line x1="6" y1="6" x2="24" y2="24"/>
-    <line x1="24" y1="6" x2="6" y2="24"/>
+  <!-- ... and the X of the agent edition at the page's lower right, under the lamp and sized like it -->
+  <g stroke="url(#cv-x)" stroke-width="5.8" stroke-linecap="round">
+    <line x1="60.1" y1="62.5" x2="79.1" y2="81.5"/>
+    <line x1="79.1" y1="62.5" x2="60.1" y2="81.5"/>
   </g>
   </g>
 
