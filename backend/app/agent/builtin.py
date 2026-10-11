@@ -307,6 +307,78 @@ def _project_of(ctx: RunContext) -> str:
     return ctx.project_id
 
 
+CRITIC_SYSTEM = (
+    "You are the critic of a GlossX reading team. Several reader sub-agents each "
+    "read one paper and reported findings with cited excerpts. Cross-check them: "
+    "find findings that conflict across papers, findings their cited excerpts do "
+    "not support, and important gaps for the question. For each problem worth "
+    "settling, address a challenge to the reader of one paper: a precise question "
+    "that rereading that paper could answer."
+)
+CRITIC_SHAPE = (
+    '{"conflicts": [{"finding_ids": ["r0.f0", "r1.f0"], "issue": "..."}], '
+    '"unsupported": [{"finding_id": "r0.f1", "issue": "..."}], '
+    '"challenges": [{"paper_id": "<paper id>", "question": "..."}]}'
+)
+MAX_CHALLENGES = 6
+
+
+async def _agent_critic(args: dict[str, Any], ctx: RunContext) -> Any:
+    readings = args.get("readings")
+    if isinstance(readings, dict):
+        readings = [readings]
+    readings = [r for r in readings if isinstance(r, dict)] if isinstance(readings, list) else []
+    if not readings:
+        raise ValueError("'readings' must be a list of reader results")
+    question = _str_arg(args, "question", required=False) or ctx.goal
+    lines: list[str] = []
+    finding_ids: set[str] = set()
+    cited: list[str] = []
+    papers: dict[str, str] = {}
+    for i, reading in enumerate(readings[:8]):
+        pid = str(reading.get("paper_id") or "")
+        papers[pid] = str(reading.get("title") or pid)
+        lines.append(f"READER r{i} on paper {pid} ({papers[pid]}):")
+        for j, f in enumerate((reading.get("findings") or [])[:12]):
+            if not isinstance(f, dict):
+                continue
+            ids = [str(x) for x in f.get("span_ids") or []]
+            cited.extend(ids)
+            finding_ids.add(f"r{i}.f{j}")
+            lines.append(f"  [r{i}.f{j}] {f.get('claim', '')} (cites: {', '.join(ids) or 'nothing'})")
+    evidence = ctx.spans.materialize(list(dict.fromkeys(cited)), max_tokens=3000)
+    user = (
+        f"QUESTION:\n{question}\n\nFINDINGS:\n{wrap_untrusted('reader-findings', chr(10).join(lines))}\n\n"
+        f"CITED EXCERPTS:\n{wrap_untrusted('evidence-spans', evidence or '(none)')}"
+    )
+    out = await json_complete(f"{CRITIC_SYSTEM}\n\n{UNTRUSTED_RULE}", user, CRITIC_SHAPE, provider=ctx.provider)
+    out = out if isinstance(out, dict) else {}
+
+    def rows(key: str) -> list[dict]:
+        value = out.get(key)
+        return [r for r in value if isinstance(r, dict)] if isinstance(value, list) else []
+
+    conflicts = [
+        {"finding_ids": [str(x) for x in r.get("finding_ids") or [] if str(x) in finding_ids],
+         "issue": str(r.get("issue") or "")[:400]}
+        for r in rows("conflicts")
+    ]
+    unsupported = [
+        {"finding_id": str(r.get("finding_id")), "issue": str(r.get("issue") or "")[:400]}
+        for r in rows("unsupported") if str(r.get("finding_id")) in finding_ids
+    ]
+    # challenges go back to readers, so they must name a paper the team actually read
+    challenges = [
+        {"paper_id": str(r.get("paper_id")), "question": " ".join(str(r.get("question") or "").split())[:500]}
+        for r in rows("challenges") if str(r.get("paper_id")) in papers and str(r.get("question") or "").strip()
+    ][:MAX_CHALLENGES]
+    return {
+        "conflicts": [c for c in conflicts if c["finding_ids"]],
+        "unsupported": unsupported,
+        "challenges": challenges,
+    }
+
+
 async def _memory_recall(args: dict[str, Any], ctx: RunContext) -> Any:
     project_id = _project_of(ctx)
     query = _str_arg(args, "query")
@@ -422,6 +494,20 @@ BUILTINS: list[Capability] = [
         },
         output_schema={"relevance": "number 0..1", "findings": "[{claim, span_ids}]"},
         handler=_agent_reader,
+        permissions=["library:read", "llm"],
+        cost="llm",
+    ),
+    Capability(
+        name="agent.critic",
+        kind="agent",
+        card="Critic sub-agent: cross-check several readers' findings for conflicts and unsupported claims, and return challenges for readers to settle by rereading.",
+        input_schema={
+            "readings": "list: agent.reader results to cross-check",
+            "question": "str (optional): the question the team works on (defaults to the goal)",
+        },
+        output_schema={"conflicts": "[{finding_ids, issue}]", "unsupported": "[{finding_id, issue}]",
+                       "challenges": "[{paper_id, question}]"},
+        handler=_agent_critic,
         permissions=["library:read", "llm"],
         cost="llm",
     ),

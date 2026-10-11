@@ -69,6 +69,7 @@ class FakeLLM:
             ("decider of GlossX", "decide"),
             ("strict fact checker", "verify"),
             ("strict judge", "judge"),
+            ("critic of a GlossX reading team", "critic"),  # mentions readers: match first
             ("reader sub-agent", "reader"),
             ("careful research agent", "synth"),
         ]
@@ -109,6 +110,12 @@ class FakeLLM:
             return {"choice": "generic", "confidence": 0.7, "reason": "focused question"}
         if role == "judge":
             return {"verdict": "supported", "confidence": 0.9, "note": "relevant"}
+        if role == "critic":
+            return {"conflicts": [{"finding_ids": ["r0.f0", "r1.f0"], "issue": "different BLEU"},
+                                  {"finding_ids": ["r9.f9"], "issue": "made up"}],
+                    "unsupported": [],
+                    "challenges": [{"paper_id": "p2", "question": "Which test set gives 25.2 BLEU?"},
+                                   {"paper_id": "p9", "question": "not a paper the team read"}]}
         if role == "reader":
             pid = "p1" if "p1#" in user else "p2"
             return {"relevance": 0.8, "findings": [{"claim": "a score", "span_ids": [f"{pid}#1"]}]}
@@ -216,7 +223,7 @@ def test_normalize_steps_drops_unknown_capabilities_and_bad_deps():
 def test_builtin_workflows_validate_and_use_known_capabilities():
     manifests = {m["id"]: m for m in builtin_manifests()}
     assert {"literature-review", "cross-paper-qa", "claim-verification", "tutoring",
-            "reproduction"} <= set(manifests)
+            "reproduction", "team-review"} <= set(manifests)
     reg = build_registry(connections={"cli_agents": {"codex": {"enabled": True},
                                                      "claude": {"enabled": True}}})
     for manifest in manifests.values():
@@ -306,6 +313,20 @@ def test_cross_paper_qa_workflow_reads_every_scope_paper(fake_llm):
     # passages were searched across the accepted papers
     passages = [s for s in run.plan["steps"] if s.get("workflow_step") == "passages"]
     assert passages and passages[0]["args"]["paper_ids"] == ["p1", "p2"]
+    assert result["claims"]
+
+
+def test_team_review_runs_a_critic_and_a_rebuttal_round(fake_llm):
+    llm = fake_llm()
+    run = make_run(workflow="workflow.team-review")
+    result, _ = drive(run)
+    critic_input = llm.users("critic")
+    assert len(critic_input) == 1 and "[r0.f0]" in critic_input[0] and "[r1.f0]" in critic_input[0]
+    readers = llm.users("reader")
+    # one reader per paper, then one rebuttal for the critic's valid challenge (p9 is dropped)
+    assert len(readers) == 3 and "Which test set gives 25.2 BLEU?" in readers[2]
+    critic_step = next(s for s in run.plan["steps"] if s.get("workflow_step") == "critic")
+    assert critic_step["status"] == "completed"
     assert result["claims"]
 
 
