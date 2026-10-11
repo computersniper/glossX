@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../../store";
 import { Logo } from "../Logo";
 import { ModeToggle } from "../ModeToggle";
@@ -15,7 +15,7 @@ import { DialogHost } from "./dialog";
 import { ProjectSwitcher } from "./BranchSwitcher";
 import { MenuBar } from "./MenuBar";
 import { InboxBell, inboxTitle } from "./ThreadsView";
-import { isMobileClient, leaveComputer, useCompact } from "../../mobile";
+import { MOD_KEY, isMobileClient, leaveComputer, useCompact } from "../../mobile";
 import type { Activity } from "../../store";
 
 const NARROW = "(max-width: 1099px)";
@@ -198,10 +198,25 @@ export function Workbench() {
     return () => window.clearInterval(timer);
   }, [sessionsAvailable]);
 
-  // on a phone, opening a paper or file shows it: the pane over it steps aside
+  // on a phone or a tablet in portrait, opening a paper or file shows it: the
+  // panes over it step aside
   useEffect(() => {
-    if (compact && activeTabKey) setLayout({ sideOpen: false, aiOpen: false });
+    if (!activeTabKey) return;
+    if (compact) setLayout({ sideOpen: false, aiOpen: false });
+    else if (mobile && narrow) setLayout({ sideOpen: false });
   }, [compact, activeTabKey]);
+
+  // on a tablet in portrait the side bar and the AI pane both cover the editor:
+  // opening one puts the other away instead of stacking them
+  const prev = useRef({ sideOpen: true, aiOpen: true });
+  useEffect(() => {
+    const before = prev.current;
+    prev.current = layout;
+    if (!mobile || !narrow || compact || !layout.sideOpen || !layout.aiOpen) return;
+    // the one just opened stays; on first load the AI pane does
+    if (before.sideOpen && before.aiOpen) setLayout({ sideOpen: false });
+    else setLayout(before.aiOpen ? { aiOpen: false } : { sideOpen: false });
+  }, [layout.sideOpen, layout.aiOpen, mobile, narrow, compact]);
 
   const maxSide = Math.max(200, window.innerWidth - (narrow ? 0 : layout.aiOpen ? layout.aiWidth : 0) - MIN_EDITOR - 48);
   const sideW = clamp(layout.sideWidth, 200, Math.min(560, maxSide));
@@ -222,7 +237,7 @@ export function Workbench() {
         <button className="wb-title-search" onClick={() => openPalette("commands")}>
           <Icon name="search" size={13} />
           <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, threads…"}</span>
-          <kbd>Ctrl K</kbd>
+          <kbd>{MOD_KEY} K</kbd>
         </button>
         <span className="spacer" />
         <button

@@ -132,7 +132,17 @@ export function PdfViewer() {
     setLoadError("");
     restoreRef.current = current.id;
     // documents are owned by the shared cache (evicted when the tab closes)
-    getPdfDoc(current.id).then((doc: any) => {
+    getPdfDoc(current.id).then(async (doc: any) => {
+      if (cancelled) return;
+      // on a touch screen, open at page width when the default would overflow
+      const el = containerRef.current;
+      if (el && window.matchMedia("(pointer: coarse)").matches) {
+        try {
+          const width = (await doc.getPage(1)).getViewport({ scale: 1 }).width;
+          const fit = Math.floor(((el.clientWidth - 32) / width) * 100) / 100;
+          if (!cancelled && fit > 0.3 && fit < 1.35) setScale(Math.max(0.6, fit));
+        } catch { /* keep the default */ }
+      }
       if (cancelled) return;
       setLoaded({ id: current.id, doc });
     }).catch((error) => {
@@ -172,6 +182,56 @@ export function PdfViewer() {
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => { el.removeEventListener("wheel", onWheel); if (timer) clearTimeout(timer); };
+  }, [current?.id]);
+
+  // Two-finger pinch zooms the PDF on a tablet or phone, the touch twin of
+  // Ctrl+wheel: the view stretches while the fingers move, then pages re-render
+  // at the new scale with the pinched spot kept in place.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let start: { dist: number; midX: number; midY: number } | null = null;
+    let ratio = 1;
+    const span = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      const rect = el.getBoundingClientRect();
+      start = {
+        dist: span(e.touches),
+        midX: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+        midY: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
+      };
+      ratio = 1;
+      el.style.transformOrigin = `${start.midX + el.scrollLeft}px ${start.midY + el.scrollTop}px`;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!start || e.touches.length !== 2) return;
+      e.preventDefault();
+      const next = Math.min(3, Math.max(0.6, scaleRef.current * (span(e.touches) / start.dist)));
+      ratio = next / scaleRef.current;
+      el.style.transform = `scale(${ratio})`;
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (!start || e.touches.length >= 2) return;
+      const { midX, midY } = start;
+      start = null;
+      el.style.transform = "";
+      el.style.transformOrigin = "";
+      if (Math.abs(ratio - 1) < 0.03) return;
+      const next = Math.round(scaleRef.current * ratio * 100) / 100;
+      zoomAnchorRef.current = { ratio: next / scaleRef.current, top: el.scrollTop + midY, left: el.scrollLeft + midX, anchorY: midY, anchorX: midX };
+      setScale(next);
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
   }, [current?.id]);
 
   useEffect(() => {

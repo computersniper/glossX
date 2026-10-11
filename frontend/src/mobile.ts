@@ -48,6 +48,8 @@ export function initMobileClient() {
   }
   if (!isMobileClient()) return;
   document.documentElement.classList.add("gx-mobile");
+  // pinch zooms the PDF (PdfViewer), never the whole app
+  document.querySelector('meta[name="viewport"]')?.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover");
   // pairing code rotated on the computer: ask for the new one
   void fetch("/api/health").then((r) => {
     if (r.status === 401) leaveComputer("expired");
@@ -57,6 +59,9 @@ export function initMobileClient() {
     if (e.url.startsWith("glossx:")) leaveComputer(`pair=${encodeURIComponent(e.url)}`);
   });
 }
+
+/** iPad, iPhone and Mac keyboards say ⌘ where others say Ctrl. */
+export const MOD_KEY = /Mac|iPhone|iPad|iPod/.test(navigator.platform) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ? "⌘" : "Ctrl";
 
 const COMPACT = "(max-width: 720px)";
 

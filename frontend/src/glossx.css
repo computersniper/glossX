@@ -1306,7 +1306,10 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .mobile-pair-text code { overflow-wrap: anywhere; font-size: 13px; }
 .mobile-pair-text .mobile-code { font-size: 18px; letter-spacing: .06em; }
 .mobile-pair-text button { align-self: flex-start; margin-top: 8px; }
-.wb.compact .gx-composer { min-width: 0; max-width: 100%; }
-.wb.compact .gx-composer-bar { overflow-x: auto; scrollbar-width: none; }
-.wb.compact .gx-composer-bar::-webkit-scrollbar { display: none; }
-.wb.compact .gx-composer-bar > * { flex-shrink: 0; }
+/* composer controls scroll sideways on touch screens instead of pushing past the edge */
+.wb.compact .gx-composer, .gx-mobile .wb.narrow .gx-composer { min-width: 0; max-width: 100%; }
+.wb.compact .gx-composer-bar, .gx-mobile .wb.narrow .gx-composer-bar { overflow-x: auto; scrollbar-width: none; }
+.wb.compact .gx-composer-bar::-webkit-scrollbar, .gx-mobile .wb.narrow .gx-composer-bar::-webkit-scrollbar { display: none; }
+.wb.compact .gx-composer-bar > *, .gx-mobile .wb.narrow .gx-composer-bar > * { flex-shrink: 0; }
+/* one-finger scroll stays native; two-finger pinch is the PDF's own zoom */
+.gx-mobile .pdf-scroll { touch-action: pan-x pan-y; }
