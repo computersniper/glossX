@@ -165,6 +165,8 @@ export function SettingsPanel() {
         <b>›</b>
       </button>
 
+      <MobileAccess zh={uiLang === "zh"} />
+
       <label>Interface language / 界面语言</label>
       <div className="seg">
         <button className={"seg-btn" + (uiLang === "en" ? " active" : "")} onClick={() => setUiLang("en")}>
@@ -291,8 +293,6 @@ export function SettingsPanel() {
       >
         {LANGS.map((l) => <option key={l}>{l}</option>)}
       </select>
-
-      <MobileAccess zh={uiLang === "zh"} />
 
       <section className="usage-card" aria-label="AI token usage">
         <div className="usage-head">
