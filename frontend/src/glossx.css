@@ -409,7 +409,13 @@
 /* Only the workbench owns the viewport; classic Gloss keeps document scrolling.
    Keep every flex ancestor shrinkable, so tall settings/editor content is
    handled by its own scroll container rather than the document. */
-html:has(.app.mode-glossx), body:has(.app.mode-glossx) { overflow: hidden; }
+html:has(.app.mode-glossx) { overflow: hidden; }
+/* clip, not hidden: a clipped body is no scroll container, so scrollIntoView
+   (outline jumps, chat follow) can never shift the whole window */
+body:has(.app.mode-glossx) { overflow: clip; }
+/* pdf.js appends an inline canvas after #root; its line box made the body
+   taller than the window */
+body > .hiddenCanvasElement { position: absolute; top: 0; left: 0; display: block; width: 0; height: 0; }
 .app.mode-glossx { height: calc(100dvh / var(--gx-app-zoom, 1)); min-height: 0; }
 .wb-main { flex: 1; min-height: 0; min-width: 0; display: flex; }
 
@@ -1517,7 +1523,7 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 
 /* robust against window resizes and zoom: the status bar and the composer never
    leave the window; panes shrink (and scroll inside) instead of pushing them out */
-.app.mode-glossx { overflow: hidden; }
+.app.mode-glossx { overflow: clip; }
 .wb { overflow: hidden; }
 .wb-panes { overflow: hidden; }
 .wb-side-host, .wb-ai-host { flex-shrink: 1; min-width: 0; min-height: 0; }
