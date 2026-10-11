@@ -152,10 +152,43 @@ export const useSessions = create<SessionsStore>((set, get) => {
 
   function watch(id: string) {
     if (streams.has(id)) return;
+    // History must not depend on a streaming response reaching a mobile proxy.
+    // Ignore an HTTP snapshot if newer SSE events arrived while it was in flight.
+    let revision = 0;
+    let stopped = false;
+    let fetching = false;
+    let historyError = false;
+    let lastEvent = Date.now();
+    const snapshot = async () => {
+      if (stopped || fetching) return;
+      fetching = true;
+      const before = revision;
+      try {
+        const session = await sessionsApi.get(id);
+        if (!stopped && revision === before) {
+          patchState(id, (s) => applySessionEvent(historyError ? { ...s, error: null } : s, "session.updated", session) as SessionState);
+          historyError = false;
+          syncSummary(id);
+        }
+      } catch (error) {
+        if (!stopped && revision === before && !get().states[id]?.loaded) {
+          historyError = true;
+          patchState(id, (s) => ({ ...s, loaded: true, error: error instanceof Error ? error.message : String(error) }));
+        }
+      } finally { fetching = false; }
+    };
+    void snapshot();
+    const poll = window.setInterval(() => {
+      if (Date.now() - lastEvent > 20_000) void snapshot();
+    }, 10_000);
     const close = openSessionStream(
       id,
       (name, payload) => {
-        patchState(id, (s) => applySessionEvent(s, name, payload) as SessionState);
+        revision += 1;
+        lastEvent = Date.now();
+        const recovered = historyError && name === "session.updated";
+        patchState(id, (s) => applySessionEvent(recovered ? { ...s, error: null } : s, name, payload) as SessionState);
+        if (recovered) historyError = false;
         if (name === "browser.updated") useBrowser.getState().put(id, payload);
         if (name === "tool.updated" && String(payload?.tool || "").startsWith("browser_") && !["denied", "error", "awaiting_approval"].includes(payload?.status)) {
           if (useStore.getState().mode === "glossx" && useStore.getState().browserSessionId !== id) useStore.getState().openBrowserTab(id);
@@ -181,10 +214,10 @@ export const useSessions = create<SessionsStore>((set, get) => {
       },
       (state) => {
         set((st) => ({ conn: { ...st.conn, [id]: state } }));
-        if (state === "closed") streams.delete(id);
+        if (state !== "open") void snapshot();
       },
     );
-    streams.set(id, close);
+    streams.set(id, () => { stopped = true; window.clearInterval(poll); close(); });
     // keep at most a few live streams: drop the oldest background ones
     for (const other of [...streams.keys()]) {
       if (streams.size <= 4) break;

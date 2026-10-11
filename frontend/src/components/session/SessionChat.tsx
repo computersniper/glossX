@@ -714,6 +714,7 @@ export function SessionChat() {
           setAway(!near);
         }}
       >
+        {empty && error && <div className="gx-banner bad" role="alert"><CircleAlert size={14} /><span>{error}</span></div>}
         {loading ? (
           <div className="gx-chat-loading">
             <div className="gx-skel w60" /><div className="gx-skel w90" /><div className="gx-skel w75" /><div className="gx-skel w40" />

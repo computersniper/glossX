@@ -17,6 +17,8 @@
 
 > **可拖动上下分区 / 会话移动**：项目列表与工作区设置间可拖动并保存比例；对话可移动到其他项目或通用，保留历史并重置旧 CLI 续接，见 `docs/progress/session-move-split.md`。
 
+> **扫码移动端会话历史 / 紧凑额度入口**：历史改用普通请求加载，保留 SSE 与无事件时补取；手机顶部增加额度弹层入口，原因与验收范围见 `docs/progress/mobile-chat-history.md`。
+
 > **移动端独立 API 模式（2026-10-11）**：用户新要求扩展此前“仅连接电脑”的范围；继续共用 frontend + Capacitor 薄壳，进度及略过项见 `docs/progress/mobile-local.md`、`docs/progress/mobile-shell.md`。
 
 ## 0. 一分钟了解现状

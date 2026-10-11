@@ -8,6 +8,7 @@ import { useSessions } from "../../sessionStore";
 import { AiPane } from "./AiPane";
 import { BottomPanel } from "./BottomPanel";
 import { StatusBar } from "./StatusBar";
+import { QuotaIndicator } from "./QuotaIndicator";
 import { CommandPalette } from "./CommandPalette";
 import { Icon } from "./icons";
 import { aiPaneHasFocus, focusAiPane } from "./focus";
@@ -241,6 +242,7 @@ export function Workbench() {
           <kbd>{MOD_KEY} K</kbd>
         </button>
         <span className="spacer" />
+        {(compact || touch) && <QuotaIndicator compact />}
         <button
           className={`wb-icon-btn wb-title-bell${blocking > 0 ? " blocking" : ""}`}
           title={inboxTitle(zh, unread, blocking)}

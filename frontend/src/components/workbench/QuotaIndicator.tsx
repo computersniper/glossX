@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Gauge, RefreshCw } from "lucide-react";
 import { useStore } from "../../store";
+import { useActiveSession } from "../../sessionStore";
 import { Popover, Spinner } from "../ui";
 
 // Plan usage limits (5-hour / weekly) of the accounts the Claude Code and
@@ -29,8 +30,10 @@ function until(epoch: number | null, zh: boolean) {
 const short = (w: Window, zh: boolean) => w.id === "five_hour" || w.window_minutes === 300 ? "5h" : w.window_minutes === 10080 ? (zh ? "周" : "wk") : w.label_zh.replace("额度", "");
 const tone = (p: number) => (p >= 90 ? " bad" : p >= 75 ? " warn" : "");
 
-export function QuotaIndicator() {
-  const provider = useStore((s) => s.provider);
+export function QuotaIndicator({ compact = false }: { compact?: boolean }) {
+  const defaultProvider = useStore((s) => s.provider);
+  const session = useActiveSession();
+  const provider = session.session?.model?.provider || defaultProvider;
   const zh = useStore((s) => s.uiLang) === "zh";
   const [quotas, setQuotas] = useState<Quota[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,15 +58,15 @@ export function QuotaIndicator() {
       <button
         ref={setAnchor}
         type="button"
-        className={`wb-status-item gx-quota-chip${tone(worst)}`}
+        className={`wb-status-item gx-quota-chip${compact ? " compact" : ""}${tone(worst)}`}
         title={zh ? `${NAME[provider]} 账号额度` : `${NAME[provider]} plan usage`}
         onClick={() => { setOpen((o) => !o); if (!open) void load(); }}
         style={{ cursor: "pointer" }}
       >
         <Gauge size={13} />
-        <span>{top.length ? top.map((w) => `${short(w, zh)} ${Math.round(w.used_percent)}%`).join(" · ") : zh ? "额度" : "Usage"}</span>
+        <span>{top.length ? (compact ? top.slice(0, 1) : top).map((w) => `${short(w, zh)} ${Math.round(w.used_percent)}%`).join(" · ") : zh ? "额度" : "Usage"}</span>
       </button>
-      <Popover anchor={anchor} open={open} onClose={() => setOpen(false)} placement="top-start" width={320} className="gx-quota-pop">
+      <Popover anchor={anchor} open={open} onClose={() => setOpen(false)} placement={compact ? "bottom-end" : "top-start"} width={320} className="gx-quota-pop">
         <div className="gx-quota-head">
           <strong>{zh ? "账号额度" : "Plan usage"}</strong>
           <button type="button" className="gx-icon-btn" title={zh ? "刷新" : "Refresh"} disabled={loading} onClick={() => void load(true)}>{loading ? <Spinner size={12} /> : <RefreshCw size={12} />}</button>

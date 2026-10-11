@@ -1296,6 +1296,8 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 }
 .wb.compact .wb-title-toggles, .wb.compact .wb-brand .mode-toggle { display: none; }
 .wb.compact .wb-titlebar { gap: 6px; }
+.wb.compact .gx-quota-chip { flex-shrink: 0; max-width: 105px; font-size: 11px; padding: 4px; }
+.wb.compact .gx-quota-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb.compact .wb-side-host { position: absolute; inset: 0; z-index: 15; width: auto !important; }
 .wb.compact .wb-ai-host.overlay { left: 0; width: auto !important; max-width: none; border-left: 0; box-shadow: none; }
 .wb.compact .wb-bottom-host { max-height: 45vh; }
