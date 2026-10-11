@@ -33,6 +33,7 @@ from .base import (
     normalize_usage,
     report_stream_usage,
     communicate_lines,
+    image_data,
     report_progress,
     wants_progress,
 )
@@ -243,19 +244,18 @@ def _session_is_unavailable(detail: str) -> bool:
 
 
 def _materialize_message_images(messages: list[Message]) -> list[str]:
-    """Write data-URL attachments to temporary PNGs accepted by `codex --image`."""
+    """Write data-URL image attachments to temporary files accepted by `codex --image`."""
     paths: list[str] = []
-    prefix = "data:image/png;base64,"
     try:
         for message in messages:
             for attachment in message.get("attachments") or []:
-                data_url = attachment.get("image_data_url") or ""
-                if not data_url.startswith(prefix):
+                image = image_data(attachment.get("image_data_url") or "")
+                if image is None:
                     continue
-                fd, path = tempfile.mkstemp(prefix="gloss-chat-image-", suffix=".png")
+                fd, path = tempfile.mkstemp(prefix="gloss-chat-image-", suffix=image[1])
                 paths.append(path)
                 with os.fdopen(fd, "wb") as image_file:
-                    image_file.write(base64.b64decode(data_url[len(prefix):], validate=True))
+                    image_file.write(image[2])
         return paths
     except Exception:
         for path in paths:

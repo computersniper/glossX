@@ -13,6 +13,12 @@ type Conn = "open" | "reconnecting" | "closed";
 
 const ACTIVE_KEY = "glossx.session";
 const DRAFT_KEY = "glossx.sessionDraft";
+const QUEUE_KEY = "glossx.sessionQueue";
+
+/** A message written while the agent was busy, waiting to be sent (or steered in). */
+export type QueuedMessage = { id: string; text: string; attachments?: Attachment[] };
+let queueSeq = 0;
+const queueId = () => `q-${Date.now().toString(36)}-${(queueSeq++).toString(36)}`;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -55,6 +61,8 @@ interface SessionsStore {
   states: Record<string, SessionState>;
   conn: Record<string, Conn>;
   sending: boolean;
+  /** Per thread: messages waiting for the running turn to end (kept across reloads). */
+  queues: Record<string, QueuedMessage[]>;
   /** Mode/model used for the next new chat (and mirrored from the active session). */
   draft: { mode: SessionMode; model: ModelChoice };
   /** Text queued for the composer by other parts of the UI (palette, welcome, library). */
@@ -84,7 +92,13 @@ interface SessionsStore {
   markRead: (id: string, force?: boolean) => Promise<void>;
   markAllRead: () => Promise<void>;
   setPendingBranch: (branch: string | null) => void;
-  send: (text: string, attachments?: Attachment[]) => Promise<boolean>;
+  send: (text: string, attachments?: Attachment[], sessionId?: string) => Promise<boolean>;
+  /** Queue a message for the active thread; it goes out when the running turn ends. */
+  enqueue: (text: string, attachments?: Attachment[]) => void;
+  updateQueued: (sessionId: string, itemId: string, text: string) => void;
+  removeQueued: (sessionId: string, itemId: string) => void;
+  /** Send a queued message into the running turn now ("steer"); an idle thread just sends it. */
+  steerQueued: (sessionId: string, itemId: string) => Promise<void>;
   interrupt: () => Promise<void>;
   approve: (toolCallId: string, decision: "once" | "always" | "deny", feedback?: string) => Promise<void>;
   answer: (text: string, toolCallId?: string | null) => Promise<void>;
@@ -201,7 +215,14 @@ export const useSessions = create<SessionsStore>((set, get) => {
             if (sess?.mode && sess.mode !== st.draft.mode) set({ draft: { ...st.draft, mode: sess.mode } });
           }
         }
+        if (name === "steer.returned" && Array.isArray(payload?.items) && payload.items.length) {
+          // steered too late for the turn (or it was interrupted): back to the head of the queue
+          const back = payload.items.map((it: any) => ({ id: queueId(), text: String(it?.text || ""), attachments: it?.attachments?.length ? it.attachments : undefined }));
+          setQueue(id, (q) => [...back, ...q]);
+        }
         if (name === "turn.completed") {
+          // the next queued message goes out once the turn really ended (not when it was stopped)
+          if (payload?.stop_reason !== "interrupted" && !payload?.error) window.setTimeout(() => drainQueue(id), 0);
           // a background chat that finished no longer needs its stream (browsers cap connections per host)
           if (id !== get().activeId) unwatch(id);
           void get().refresh();
@@ -225,6 +246,27 @@ export const useSessions = create<SessionsStore>((set, get) => {
     }
   }
 
+  function setQueue(id: string, fn: (q: QueuedMessage[]) => QueuedMessage[]) {
+    set((st) => {
+      const next = fn(st.queues[id] || []);
+      const queues = { ...st.queues };
+      if (next.length) queues[id] = next;
+      else delete queues[id];
+      write(QUEUE_KEY, queues);
+      return { queues };
+    });
+  }
+
+  function drainQueue(id: string) {
+    const s = get().states[id];
+    const [first] = get().queues[id] || [];
+    if (!first || get().sending || (s && s.status !== "idle")) return;
+    setQueue(id, (q) => q.filter((x) => x.id !== first.id));
+    void get().send(first.text, first.attachments, id).then((ok) => {
+      if (!ok) setQueue(id, (q) => [first, ...q]);
+    });
+  }
+
   function unwatch(id: string) {
     streams.get(id)?.();
     streams.delete(id);
@@ -238,6 +280,7 @@ export const useSessions = create<SessionsStore>((set, get) => {
     states: {},
     conn: {},
     sending: false,
+    queues: read<Record<string, QueuedMessage[]>>(QUEUE_KEY, {}),
     draft: read(DRAFT_KEY, { mode: "agent" as SessionMode, model: { provider: null, model: null } }),
     prefill: null,
     inbox: NO_INBOX,
@@ -358,11 +401,12 @@ export const useSessions = create<SessionsStore>((set, get) => {
 
     newChat: () => get().select(null),
 
-    send: async (text, attachments) => {
+    send: async (text, attachments, sessionId) => {
       const body = text.trim();
-      if (!body || get().sending) return false;
+      // an image or file alone is a message too
+      if ((!body && !attachments?.length) || get().sending) return false;
       set({ sending: true });
-      let id = get().activeId;
+      let id = sessionId || get().activeId;
       try {
         if (!id) {
           const { draft } = get();
@@ -439,6 +483,39 @@ export const useSessions = create<SessionsStore>((set, get) => {
         return false;
       } finally {
         set({ sending: false });
+      }
+    },
+
+    enqueue: (text, attachments) => {
+      const id = get().activeId;
+      const body = text.trim();
+      if (!id || (!body && !attachments?.length)) return;
+      setQueue(id, (q) => [...q, { id: queueId(), text: body, attachments: attachments?.length ? attachments : undefined }]);
+    },
+
+    updateQueued: (sessionId, itemId, text) => {
+      const body = text.trim();
+      setQueue(sessionId, (q) => q.flatMap((x) => (x.id !== itemId ? [x] : body || x.attachments?.length ? [{ ...x, text: body }] : [])));
+    },
+
+    removeQueued: (sessionId, itemId) => setQueue(sessionId, (q) => q.filter((x) => x.id !== itemId)),
+
+    steerQueued: async (sessionId, itemId) => {
+      const item = (get().queues[sessionId] || []).find((x) => x.id === itemId);
+      if (!item) return;
+      setQueue(sessionId, (q) => q.filter((x) => x.id !== itemId));
+      if ((get().states[sessionId]?.status || "idle") === "idle") {
+        if (!(await get().send(item.text, item.attachments, sessionId))) setQueue(sessionId, (q) => [item, ...q]);
+        return;
+      }
+      try {
+        const res = await sessionsApi.steer(sessionId, item.text, item.attachments);
+        // the turn ended in between and the server simply sent it
+        if (res?.message) patchState(sessionId, (s) => applySessionEvent(s, "message.created", res.message) as SessionState);
+        watch(sessionId);
+      } catch (e) {
+        setQueue(sessionId, (q) => [item, ...q]);
+        fail(e);
       }
     },
 

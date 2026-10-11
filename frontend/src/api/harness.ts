@@ -223,6 +223,11 @@ const enc = encodeURIComponent;
 const S = (id: string) => `/api/sessions/${enc(id)}`;
 const W = (projectId?: string | null) => `/api/workspace/${enc(projectId || "default")}`;
 
+const messageBody = (text: string, attachments?: Attachment[]) =>
+  attachments?.length
+    ? { text, attachments: attachments.map(({ kind, ref, label, text: quote }) => clean({ kind, ref, label: label?.slice(0, 300), text: kind === "span" ? quote?.slice(0, 8000) : undefined })) }
+    : { text };
+
 export const sessionsApi = {
   archived: () => request<SessionSummary[]>("/api/sessions?archived=true"),
   list: (projectId?: string | null, includeSubagents = false, view?: "inbox") =>
@@ -242,12 +247,10 @@ export const sessionsApi = {
   rewind: (id: string, messageId: string, opts: { include?: boolean; restoreFiles?: boolean } = {}) =>
     request<{ removed: number; reverted: string[]; conflicts: string[]; session: any }>(`${S(id)}/rewind`, { method: "POST", json: { message_id: messageId, include: !!opts.include, restore_files: !!opts.restoreFiles } }),
   send: (id: string, text: string, attachments?: Attachment[]) =>
-    request<SendResult>(`${S(id)}/messages`, {
-      method: "POST",
-      json: attachments?.length
-        ? { text, attachments: attachments.map(({ kind, ref, label, text: quote }) => clean({ kind, ref, label: label?.slice(0, 300), text: kind === "span" ? quote?.slice(0, 8000) : undefined })) }
-        : { text },
-    }),
+    request<SendResult>(`${S(id)}/messages`, { method: "POST", json: messageBody(text, attachments) }),
+  /** Add a message to the running turn: the agent reads it before its next step (an idle session just sends it). */
+  steer: (id: string, text: string, attachments?: Attachment[]) =>
+    request<{ started?: boolean; steered?: boolean; pending?: number; message?: SessionMessage; session?: SessionSummary }>(`${S(id)}/steer`, { method: "POST", json: messageBody(text, attachments) }),
   interrupt: (id: string) => request<unknown>(`${S(id)}/interrupt`, { method: "POST", json: {} }),
   approve: (id: string, toolCallId: string, decision: "once" | "always" | "deny", feedback?: string) =>
     request<unknown>(`${S(id)}/approvals/${enc(toolCallId)}`, { method: "POST", json: feedback ? { decision, feedback } : { decision } }),

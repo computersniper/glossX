@@ -733,6 +733,7 @@ async def run_turn(rt: Runtime, *, agent: dict[str, Any] | None = None,
             compacted_at = -1
             while True:
                 settings = settings_mod.load(_workspace(rt)[1])
+                take_steer(rt)
                 table = build_table(
                     registry, mode=session["mode"], has_project=bool(session.get("project_id")),
                     allowlist=None if agent is None or "*" in (agent.get("tools") or ["*"])
@@ -757,6 +758,8 @@ async def run_turn(rt: Runtime, *, agent: dict[str, Any] | None = None,
                 rt.emit("context.updated", dict(session["context"]))
                 rt.persist()
                 if not calls:
+                    if rt.pending_steer and rt.parent is None:
+                        continue  # the user steered while it answered: one more round
                     break
                 if info["rounds"] >= budget:
                     for item in calls:
@@ -821,8 +824,24 @@ def _abort_pending(rt: Runtime) -> None:
         rt.pending_input = None
 
 
+def take_steer(rt: Runtime) -> int:
+    """Add the messages the user sent while this turn ran (``steer``) to the
+    conversation, so the next model call reads them. Returns how many."""
+    if rt.parent is not None or not rt.pending_steer:
+        return 0
+    items, rt.pending_steer = rt.pending_steer, []
+    for item in items:
+        rt.manager.add_steer_message(rt, item["text"], item.get("attachments") or [])
+    return len(items)
+
+
 def finish_turn(rt: Runtime, info: dict[str, Any]) -> None:
     """Return the session to idle and publish ``turn.completed``."""
+    if rt.parent is None and rt.pending_steer:
+        # steered after the last model call (or the turn was interrupted):
+        # hand the messages back so the client queues them again
+        rt.emit("steer.returned", {"session_id": rt.id, "items": rt.pending_steer})
+        rt.pending_steer = []
     rt.running = False
     if rt.parent is None:
         rt.task = None

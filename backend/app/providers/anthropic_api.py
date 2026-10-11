@@ -7,7 +7,7 @@ from typing import AsyncIterator
 import httpx
 
 from ..config import load_config
-from .base import Message, Provider, anthropic_usage, normalize_usage, report_stream_usage
+from .base import Message, Provider, anthropic_usage, image_data, normalize_usage, report_stream_usage
 
 
 def _cfg() -> dict:
@@ -37,13 +37,14 @@ class AnthropicProvider(Provider):
                 content = []
                 for attachment in attachments:
                     data_url = attachment.get("image_data_url") or ""
-                    if not data_url.startswith("data:image/png;base64,"):
+                    image = image_data(data_url)
+                    if image is None:
                         continue
                     content.append({
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/png",
+                            "media_type": image[0],
                             "data": data_url.split(",", 1)[1],
                         },
                     })

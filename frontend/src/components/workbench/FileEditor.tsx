@@ -8,6 +8,7 @@ import { Markdown } from "../Markdown";
 import { EmptyState, Segmented, Spinner } from "../ui";
 import { DiffView, loadCheckpoint, revertCheckpoint, rowsForCheckpoint, statsOf, useCheckpointMarks } from "../session/DiffView";
 import { relativeTime } from "../session/toolMeta";
+import { CodeArea } from "./CodeArea";
 import { DocumentView, PdfPages, formatLabel, rawUrl, type DocPayload } from "./DocumentView";
 
 // Office documents, PDFs and images come back read-only with a viewer kind.
@@ -71,35 +72,6 @@ export const isDirty = (id: string) => {
 };
 
 const isMarkdown = (path: string) => /\.(md|markdown|mdx)$/i.test(path);
-
-function CodeArea({ value, onChange, wrap }: { value: string; onChange: (v: string) => void; wrap: boolean }) {
-  const gutter = useRef<HTMLPreElement>(null);
-  const lines = useMemo(() => value.split("\n").length, [value]);
-  const numbers = useMemo(() => Array.from({ length: lines }, (_, i) => i + 1).join("\n"), [lines]);
-  return (
-    <div className={`gx-code${wrap ? " wrap" : ""}`}>
-      {!wrap && <pre className="gx-code-gutter" ref={gutter} aria-hidden="true">{numbers}</pre>}
-      <textarea
-        value={value}
-        spellCheck={false}
-        wrap={wrap ? "soft" : "off"}
-        onChange={(e) => onChange(e.target.value)}
-        onScroll={(e) => {
-          if (gutter.current) gutter.current.scrollTop = e.currentTarget.scrollTop;
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-            e.preventDefault();
-            const ta = e.currentTarget;
-            const { selectionStart: s, selectionEnd: en } = ta;
-            onChange(`${value.slice(0, s)}  ${value.slice(en)}`);
-            requestAnimationFrame(() => ta.setSelectionRange(s + 2, s + 2));
-          }
-        }}
-      />
-    </div>
-  );
-}
 
 export function FileEditor({ id, visible }: { id: string; visible: boolean }) {
   const zh = useStore((s) => s.uiLang) === "zh";
@@ -210,7 +182,7 @@ export function FileEditor({ id, visible }: { id: string; visible: boolean }) {
             )}
           </div>
         ) : (
-          <CodeArea value={buf.content} onChange={(v) => edit(id, v)} wrap={md} />
+          <CodeArea value={buf.content} onChange={(v) => edit(id, v)} wrap={md} path={path} active={visible} />
         )}
       </div>
     </div>

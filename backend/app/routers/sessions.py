@@ -242,6 +242,16 @@ async def post_message(session_id: str, body: MessageBody, request: Request):
         raise _fail(error) from error
 
 
+@router.post("/{session_id}/steer")
+async def steer_message(session_id: str, body: MessageBody, request: Request):
+    """A message for the running turn (Codex's "steer"); an ordinary send when idle."""
+    attachments = [a.model_dump(exclude_none=True) for a in body.attachments or []]
+    try:
+        return await _manager(request).steer_message(session_id, body.text, attachments or None)
+    except _HANDLED as error:
+        raise _fail(error) from error
+
+
 @router.get("/{session_id}/events")
 async def session_events(session_id: str, request: Request, named: bool = True):
     """SSE stream. Each event is ``event: <name>`` + ``data: <payload JSON>``; the
