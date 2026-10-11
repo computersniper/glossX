@@ -421,3 +421,64 @@ def test_cards_show_full_schemas_only_for_the_best_matches():
     assert all('args: [' in line for line in lines[core.FULL_SCHEMA_CARDS:])
     described = reg.get("library.import").describe()
     assert described["side_effects"] == "adds a paper to the library" and described["requirements"] == []
+
+
+# -- learner model ---------------------------------------------------------------
+@pytest.fixture
+def learner_dir(monkeypatch, tmp_path):
+    from app import config
+
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    return tmp_path
+
+
+def test_learner_mastery_moves_with_quiz_answers(learner_dir):
+    from app.agent import learner
+
+    assert learner.record("Self-attention", "explained")["mastery"] == 0.5
+    learner.record("self-attention ", "correct")
+    entry = learner.record("SELF-ATTENTION", "correct", note="got the scaling factor")
+    assert entry["correct"] == 2 and entry["explained"] == 1 and entry["mastery"] == 0.75
+    learner.record("Beam search", "wrong")
+    names = [c["name"] for c in learner.profile("attention heads")]
+    assert names == ["Self-attention"]
+    assert {c["name"] for c in learner.profile()} == {"Self-attention", "Beam search"}
+    with pytest.raises(ValueError):
+        learner.record("x", "maybe")
+    assert (learner_dir / "learner.json").exists()
+
+
+def test_learner_capabilities_are_global_but_project_memory_is_not(learner_dir):
+    reg = build_registry(connections={})
+    no_project = SimpleNamespace(registry=reg, emit=lambda e: None, ctx=SimpleNamespace(project_id=None),
+                                 gate=SimpleNamespace(auto_approved=lambda: set()))
+    steps = core.normalize_steps([
+        {"id": "a", "capability": "learner.profile", "args": {"query": "attention"}},
+        {"id": "b", "capability": "memory.recall", "args": {"query": "attention"}},
+    ], no_project, prefix="s", taken=set(), phase="plan")
+    assert [s["capability"] for s in steps] == ["learner.profile"]
+    names = [c.name for c in core.planner_ranked(no_project, "learner memory recall concepts", 40)]
+    assert "learner.profile" in names and not any(n.startswith("memory.") for n in names)
+    in_project = SimpleNamespace(**{**vars(no_project), "ctx": SimpleNamespace(project_id="proj1")})
+    assert core.planner_can_use(in_project, reg.get("memory.recall"))
+
+    record = reg.get("learner.record")
+    out = asyncio.run(record.handler({"concept": "BLEU", "outcome": "correct"}, _ctx()))
+    assert out["status"] == "saved" and out["mastery"] == round(2 / 3, 3)
+    out = asyncio.run(reg.get("learner.profile").handler({"query": "BLEU score"}, _ctx()))
+    assert out["concepts"][0]["name"] == "BLEU"
+
+
+def test_tutoring_workflow_reads_the_learner_profile(fake_llm, learner_dir):
+    from app.agent import learner
+
+    learner.record("BLEU", "wrong", note="confuses BLEU with accuracy")
+    llm = fake_llm()
+    run = make_run(goal="Teach me how BLEU is used to compare the Transformer and ConvS2S",
+                   workflow="workflow.tutoring")
+    result, _ = drive(run)
+    profile = [s for s in run.plan["steps"] if s.get("workflow_step") == "profile"]
+    assert profile and profile[0]["status"] == "completed"
+    writer = llm.users("synth")[0]
+    assert "confuses BLEU with accuracy" in writer and "mastery score" in writer
+    assert result["claims"]
