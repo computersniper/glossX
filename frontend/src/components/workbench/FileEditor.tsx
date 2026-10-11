@@ -1,15 +1,18 @@
 // Editor tabs for workspace files (markdown edit/preview, monospaced text) and checkpoint diffs.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { Check, Eye, FileX, Pencil, RefreshCw, Save, Undo2 } from "lucide-react";
+import { Check, Eye, FileText, FileX, Lock, Pencil, RefreshCw, Save, Undo2 } from "lucide-react";
 import { workspaceApi, type Checkpoint } from "../../api/harness";
 import { splitWorkspaceId, useStore } from "../../store";
 import { Markdown } from "../Markdown";
 import { EmptyState, Segmented, Spinner } from "../ui";
 import { DiffView, loadCheckpoint, revertCheckpoint, rowsForCheckpoint, statsOf, useCheckpointMarks } from "../session/DiffView";
 import { relativeTime } from "../session/toolMeta";
+import { DocumentView, PdfPages, formatLabel, rawUrl, type DocPayload } from "./DocumentView";
 
-type Buffer = { content: string; saved: string; loading: boolean; saving: boolean; error: string | null; loaded: boolean };
+// Office documents, PDFs and images come back read-only with a viewer kind.
+type Viewer = { readonly?: boolean; mtime?: number; viewer?: "document" | "pdf" | "image"; document?: DocPayload };
+type Buffer = { content: string; saved: string; loading: boolean; saving: boolean; error: string | null; loaded: boolean; view?: Viewer };
 const BLANK: Buffer = { content: "", saved: "", loading: false, saving: false, error: null, loaded: false };
 
 export const useFiles = create<{
@@ -30,7 +33,8 @@ export const useFiles = create<{
       const { project, ref } = splitWorkspaceId(id);
       try {
         const file = await workspaceApi.read(project, ref);
-        patch(id, { content: file.content, saved: file.content, loading: false, loaded: true });
+        const view = file.readonly ? { readonly: true, viewer: file.viewer, document: file.document, mtime: file.mtime } : undefined;
+        patch(id, { content: file.content, saved: file.content, loading: false, loaded: true, view });
       } catch (e: any) {
         patch(id, { loading: false, loaded: true, error: String(e?.message || e) });
       }
@@ -38,7 +42,7 @@ export const useFiles = create<{
     edit: (id, content) => patch(id, { content }),
     save: async (id) => {
       const cur = get().buffers[id];
-      if (!cur || cur.saving) return false;
+      if (!cur || cur.saving || cur.view?.readonly) return false;
       const { project, ref } = splitWorkspaceId(id);
       const content = cur.content;
       patch(id, { saving: true });
@@ -107,6 +111,10 @@ export function FileEditor({ id, visible }: { id: string; visible: boolean }) {
   const md = isMarkdown(path);
   const [view, setView] = useState<"edit" | "preview">(md ? "preview" : "edit");
   const dirty = buf.loaded && buf.content !== buf.saved;
+  const viewer = buf.view?.viewer;
+  const readonly = !!buf.view?.readonly;
+  const [pdfView, setPdfView] = useState<"pages" | "text">("pages");
+  const { project } = splitWorkspaceId(id);
 
   useEffect(() => {
     void load(id);
@@ -145,7 +153,23 @@ export function FileEditor({ id, visible }: { id: string; visible: boolean }) {
           {dirty && <i className="gx-dirty" title={zh ? "未保存" : "Unsaved"} />}
         </div>
         <span className="spacer" />
-        {md && (
+        {readonly && (
+          <span className="gx-file-meta" title={zh ? "只读预览" : "Read-only preview"}>
+            <Lock size={11} /> {formatLabel(buf.view?.document?.format) || (viewer === "image" ? (zh ? "图片" : "Image") : "")} · {zh ? "只读" : "Read-only"}
+          </span>
+        )}
+        {viewer === "pdf" && (
+          <Segmented<"pages" | "text">
+            size="sm"
+            value={pdfView}
+            onChange={setPdfView}
+            options={[
+              { value: "pages", label: zh ? "页面" : "Pages", icon: <Eye size={12} /> },
+              { value: "text", label: zh ? "文字" : "Text", icon: <FileText size={12} /> },
+            ]}
+          />
+        )}
+        {md && !readonly && (
           <Segmented<"edit" | "preview">
             size="sm"
             value={view}
@@ -156,10 +180,12 @@ export function FileEditor({ id, visible }: { id: string; visible: boolean }) {
             ]}
           />
         )}
-        <button type="button" className="gx-btn sm" disabled={!dirty || buf.saving} title="Ctrl+S" onClick={() => void save(id)}>
-          {buf.saving ? <Spinner size={12} /> : dirty ? <Save size={12} /> : <Check size={12} />}
-          {dirty ? (zh ? "保存" : "Save") : zh ? "已保存" : "Saved"}
-        </button>
+        {!readonly && (
+          <button type="button" className="gx-btn sm" disabled={!dirty || buf.saving} title="Ctrl+S" onClick={() => void save(id)}>
+            {buf.saving ? <Spinner size={12} /> : dirty ? <Save size={12} /> : <Check size={12} />}
+            {dirty ? (zh ? "保存" : "Save") : zh ? "已保存" : "Saved"}
+          </button>
+        )}
       </div>
       <div className="gx-file-body">
         {buf.loading && !buf.loaded ? (
@@ -171,6 +197,12 @@ export function FileEditor({ id, visible }: { id: string; visible: boolean }) {
             hint={buf.error}
             action={<button type="button" className="gx-btn sm" onClick={() => void load(id, true)}><RefreshCw size={12} /> {zh ? "重试" : "Retry"}</button>}
           />
+        ) : viewer === "image" ? (
+          <div className="gx-file-image"><img src={`${rawUrl(project, path)}&v=${buf.view?.mtime || 0}`} alt={path} /></div>
+        ) : viewer === "pdf" && pdfView === "pages" ? (
+          <div className="gx-docv"><div className="gx-docv-scroll"><PdfPages url={rawUrl(project, path)} zh={zh} /></div></div>
+        ) : readonly && buf.view?.document ? (
+          <DocumentView doc={buf.view.document} project={project} path={path} zh={zh} />
         ) : md && view === "preview" ? (
           <div className="gx-file-preview">
             {buf.content.trim() ? <article className="gx-prose reading"><Markdown text={buf.content} /></article> : (

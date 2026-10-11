@@ -102,6 +102,7 @@ Agent 会逐段阅读、给出可以点击跳回原文的回答，并把笔记�
 | **权限模式** | **Ask**（只读）、**Agent**（写入与执行需要审批）、**Auto**（工作区内的编辑自动通过，执行仍需审批）、**Plan**（只读，最终给出可接受的计划）。支持 allow / ask / deny 规则；可“批准一次”“总是批准”或“拒绝并附反馈”。 |
 | **工具** | 论文库与论文工具（检索、按章节或页读取、片段检索、速览、解释、参考文献、学术搜索、导入）、工作区文件工具、Shell 与 Python 执行、网页搜索与抓取、待办、`ask_user`、项目记忆。 |
 | **工作区文件与检查点** | 每个项目一个沙箱工作区，带文件浏览器与编辑器标签页。每次写入都会记录检查点，可查看 diff 并接受或回退。工作区根目录的 `GLOSSX.md` 项目说明会始终注入。 |
+| **Office 文件与笔记** | Word、PowerPoint、Excel、OpenDocument、PDF 与 GoodNotes 文件可直接只读预览（幻灯片带演讲者备注、表格按工作表分页、PDF 按页显示），Agent 也能通过 `fs_read`、`fs_grep` 和 `@` 附件以 Markdown 读取，论文库同样可以导入。旧版 `.doc` / `.xls` / `.ppt` 在装有 LibreOffice 时可用；GoodNotes 显示识别出的手写文字和笔记内嵌的 PDF。 |
 | **斜杠命令与 @ 提及** | 内置 `/clear`、`/compact`、`/mode`、`/model`、`/review`、`/summarize`、`/todos`、`/help`，也可用 Markdown 文件自定义命令。`@` 可附带论文、片段、工作区文件或运行记录。 |
 | **子 Agent** | 拥有独立上下文、工具白名单与轮次预算的嵌套会话。内置 `reader`、`reviewer`、`coder`、`searcher`，也可用 Markdown 自定义。 |
 | **技能 Skills** | 将 Claude / Codex 的 `SKILL.md` 技能暴露为 `skill_<name>` 工具，按需渐进加载。 |
