@@ -241,6 +241,7 @@ def main() -> int:
                 args.port,
             )
 
+        os.environ["GLOSS_BIND_PORT"] = str(args.port)
         browser_host = "127.0.0.1" if args.host in {"0.0.0.0", "::"} else args.host
         url = f"http://{browser_host}:{args.port}"
         server, server_thread = _start_server(app, args.host, args.port)

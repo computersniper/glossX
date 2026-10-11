@@ -2,19 +2,28 @@
 
 One [Capacitor](https://capacitorjs.com) app for all three platforms. It does not
 run Claude Code or Codex itself: it connects to GlossX on your computer over the
-local network (or a VPN such as Tailscale) and shows the same frontend, laid out
+local network or a Cloudflare tunnel and shows the same frontend, laid out
 for touch screens. Agents, papers and CLIs all stay on the computer.
 
 ## Pairing
 
-1. On the computer, open GlossX → Settings → **Mobile access**, turn on
-   **Allow**, then restart GlossX. The desktop app then listens on the network
-   at port 8010. (`npm start` already listens on all interfaces.)
-2. Scan the QR code with the phone's camera, or type the address and pairing
-   code into the app.
+No app install is needed on the phone: the browser works too.
 
-Requests from other devices need the pairing code; requests from the computer
-itself never do. **New pairing code** signs every device out.
+1. On the computer, open GlossX → Settings → **Mobile access** and turn on
+   **Allow**, then restart GlossX (it then listens on port 8010; `npm start`
+   already listens on all interfaces). For use away from home, turn on
+   **Internet access** instead or as well: a free Cloudflare quick tunnel
+   (`cloudflared`, downloaded once) gives an `https://….trycloudflare.com`
+   address. No open ports, no account; the address changes on every restart.
+2. Scan the QR code with the phone's camera. It is a one-time link (10
+   minutes) that signs the phone in. Then Share → **Add to Home Screen** to use
+   it full screen.
+3. In this app, type the address and pairing code instead.
+
+Requests from the computer itself never need pairing; everything else does,
+including requests arriving through the tunnel. Paired devices are listed in
+Settings and can be removed one by one; **New pairing code** signs every device
+out.
 
 ## Building
 

@@ -99,9 +99,12 @@ async def lifespan(app: FastAPI):
     from .harness.terminal import TerminalManager
     app.state.terminals = TerminalManager()
     _close_streams_on_exit_signal(app)
+    from . import tunnel
+    tunnel.start_if_enabled()  # remote access over the internet, when switched on
     try:
         yield
     finally:
+        await tunnel.TUNNEL.stop()
         await app.state.terminals.close()
         # sessions first: their turns may be waiting on workflow runs
         await app.state.sessions.shutdown()

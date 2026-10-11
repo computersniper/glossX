@@ -6,13 +6,13 @@ import os
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from .. import remote_access
+from .. import remote_access, tunnel
 
 router = APIRouter(prefix="/api/remote", tags=["remote"])
 
 
 def _local_only(request: Request) -> None:
-    if not remote_access.is_local(request.client.host if request.client else None):
+    if not remote_access.is_local_request(request.client.host if request.client else None, request.headers):
         raise HTTPException(403, "Only this computer can change mobile access")
 
 
@@ -26,6 +26,8 @@ def _status(request: Request, pair: bool = False) -> dict:
     port = listening_port if reachable else state["port"]
     addresses = remote_access.lan_addresses()
     code = remote_access.new_pair_code() if pair else None
+    tunnel.start_if_enabled(listening_port)
+    via = tunnel.TUNNEL.status()
     return {
         "enabled": state["enabled"],
         "reachable": reachable,
@@ -37,6 +39,9 @@ def _status(request: Request, pair: bool = False) -> dict:
         "urls": [f"http://{ip}:{port}" for ip in addresses],
         # what the QR holds: open it on a phone and that device is signed in
         "pair_urls": [f"http://{ip}:{port}/pair?c={code}" for ip in addresses] if code else [],
+        # over the internet, through the Cloudflare tunnel
+        "tunnel": {**via, "enabled": bool(state.get("tunnel"))},
+        "tunnel_pair_url": f"{via['url']}/pair?c={code}" if code and via["url"] else None,
         "pair_expires_in": remote_access.PAIR_TTL,
         "devices": remote_access.devices(),
     }
@@ -55,12 +60,17 @@ class RemotePatch(BaseModel):
     rotate_token: bool = False
     remove_device: str | None = None
     remove_all_devices: bool = False
+    tunnel: bool | None = None
 
 
 @router.post("")
 async def update_remote(body: RemotePatch, request: Request):
     _local_only(request)
-    remote_access.update(enabled=body.enabled, port=body.port, rotate=body.rotate_token)
+    remote_access.update(enabled=body.enabled, port=body.port, rotate=body.rotate_token, tunnel=body.tunnel)
+    if body.tunnel is False:
+        await tunnel.TUNNEL.stop()
+    elif body.tunnel:
+        tunnel.TUNNEL.error = ""  # an explicit switch-on retries after a failure
     if body.remove_device:
         remote_access.remove_device(body.remove_device)
     if body.remove_all_devices:

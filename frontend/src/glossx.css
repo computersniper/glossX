@@ -1298,6 +1298,10 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
   .reader .side-host { width: auto !important; height: 45%; border-top: 1px solid var(--line); }
 }
 .mobile-access .mobile-switch { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; white-space: nowrap; }
+.mobile-access .mobile-tunnel { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.mobile-via { display: inline-flex; gap: 2px; margin-top: 10px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
+.mobile-via button { border: 0; background: transparent; padding: 4px 12px; border-radius: 6px; font-size: 13px; }
+.mobile-via button.active { background: var(--line); font-weight: 600; }
 .mobile-pair { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-top: 8px; }
 .mobile-qr { flex: 0 0 148px; width: 148px; padding: 6px; border-radius: 10px; background: #fff; }
 .mobile-qr svg { display: block; width: 100%; height: auto; }

@@ -240,7 +240,7 @@ async function start() {
   const child = spawn(
     VENV_PYTHON,
     ["-m", "uvicorn", "app.main:app", "--host", host, "--port", String(port)],
-    { cwd: BACKEND, env: { ...process.env, GLOSS_BIND_HOST: host }, stdio: "inherit", shell: false, detached: !IS_WINDOWS },
+    { cwd: BACKEND, env: { ...process.env, GLOSS_BIND_HOST: host, GLOSS_BIND_PORT: String(port) }, stdio: "inherit", shell: false, detached: !IS_WINDOWS },
   );
   supervise([{ child, name: "backend" }]);
 }

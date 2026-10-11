@@ -143,3 +143,66 @@ def test_new_pairing_code_signs_out_all_devices(client, phone):
 def test_home_screen_assets_need_no_sign_in(phone):
     phone.cookies.clear()
     assert phone.get("/manifest.webmanifest").status_code != 401
+
+
+# ---- internet access through the Cloudflare tunnel ----------------------------
+
+TUNNEL_HEADERS = {"CF-Connecting-IP": "203.0.113.9", "CF-Ray": "8a1b2c3d4e5f-NRT"}
+
+
+def test_tunnel_traffic_is_never_treated_as_this_computer(client):
+    # cloudflared connects from 127.0.0.1, but the request came from the internet
+    assert client.get("/api/papers", headers=TUNNEL_HEADERS).status_code == 401
+    assert client.get("/api/remote", headers={**TUNNEL_HEADERS, "X-Gloss-Token": client.get("/api/remote").json()["token"]}).status_code == 403
+    page = client.get("/", headers=TUNNEL_HEADERS)
+    assert page.status_code == 401
+
+
+def test_pairing_through_the_tunnel(client):
+    code = client.get("/api/remote?pair=1").json()["pair_urls"][0].split("c=", 1)[1]
+    r = client.get(f"/pair?c={code}", headers=TUNNEL_HEADERS, follow_redirects=False)
+    assert r.status_code == 303
+    device_token = r.headers["location"].split("d=", 1)[1]
+    assert client.get("/api/papers", headers={**TUNNEL_HEADERS, "Cookie": f"gloss_device={device_token}"}).status_code == 200
+    client.post("/api/remote", json={"remove_all_devices": True})
+
+
+def test_wrong_codes_lock_out_for_a_minute(client, monkeypatch):
+    from app import remote_access
+
+    monkeypatch.setattr(remote_access, "_failures", [])
+    for _ in range(remote_access.FAIL_LIMIT):
+        assert client.get("/api/papers?token=wrong-guess", headers=TUNNEL_HEADERS).status_code == 401
+    good = client.get("/api/remote").json()["token"]
+    assert client.get(f"/api/papers?token={good}", headers=TUNNEL_HEADERS).status_code == 429
+    remote_access._failures.clear()
+    assert client.get(f"/api/papers?token={good}", headers=TUNNEL_HEADERS).status_code == 200
+
+
+def test_tunnel_switch_starts_cloudflared_and_shows_its_address(client, tmp_path, monkeypatch):
+    import sys
+    import time
+
+    fake = tmp_path / "cloudflared.py"
+    fake.write_text(
+        "import sys, time\n"
+        "print('INF |  https://quiet-river-demo.trycloudflare.com  |', flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    launcher = tmp_path / "cloudflared"
+    launcher.write_text(f"#!/bin/sh\nexec {sys.executable} {fake} \"$@\"\n")
+    launcher.chmod(0o755)
+    monkeypatch.setenv("GLOSS_CLOUDFLARED", str(launcher))
+    try:
+        client.post("/api/remote", json={"tunnel": True})
+        status = {}
+        for _ in range(50):
+            status = client.get("/api/remote?pair=1").json()
+            if status["tunnel"]["state"] == "running":
+                break
+            time.sleep(0.1)
+        assert status["tunnel"]["url"] == "https://quiet-river-demo.trycloudflare.com"
+        assert status["tunnel_pair_url"].startswith("https://quiet-river-demo.trycloudflare.com/pair?c=")
+    finally:
+        client.post("/api/remote", json={"tunnel": False})
+    assert client.get("/api/remote").json()["tunnel"]["state"] == "off"

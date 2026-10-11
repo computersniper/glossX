@@ -93,11 +93,14 @@ def token() -> str:
         return state["token"]
 
 
-def update(enabled: bool | None = None, port: int | None = None, rotate: bool = False) -> dict[str, Any]:
+def update(enabled: bool | None = None, port: int | None = None, rotate: bool = False,
+           tunnel: bool | None = None) -> dict[str, Any]:
     with _lock:
         state = load_state()
         if enabled is not None:
             state["enabled"] = bool(enabled)
+        if tunnel is not None:
+            state["tunnel"] = bool(tunnel)
         if port is not None:
             state["port"] = int(port)
         if rotate or not state.get("token"):
@@ -120,6 +123,26 @@ def is_local(host: str | None) -> bool:
         return ipaddress.ip_address(host.split("%", 1)[0]).is_loopback
     except ValueError:
         return False
+
+
+# set by a reverse proxy in front of us, such as the cloudflared tunnel
+PROXY_HEADERS = ("cf-connecting-ip", "cf-ray", "x-forwarded-for", "forwarded")
+
+
+def is_local_request(host: str | None, headers) -> bool:
+    """From this computer itself: loopback, and not relayed by a tunnel."""
+    return is_local(host) and not any(headers.get(h) for h in PROXY_HEADERS)
+
+
+# brute-force guard for the internet-facing tunnel: too many wrong codes pause sign-in
+_failures: list[float] = []
+FAIL_LIMIT, FAIL_WINDOW = 30, 60.0
+
+
+def _locked_out() -> bool:
+    now = time.time()
+    _failures[:] = [t for t in _failures if now - t < FAIL_WINDOW]
+    return len(_failures) >= FAIL_LIMIT
 
 
 def valid(code: str | None) -> bool:
@@ -278,10 +301,10 @@ class RemoteAuthMiddleware:
         if scope["type"] not in {"http", "websocket"} or not auth_enabled():
             return await self.app(scope, receive, send)
         client = scope.get("client")
-        if is_local(client[0] if client else None):
+        headers = _headers(scope)
+        if is_local_request(client[0] if client else None, headers):
             return await self.app(scope, receive, send)
 
-        headers = _headers(scope)
         path = scope.get("path", "")
         query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
 
@@ -305,7 +328,11 @@ class RemoteAuthMiddleware:
             from_query,
         ]
         device = device_for(cookie[DEVICE_COOKIE].value if DEVICE_COOKIE in cookie else None) or device_for(device_query)
+        if not device and _locked_out():
+            return await _respond(send, 429, b'{"detail":"GlossX: too many wrong codes, try again in a minute"}', b"application/json")
         if not device and not any(valid(c) for c in candidates):
+            if any(candidates) or device_query:
+                _failures.append(time.time())
             if scope["type"] == "websocket":
                 await send({"type": "websocket.close", "code": 4401})
                 return
@@ -336,7 +363,8 @@ class RemoteAuthMiddleware:
         await self.app(scope, receive, send_with_cookie)
 
     async def _pair(self, scope, send, headers, code):
-        if scope.get("method") != "GET" or not _take_pair_code(code):
+        if scope.get("method") != "GET" or _locked_out() or not _take_pair_code(code):
+            _failures.append(time.time())
             status, body = _page(410, "二维码已失效 / QR code expired",
                                  "请在电脑的 GlossX → 设置 → 移动端访问 里刷新二维码再扫一次。"
                                  " / Refresh the QR code in GlossX → Settings → Mobile access and scan again.")

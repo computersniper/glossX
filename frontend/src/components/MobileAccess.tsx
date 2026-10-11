@@ -11,6 +11,8 @@ type RemoteStatus = {
   token: string;
   urls: string[];
   pair_urls: string[];
+  tunnel: { state: "off" | "downloading" | "starting" | "running" | "error"; url: string | null; error: string; enabled: boolean };
+  tunnel_pair_url: string | null;
   pair_expires_in: number;
   devices: { id: string; name: string; created: number; last_seen: number }[];
 };
@@ -47,15 +49,27 @@ export function MobileAccess({ zh }: { zh: boolean }) {
 
   // the QR holds a one-time sign-in link; a new one replaces the last
   const [pairUrls, setPairUrls] = useState<string[]>([]);
+  const [tunnelPairUrl, setTunnelPairUrl] = useState<string | null>(null);
+  const [via, setVia] = useState<"lan" | "internet">("lan");
   const deviceCount = useRef(-1);
+  const tunnelUrl = useRef<string | null>(null);
   const load = async (pair: boolean) => {
     const r = await fetch(`/api/remote${pair ? "?pair=1" : ""}`).catch(() => null);
     const next: RemoteStatus | null = r?.ok ? await r.json() : null;
     setStatus(next);
-    if (next && pair) setPairUrls(next.pair_urls);
+    if (next && pair) {
+      setPairUrls(next.pair_urls);
+      setTunnelPairUrl(next.tunnel_pair_url);
+    }
+    const newDevice = next && deviceCount.current >= 0 && next.devices.length > deviceCount.current;
+    // the tunnel came up (or got a new address): the QR needs its link
+    const newTunnel = next && next.tunnel.url && next.tunnel.url !== tunnelUrl.current;
+    if (next) {
+      deviceCount.current = next.devices.length;
+      tunnelUrl.current = next.tunnel.url;
+    }
     // a phone just used the QR: show a fresh one
-    if (next && deviceCount.current >= 0 && next.devices.length > deviceCount.current && !pair) void load(true);
-    if (next) deviceCount.current = next.devices.length;
+    if ((newDevice || newTunnel) && !pair) void load(true);
   };
 
   useEffect(() => {
@@ -67,7 +81,7 @@ export function MobileAccess({ zh }: { zh: boolean }) {
     return () => { window.clearInterval(qr); window.clearInterval(watch); };
   }, [remote]);
 
-  const change = async (patch: { enabled?: boolean; rotate_token?: boolean; remove_device?: string; remove_all_devices?: boolean }) => {
+  const change = async (patch: { enabled?: boolean; tunnel?: boolean; rotate_token?: boolean; remove_device?: string; remove_all_devices?: boolean }) => {
     setBusy(true);
     setError("");
     try {
@@ -77,6 +91,7 @@ export function MobileAccess({ zh }: { zh: boolean }) {
       setStatus(next);
       deviceCount.current = next.devices.length;
       if (patch.rotate_token) void load(true);
+      if (patch.tunnel) setVia("internet");
     } catch {
       setError(zh ? "保存失败" : "Couldn't save");
     } finally {
@@ -101,13 +116,21 @@ export function MobileAccess({ zh }: { zh: boolean }) {
   // older backend, or opened from another device without the app
   if (!status) return null;
 
-  const pairUrl = pairUrls[0];
+  const tunnelOn = status.tunnel.state === "running" && !!tunnelPairUrl;
+  // LAN when the computer listens on the network, the tunnel otherwise or when picked
+  const mode = !status.reachable ? "internet" : !tunnelOn ? "lan" : via;
+  const pairUrl = mode === "internet" ? (tunnelOn ? tunnelPairUrl : null) : pairUrls[0];
+  const paired = status.reachable || tunnelOn;
+  const tunnelNote: Record<string, [string, string]> = {
+    downloading: ["正在下载 cloudflared（只需一次）…", "Downloading cloudflared (once)…"],
+    starting: ["正在连接 Cloudflare…", "Connecting to Cloudflare…"],
+  };
   return (
     <section className="usage-card mobile-access" aria-label={zh ? "移动端访问" : "Mobile access"}>
       <div className="usage-head">
         <div>
           <strong>{zh ? "移动端访问" : "Mobile access"}</strong>
-          <span>{zh ? "用 iPhone、iPad 或 Android 上的 GlossX 连接这台电脑" : "Use GlossX on iPhone, iPad or Android with this computer"}</span>
+          <span>{zh ? "用 iPhone、iPad 或 Android 连接这台电脑（家里 Wi‑Fi）" : "Use this computer from an iPhone, iPad or Android phone (home Wi-Fi)"}</span>
         </div>
         <label className="mobile-switch">
           <input type="checkbox" checked={status.enabled} disabled={busy} onChange={(e) => void change({ enabled: e.target.checked })} />
@@ -117,9 +140,36 @@ export function MobileAccess({ zh }: { zh: boolean }) {
       {status.restart_required && (
         <p className="usage-note" role="alert">{zh ? "重启 GlossX 后生效（会固定在端口 " : "Restart GlossX to apply (it will listen on port "}{status.port}{zh ? "）。" : ")."}</p>
       )}
-      {status.reachable && (
+      <div className="usage-head mobile-tunnel">
+        <div>
+          <strong>{zh ? "外网访问" : "Internet access"}</strong>
+          <span>
+            {zh
+              ? "不在同一个 Wi‑Fi 也能用：经 Cloudflare 免费隧道转发，不用开端口、不用注册。"
+              : "Works away from home too: through a free Cloudflare tunnel, no open ports, no account."}
+          </span>
+        </div>
+        <label className="mobile-switch">
+          <input type="checkbox" checked={status.tunnel.enabled} disabled={busy} onChange={(e) => void change({ tunnel: e.target.checked })} />
+          <span>{zh ? "开启" : "On"}</span>
+        </label>
+      </div>
+      {status.tunnel.enabled && tunnelNote[status.tunnel.state] && <p className="usage-note">{tunnelNote[status.tunnel.state][zh ? 0 : 1]}</p>}
+      {status.tunnel.enabled && status.tunnel.state === "error" && (
+        <p className="usage-note" role="alert">
+          {zh ? "隧道没有连上：" : "The tunnel didn't connect: "}{status.tunnel.error}{" "}
+          <button className="small" type="button" disabled={busy} onClick={() => void change({ tunnel: true })}>{zh ? "重试" : "Retry"}</button>
+        </p>
+      )}
+      {paired && (
         <>
-          {!status.auth && <p className="usage-note" role="alert">{zh ? "GLOSS_REMOTE_AUTH=off：局域网内任何设备都能直接访问。" : "GLOSS_REMOTE_AUTH=off: any device on the network can connect without a code."}</p>}
+          {!status.auth && <p className="usage-note" role="alert">{zh ? "GLOSS_REMOTE_AUTH=off：任何设备都能直接访问。" : "GLOSS_REMOTE_AUTH=off: any device can connect without a code."}</p>}
+          {status.reachable && tunnelOn && (
+            <div className="mobile-via" role="tablist">
+              <button type="button" role="tab" aria-selected={mode === "lan"} className={mode === "lan" ? "active" : ""} onClick={() => setVia("lan")}>{zh ? "家里 Wi‑Fi" : "Home Wi-Fi"}</button>
+              <button type="button" role="tab" aria-selected={mode === "internet"} className={mode === "internet" ? "active" : ""} onClick={() => setVia("internet")}>{zh ? "外网" : "Internet"}</button>
+            </div>
+          )}
           {pairUrl ? (
             <div className="mobile-pair">
               <QrCode text={pairUrl} />
@@ -130,6 +180,15 @@ export function MobileAccess({ zh }: { zh: boolean }) {
                     : "Scan with the camera on an iPhone, iPad or Android phone: it opens in the browser, already signed in, no app needed. Then Share → Add to Home Screen to use it full screen like an app."}
                 </p>
                 <p className="usage-note">{zh ? "二维码只能用一次，10 分钟内有效。" : "Each QR code works once, for 10 minutes."}</p>
+                {mode === "internet" ? (
+                  <p className="usage-note">
+                    {zh
+                      ? "外网地址每次重启 GlossX 或隧道都会变，变了之后手机要重新扫码。内容经过 Cloudflare 转发（https 加密）。"
+                      : "The internet address changes whenever GlossX or the tunnel restarts; scan again after that. Traffic passes through Cloudflare (encrypted with https)."}
+                  </p>
+                ) : (
+                  <p className="usage-note">{zh ? "手机和电脑要连同一个 Wi‑Fi。" : "The phone and this computer need to be on the same Wi-Fi."}</p>
+                )}
                 <button className="small" type="button" onClick={() => void load(true)}>{zh ? "刷新二维码" : "New QR code"}</button>
               </div>
             </div>
@@ -151,14 +210,14 @@ export function MobileAccess({ zh }: { zh: boolean }) {
           <details className="mobile-manual">
             <summary>{zh ? "手动输入（GlossX App 或扫不了码时）" : "Enter by hand (GlossX app, or when the QR won't scan)"}</summary>
             <label>{zh ? "地址" : "Address"}</label>
-            {status.urls.map((u) => <code key={u}>{u.replace(/^http:\/\//, "")}</code>)}
+            {status.reachable && status.urls.map((u) => <code key={u}>{u.replace(/^http:\/\//, "")}</code>)}
+            {tunnelOn && status.tunnel.url && <code>{status.tunnel.url}</code>}
             <label>{zh ? "配对码" : "Pairing code"}</label>
             <code className="mobile-code">{status.token}</code>
             <button className="small" type="button" disabled={busy} onClick={() => void change({ rotate_token: true })}>
               {zh ? "换配对码并移除所有设备" : "New code, sign out every device"}
             </button>
           </details>
-          <p className="usage-note">{zh ? "手机和电脑要连同一个 Wi‑Fi。" : "The phone and this computer need to be on the same Wi-Fi."}</p>
         </>
       )}
       {error && <p role="alert">{error}</p>}
