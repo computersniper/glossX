@@ -103,6 +103,25 @@ def progress_sink(callback: Any):
         _PROGRESS.reset(token)
 
 
+_NATIVE_TOOLS: ContextVar[Any] = ContextVar("gloss_native_tools", default=None)
+
+
+@contextmanager
+def native_tools(tools: list[dict] | None):
+    """Offer ``[{name, description, parameters}]`` as native function tools to
+    providers that support them. Whatever they call comes back as ordinary
+    ``<tool_call>`` text blocks, so the harness protocol stays the same."""
+    token = _NATIVE_TOOLS.set(tools or None)
+    try:
+        yield
+    finally:
+        _NATIVE_TOOLS.reset(token)
+
+
+def offered_tools() -> list[dict] | None:
+    return _NATIVE_TOOLS.get()
+
+
 def wants_progress() -> bool:
     return _PROGRESS.get() is not None
 

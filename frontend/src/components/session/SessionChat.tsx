@@ -19,17 +19,30 @@ import { TurnUsage } from "./CacheUsage";
 
 const SPAN_MARK = /\[S:([^\]\s]+#\d+)\]/g;
 
+/** Text still streaming (or cut off) can end inside a code fence or a bold
+ * run; close them so the half-written part renders instead of showing marks. */
+export function closeOpenMarkdown(text: string): string {
+  let out = text;
+  const fences = (out.match(/^\s*(```|~~~)/gm) || []).length;
+  if (fences % 2) return `${out}\n\`\`\``;
+  // outside code spans, an odd number of ** means the last bold is still open
+  const plain = out.replace(/`[^`\n]*`/g, "");
+  if (((plain.match(/\*\*/g) || []).length) % 2) out = /\*\*\s*$/.test(out) ? out.replace(/\*\*\s*$/, "") : `${out}**`;
+  // a half-written [S: marker or link
+  return out.replace(/\[S:[^\]]*$/, "").replace(/\[[^\]\n]*\]\([^)\n]*$/, "");
+}
+
 /** Assistant markdown with `[S:<span>]` markers turned into numbered, clickable citations. */
-function Prose({ text, spans }: { text: string; spans: Map<string, SpanRef> }) {
+function Prose({ text, spans, partial }: { text: string; spans: Map<string, SpanRef>; partial?: boolean }) {
   const { md, order } = useMemo(() => {
     const order: string[] = [];
-    const md = text.replace(SPAN_MARK, (_m, id: string) => {
+    const md = (partial ? closeOpenMarkdown(text) : text).replace(SPAN_MARK, (_m, id: string) => {
       let n = order.indexOf(id);
       if (n < 0) n = order.push(id) - 1;
       return `[${n + 1}](#span:${encodeURIComponent(id)})`;
     });
     return { md, order };
-  }, [text]);
+  }, [text, partial]);
   return (
     <div
       className="gx-prose"
@@ -199,7 +212,7 @@ function AssistantMessage({ m, zh, spans, canFork, old }: { m: Extract<SessionMe
   return (
     <div className={`gx-msg assistant${m.streaming ? " streaming" : ""}${old ? " compacted" : ""}`}>
       <Thoughts m={m} zh={zh} />
-      {m.text && <Prose text={m.text} spans={spans} />}
+      {m.text && <Prose text={m.text} spans={spans} partial={m.streaming || m.interrupted} />}
       {m.interrupted && <div className="gx-msg-flag">{zh ? "已中断" : "Interrupted"}</div>}
       {m.error && !m.interrupted && <div className="gx-msg-flag bad">{m.error}</div>}
       {!m.streaming && m.text && (
