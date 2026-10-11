@@ -11,10 +11,12 @@ on:
     branches: [glossX-dev]
     paths:
       - "mobile/**"
+      - "frontend/**"
       - ".github/workflows/mobile-build.yml"
   pull_request:
     paths:
       - "mobile/**"
+      - "frontend/**"
       - ".github/workflows/mobile-build.yml"
 
 concurrency:
@@ -35,13 +37,19 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: |
+            mobile/package-lock.json
+            frontend/package-lock.json
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
       - run: npm ci --no-fund --no-audit
+      - name: Install shared frontend
+        working-directory: frontend
+        run: npm ci --no-fund --no-audit
+      - run: npm run build:web
       - run: npx cap sync android
       - name: Build debug APK
         working-directory: mobile/android
@@ -65,8 +73,14 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: |
+            mobile/package-lock.json
+            frontend/package-lock.json
       - run: npm ci --no-fund --no-audit
+      - name: Install shared frontend
+        working-directory: frontend
+        run: npm ci --no-fund --no-audit
+      - run: npm run build:web
       - run: npx cap sync ios
       - name: Build for the simulator (unsigned)
         working-directory: mobile/ios/App

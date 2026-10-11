@@ -1,9 +1,16 @@
 # GlossX for iPhone, iPad and Android
 
 One [Capacitor](https://capacitorjs.com) app for all three platforms. It does not
-run Claude Code or Codex itself: it connects to GlossX on your computer over the
-local network or a Cloudflare tunnel and shows the same frontend, laid out
-for touch screens. Agents, papers and CLIs all stay on the computer.
+run Claude Code or Codex itself. Choose **Local API workspace** to chat using
+your own OpenAI-compatible API on this device, or connect to GlossX on your
+computer over the local network or a Cloudflare tunnel. The connected mode
+uses the computer's agents, papers and CLIs; local API settings and chats stay
+separate on the device. Both modes use the shared React frontend.
+
+The local API interface opens without a computer or network, but model calls
+need Internet access. Browser builds need an API endpoint that allows CORS;
+native builds use Capacitor HTTP. Returning to the connection page lets you
+switch modes. The app never automatically skips this choice on launch.
 
 ## Pairing
 
@@ -28,17 +35,21 @@ out.
 ## Building
 
 ```bash
-cd mobile
+cd frontend
 npm ci
-npx cap sync
+cd ../mobile
+npm ci
+npm run sync          # builds shared frontend with relative assets, then cap sync
 npx cap open ios       # Xcode: pick your team under Signing, then Run (iPhone or iPad)
 npx cap open android   # Android Studio: Run, or ./gradlew assembleDebug in android/
 ```
 
 See [docs/glossx-mobile.md](../docs/glossx-mobile.md) for the plan and how the code is split across platforms.
 
-`www/` is the app's own connect page; everything else comes from the computer,
-so frontend changes reach the phone without rebuilding the app. The
+`www/` is the app's own mode selection and connect page. `www/local/` is a
+generated, ignored bundle of `frontend/`; `npm run build:web` builds it without
+overwriting `frontend/dist`. Local API mode changes require an app rebuild;
+connected mode frontend changes reach the phone from the computer. The
 **Mobile build** workflow builds a debug APK (a workflow artifact) and checks
 that the iOS project compiles.
 

@@ -2,9 +2,12 @@
 
 目标：iPad、iPhone、Android 三端共用一套代码。**iPad 先做**，然后是 iPhone，最后是 Android。
 
-移动端不运行 Claude Code / Codex，而是连接你电脑上正在运行的 GlossX，由电脑上的 CLI 干活，移动端只负责查看和操作。论文、对话和工作区都留在电脑上，移动端不保存副本。
+移动端不运行 Claude Code / Codex，提供两种独立入口：
 
-不在本期范围内：离线使用、上架 App Store / Google Play、在手机上直接调用模型 API。
+- **连接电脑**：连接电脑上正在运行的 GlossX，由电脑上的 CLI 干活，使用电脑的论文、对话和工作区，不复制到手机。
+- **本机 API 工作区**：App 自带同一份 React 前端，使用自己填写的 OpenAI 兼容 API 与模型直接对话，不依赖电脑。设置与对话保存在这台设备，与电脑的数据隔离。界面可以离线打开，模型回复仍需要网络；本机模式不会提供电脑上的终端、CLI 或文件系统。
+
+2026-10-11 用户要求推进本机 API，覆盖此前“直接调用 API 不在范围”的规划；保留既有 Capacitor 薄壳与共享前端方案。不在本期范围内：离线模型推理、上架 App Store / Google Play。
 
 ## 多平台代码怎么组织
 
@@ -18,7 +21,8 @@ backend/             唯一的后端；移动端通过它调用电脑上的 CLI
   app/remote_access.py 配对码校验，以及“允许移动设备”开关
 mobile/              Capacitor 原生壳，三端共用一份配置
   capacitor.config.json
-  www/                 App 自带的“选择电脑”连接页（不依赖网络就能打开）
+  www/                 App 自带的模式选择/电脑连接页
+    local/             构建生成的共享 React 前端，不提交生成产物
   ios/                 Xcode 工程（iPhone 和 iPad 是同一个 App）
   android/             Gradle 工程
   assets/              图标和启动图的源文件
@@ -59,6 +63,12 @@ desktop/             Electron 桌面壳（不受影响）
 
 原生 App（`mobile/`）仍然保留，可以手动填地址和配对码连接；但要装到 iPhone 上需要 Mac 和 Xcode，所以 iPhone 优先用上面的浏览器方式。
 
+**本机 API 模式**
+
+在 App 首页点“打开本机 API 工作区”，进入自带的 `local/index.html?mode=local`。填写 OpenAI 兼容服务地址、模型和自己的 API key。返回连接页可随时改为连接电脑。启动 App 始终显示两种入口，已保存的电脑点选后连接，不自动跳走。
+
+共享前端开发时也可以访问 `?mode=local`。浏览器直接调用服务受到服务端 CORS 限制；原生 App 使用 Capacitor HTTP。API key 不发送给连接的电脑，也不与电脑配置自动同步。当前本机 API 工作区的实际验收与待办见 `docs/progress/mobile-local.md` / `docs/progress/mobile-shell.md`。
+
 安全规则：
 
 - 本机访问和以前一样不需要登录；其他设备必须先配对，否则返回 401。经隧道过来的请求虽然来自本机的 cloudflared，但带有 Cloudflare 的转发头，一律当作其他设备。
@@ -84,6 +94,7 @@ desktop/             Electron 桌面壳（不受影响）
 | 扫码网页配对、添加到主屏幕（PWA）、设备管理 | 已完成，有测试，在浏览器里以 iPhone 尺寸测过 |
 | 外网访问（Cloudflare 快速隧道） | 已完成，有测试（用模拟的 cloudflared） |
 | Capacitor 原生壳、连接页、图标 | 已完成 |
+| 原生壳本机 API / 连接电脑双入口、内置共享前端 | 已实现构建与接线，原生设备验收待做 |
 | iPad：双指缩放、按页宽打开、竖屏侧栏和 AI 面板只开一个 | 已完成，在浏览器里以 iPad 尺寸测过 |
 | iPhone 底部标签栏布局 | 已完成，在浏览器里以手机尺寸测过 |
 | Apple Pencil 标注 | 未验证 |
@@ -93,4 +104,4 @@ desktop/             Electron 桌面壳（不受影响）
 ## 待定问题
 
 - 第一阶段是不是只给自己用（用 Xcode 直接安装），暂时不走 TestFlight？
-- 以后要不要把前端也打包进 App 里，让界面能离线打开、首屏更快？代价是每次改前端都要重新发 App。
+- 本机 API 模式的前端已打包进 App，更新它需要重新构建 App；连接电脑模式仍使用电脑上的最新前端。

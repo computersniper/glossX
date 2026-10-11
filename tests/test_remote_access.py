@@ -180,8 +180,10 @@ def test_wrong_codes_lock_out_for_a_minute(client, monkeypatch):
 
 
 def test_tunnel_switch_starts_cloudflared_and_shows_its_address(client, tmp_path, monkeypatch):
+    import asyncio
     import sys
     import time
+    from app import tunnel
 
     fake = tmp_path / "cloudflared.py"
     fake.write_text(
@@ -193,6 +195,15 @@ def test_tunnel_switch_starts_cloudflared_and_shows_its_address(client, tmp_path
     launcher.write_text(f"#!/bin/sh\nexec {sys.executable} {fake} \"$@\"\n")
     launcher.chmod(0o755)
     monkeypatch.setenv("GLOSS_CLOUDFLARED", str(launcher))
+    # Run the same real fake process on Windows as on POSIX. A #!/bin/sh
+    # launcher is not a Win32 executable; patch only the process boundary.
+    start_process = asyncio.create_subprocess_exec
+
+    async def start_fake(executable, *args, **kwargs):
+        assert executable == str(launcher)
+        return await start_process(sys.executable, str(fake), *args, **kwargs)
+
+    monkeypatch.setattr(tunnel.asyncio, "create_subprocess_exec", start_fake)
     try:
         client.post("/api/remote", json={"tunnel": True})
         status = {}

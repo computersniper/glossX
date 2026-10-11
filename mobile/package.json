@@ -4,10 +4,11 @@
   "version": "1.0.2",
   "description": "GlossX for iPhone, iPad and Android: one Capacitor shell that connects to GlossX on your computer.",
   "scripts": {
-    "sync": "cap sync",
+    "build:web": "node scripts/build-web.cjs",
+    "sync": "npm run build:web && cap sync",
     "open:ios": "cap open ios",
     "open:android": "cap open android",
-    "build:android": "cap sync android && cd android && ./gradlew assembleDebug"
+    "build:android": "npm run build:web && cap sync android && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",

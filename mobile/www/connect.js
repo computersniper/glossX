@@ -1,6 +1,7 @@
 // GlossX mobile: pick a computer running GlossX, check the pairing code, then
 // open its web app in this same view. Everything after that is the shared
 // frontend served by the computer; the CLIs (Claude Code, Codex) run there.
+// The bundled /local frontend instead uses the device's own API settings.
 "use strict";
 
 const STORE = "glossx.computers";
@@ -9,7 +10,10 @@ const DEFAULT_PORT = 8010;
 
 const zh = /^zh/i.test(navigator.language || "");
 const T = {
-  tagline: ["Connect to GlossX on your computer", "连接电脑上的 GlossX"],
+  tagline: ["Use your API or connect to your computer", "使用自己的 API，或连接电脑"],
+  localTitle: ["Use on this device", "本机工作区"],
+  localHint: ["Chat with your own OpenAI API key. No computer or local CLI is required.", "填写自己的 OpenAI API 进行对话，无需电脑或本地 CLI。"],
+  localOpen: ["Open local API workspace", "打开本机 API 工作区"],
   computers: ["Your computers", "已保存的电脑"],
   add: ["Add a computer", "添加电脑"],
   how: [
@@ -191,12 +195,7 @@ async function start() {
   // a pairing link that arrived while a computer's page was open
   if (reason.startsWith("pair=") && handlePairLink(decodeURIComponent(reason.slice(5)))) return;
 
-  // reopen the last computer unless the user came back here on purpose
-  if (reason) return;
-  let last = null;
-  try { last = localStorage.getItem(LAST); } catch { /* ignore */ }
-  const entry = load().find((c) => c.url === last);
-  if (entry) void connect(entry, { silent: true });
+  // Keep both modes available on every launch. Saved computers reconnect on tap.
 }
 
 void start();
