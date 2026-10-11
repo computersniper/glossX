@@ -32,6 +32,9 @@ from .base import (
     runtime_option,
     normalize_usage,
     report_stream_usage,
+    communicate_lines,
+    report_progress,
+    wants_progress,
 )
 
 
@@ -136,6 +139,32 @@ def _thread_id_from_jsonl(output: bytes) -> str | None:
             if isinstance(thread_id, str) and thread_id:
                 return thread_id
     return None
+
+
+def _progress_from_event(line: bytes) -> None:
+    """Report what ``codex exec --json`` is doing: reasoning and each action."""
+    try:
+        event = json.loads(line)
+    except (ValueError, UnicodeDecodeError):
+        return
+    item = event.get("item") if isinstance(event.get("item"), dict) else {}
+    kind = item.get("type") or item.get("item_type")
+    if event.get("type") == "item.completed" and kind == "reasoning":
+        text = str(item.get("text") or "").strip()
+        if text:
+            report_progress("thinking", text + "\n\n")
+    elif event.get("type") == "item.started" and kind == "command_execution":
+        report_progress("step", f"$ {item.get('command') or ''}".strip())
+    elif event.get("type") == "item.completed" and kind == "file_change":
+        paths = ", ".join(str(c.get("path")) for c in item.get("changes") or [] if isinstance(c, dict))
+        report_progress("step", f"Edit {paths}" if paths else "Edit files")
+    elif event.get("type") == "item.started" and kind == "web_search":
+        report_progress("step", f"Search: {item.get('query') or ''}".strip())
+    elif event.get("type") == "item.started" and kind == "mcp_tool_call":
+        report_progress("step", f"Tool: {item.get('server') or ''} {item.get('tool') or ''}".strip())
+    elif event.get("type") == "item.completed" and kind == "todo_list":
+        done = sum(1 for t in item.get("items") or [] if isinstance(t, dict) and t.get("completed"))
+        report_progress("step", f"Plan: {done}/{len(item.get('items') or [])} done")
 
 
 def _usage_from_jsonl(output: bytes) -> dict:
@@ -360,9 +389,12 @@ class LocalCodexProvider(Provider):
                 **subprocess_group_options(),
             )
             try:
-                out, err = await asyncio.wait_for(
-                    proc.communicate(prompt.encode()), timeout=timeout
-                )
+                if wants_progress():
+                    out, err = await communicate_lines(proc, prompt.encode(), timeout, _progress_from_event)
+                else:
+                    out, err = await asyncio.wait_for(
+                        proc.communicate(prompt.encode()), timeout=timeout
+                    )
             except asyncio.TimeoutError:
                 await terminate_process_tree(proc)
                 raise RuntimeError(f"codex CLI timed out after {timeout}s")
