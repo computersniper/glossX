@@ -162,6 +162,16 @@ function senderWindow(event) {
   return win && windows.has(win) && event.sender === win.webContents ? win : null;
 }
 
+ipcMain.handle("glossx:open-folder", async (event) => {
+  const win = senderWindow(event);
+  if (!win) return null;
+  bridge.hide(win);
+  const result = await dialog.showOpenDialog(win, {
+    title: "Open workspace folder", properties: ["openDirectory"],
+  });
+  return result.canceled ? null : result.filePaths[0] || null;
+});
+
 ipcMain.handle("glossx:exit-cancel", (event) => {
   const win = senderWindow(event);
   if (win) win.glossx.promptOpen = false;

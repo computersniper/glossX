@@ -19,6 +19,8 @@
 
 > **扫码移动端会话历史 / 紧凑额度入口**：历史改用普通请求加载，保留 SSE 与无事件时补取；手机顶部增加额度弹层入口，原因与验收范围见 `docs/progress/mobile-chat-history.md`。
 
+> **居中搜索 / 返回前进 / 打开文件夹**：顶部访问历史箭头；桌面原生选目录、网页输入电脑路径，直接挂接现有文件夹为项目工作区。实现、验证和未验收项见 `docs/progress/title-navigation-open-folder.md`。
+
 > **移动端独立 API 模式（2026-10-11）**：用户新要求扩展此前“仅连接电脑”的范围；继续共用 frontend + Capacitor 薄壳，进度及略过项见 `docs/progress/mobile-local.md`、`docs/progress/mobile-shell.md`。
 
 ## 0. 一分钟了解现状

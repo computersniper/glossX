@@ -5,6 +5,7 @@ import { openBrowser } from "../../browserStore";
 import { desktop, newWindow } from "../../desktop";
 import { zoomIn, zoomOut, zoomReset } from "../../zoom";
 import { focusAiPane } from "./focus";
+import { openWorkspaceFolder } from "./openFolder";
 
 type Entry = { label: string; keys?: string; run: () => void } | "-";
 type Menu = { id: string; label: string; key: string; entries: Entry[] };
@@ -22,6 +23,7 @@ function useMenus(): Menu[] {
       { label: L("New window", "新建窗口"), keys: "Ctrl+Shift+N", run: newWindow },
       { label: L("Import paper…", "导入论文…"), run: () => st.openPalette("import") },
       { label: L("Open paper…", "打开论文…"), run: () => st.openPalette("papers") },
+      { label: L("Open folder…", "打开文件夹…"), run: () => { void openWorkspaceFolder(); } },
       "-",
       { label: L("Switch project…", "切换项目…"), run: () => st.openPalette("projects") },
       { label: L("New project…", "新建项目…"), run: () => st.openPalette("newProject") },

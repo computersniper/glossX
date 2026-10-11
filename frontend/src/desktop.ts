@@ -8,6 +8,7 @@ export type DesktopApi = {
   shell: "electron";
   platform: string;
   command: (action: DesktopCommand) => Promise<boolean>;
+  openFolder?: () => Promise<string | null>;
   setTitleBar: (bar: { color: string; symbolColor: string; height: number }) => Promise<boolean>;
   /** Feeds the taskbar jump list's recent papers / projects (newer shells only). */
   recent?: (entry: { kind: "paper" | "project"; id: string; title: string }) => Promise<boolean>;

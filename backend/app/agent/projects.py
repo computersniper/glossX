@@ -120,7 +120,8 @@ def _paper_list(paper_ids: Any) -> list[str]:
 
 
 def create(name: str, description: str = "", *, kind: str = "research",
-           paper_ids: Any = None, source_paper_id: str | None = None) -> dict[str, Any]:
+           paper_ids: Any = None, source_paper_id: str | None = None,
+           folder: Path | None = None) -> dict[str, Any]:
     name = " ".join(str(name or "").split())
     if not name:
         raise ValueError("project name must not be empty")
@@ -137,7 +138,10 @@ def create(name: str, description: str = "", *, kind: str = "research",
         "memory": [],
         "run_ids": [],
     }
-    if kind == "paper" and config.load_config().get("paper_workspace_root"):
+    if folder is not None:
+        project["workspace_path"] = str(folder)
+        project["workspace_attached"] = True
+    elif kind == "paper" and config.load_config().get("paper_workspace_root"):
         from ..harness.locations import normalize_path
 
         base = normalize_path(config.load_config()["paper_workspace_root"])
@@ -145,10 +149,40 @@ def create(name: str, description: str = "", *, kind: str = "research",
     with _lock:
         _write(project)
     workspace_detail(project)
-    if kind != "paper":
+    if kind != "paper" and folder is None:
         from ..harness import vcs
         vcs.ensure_repo_in_background(project["id"])
     return project
+
+
+def open_folder(value: str) -> dict[str, Any]:
+    """Attach an existing directory; do not copy it or initialize its Git history."""
+    from ..harness.locations import normalize_path
+
+    folder = normalize_path(value)
+    if not folder.is_dir():
+        raise ValueError("Choose an existing folder on the computer running GlossX")
+    with _lock:
+        for key, other in workspace_paths():
+            if folder == other:
+                if key == "default":
+                    raise ValueError("This is the General workspace; select General instead")
+                project = _read(key)
+                if project.get("removed"):
+                    continue
+                if project.get("archived"):
+                    raise ValueError("This folder belongs to an archived project; restore it from Archives first")
+                return workspace_detail(project)
+            if folder in other.parents or other in folder.parents:
+                raise ValueError("Choose a folder that does not overlap an existing workspace")
+        return create(folder.name, folder=folder)
+
+
+def attached_folder(project_id: str) -> bool:
+    try:
+        return bool(_read(project_id).get("workspace_attached"))
+    except ProjectNotFoundError:
+        return False
 
 
 def ref(project_id: str | None) -> dict[str, Any] | None:

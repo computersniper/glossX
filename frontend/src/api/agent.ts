@@ -175,6 +175,9 @@ export const agentApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, description }),
     }).then((r) => j<AgentProject>(r)),
+  openFolder: (path: string) => fetch("/api/agent/projects/open-folder", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }),
+  }).then(r => j<AgentProject>(r)),
   patchProject: (id: string, patch: { name?: string; category?: string }) =>
     fetch(`/api/agent/projects/${encodeURIComponent(id)}`, {
       method: "PATCH",

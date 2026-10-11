@@ -17,6 +17,7 @@ import { ask } from "./dialog";
 import { Icon } from "./icons";
 import { MobileAccess } from "../MobileAccess";
 import { WorkspaceLocation } from "./WorkspaceLocation";
+import { openWorkspaceFolder } from "./openFolder";
 
 export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
@@ -447,7 +448,7 @@ function ProjectsView() {
 
   return (
     <div className="wb-side-body gx-projects">
-      <div className="gx-project-switch"><Segmented size="sm" value={archiveView ? "archive" : "active"} onChange={(v) => setArchiveView(v === "archive")} options={[{ value: "active", label: zh ? "项目" : "Projects" }, { value: "archive", label: zh ? "归档" : "Archived" }]} /></div>
+      <div className="gx-project-switch"><Segmented size="sm" value={archiveView ? "archive" : "active"} onChange={(v) => setArchiveView(v === "archive")} options={[{ value: "active", label: zh ? "项目" : "Projects" }, { value: "archive", label: zh ? "归档" : "Archived" }]} /><button className="gx-btn sm" onClick={() => void openWorkspaceFolder()}>{zh ? "打开文件夹…" : "Open folder…"}</button></div>
       {!archiveView &&
       <div className="wb-import">
         <input className="wb-input" placeholder={T.ph} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />

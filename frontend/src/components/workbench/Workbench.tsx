@@ -9,6 +9,7 @@ import { AiPane } from "./AiPane";
 import { BottomPanel } from "./BottomPanel";
 import { StatusBar } from "./StatusBar";
 import { QuotaIndicator } from "./QuotaIndicator";
+import { TitleNavigation } from "./TitleNavigation";
 import { CommandPalette } from "./CommandPalette";
 import { Icon } from "./icons";
 import { aiPaneHasFocus, focusAiPane } from "./focus";
@@ -229,43 +230,49 @@ export function Workbench() {
   return (
     <div className={`wb${narrow ? " narrow" : ""}${compact ? " compact" : ""}`}>
       <header className="wb-titlebar">
-        <div className="wb-brand">
-          <button className="wb-title-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={16} x /></button>
-          <ModeToggle />
+        <div className="wb-title-left">
+          <div className="wb-brand">
+            <button className="wb-title-logo" title={zh ? "GlossX · 旁注 — 欢迎页" : "GlossX · 旁注 — Welcome"} onClick={() => useStore.getState().openWelcome()}><Logo size={16} x /></button>
+            <ModeToggle />
+          </div>
+          <MenuBar />
+          <span className="wb-title-sep" />
+          <ProjectSwitcher />
         </div>
-        <MenuBar />
-        <span className="wb-title-sep" />
-        <ProjectSwitcher />
-        <button className="wb-title-search" onClick={() => openPalette("commands")}>
-          <Icon name="search" size={13} />
-          <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, threads…"}</span>
-          <kbd>{MOD_KEY} K</kbd>
-        </button>
-        <span className="spacer" />
-        {(compact || touch) && <QuotaIndicator compact />}
-        <button
-          className={`wb-icon-btn wb-title-bell${blocking > 0 ? " blocking" : ""}`}
-          title={inboxTitle(zh, unread, blocking)}
-          aria-label={inboxTitle(zh, unread, blocking)}
-          onClick={() => useSessions.getState().openInbox()}
-        >
-          <InboxBell size={16} />
-        </button>
-        {mobile && (
-          <button className="wb-icon-btn wb-title-leave" title={zh ? "切换电脑" : "Switch computer"} aria-label={zh ? "切换电脑" : "Switch computer"} onClick={() => leaveComputer()}>
-            <Icon name="computer" size={16} />
+        <div className="wb-title-center">
+          <TitleNavigation zh={zh} />
+          <button className="wb-title-search" onClick={() => openPalette("commands")}>
+            <Icon name="search" size={13} />
+            <span>{zh ? "搜索命令、论文、对话…" : "Search commands, papers, threads…"}</span>
+            <kbd>{MOD_KEY} K</kbd>
           </button>
-        )}
-        <div className="wb-title-toggles">
-          <button className={`wb-icon-btn${layout.sideOpen ? " on" : ""}`} title={zh ? "侧边栏 (Ctrl+B)" : "Side bar (Ctrl+B)"} onClick={() => setLayout({ sideOpen: !layout.sideOpen })}>
-            <Icon name="sidebar" size={16} />
+        </div>
+        <div className="wb-title-right">
+          {(compact || touch) && <QuotaIndicator compact />}
+          <button
+            className={`wb-icon-btn wb-title-bell${blocking > 0 ? " blocking" : ""}`}
+            title={inboxTitle(zh, unread, blocking)}
+            aria-label={inboxTitle(zh, unread, blocking)}
+            onClick={() => useSessions.getState().openInbox()}
+          >
+            <InboxBell size={16} />
           </button>
-          <button className={`wb-icon-btn${layout.bottomOpen ? " on" : ""}`} title={zh ? "底部面板 (Ctrl+J)" : "Bottom panel (Ctrl+J)"} onClick={() => setLayout({ bottomOpen: !layout.bottomOpen })}>
-            <Icon name="panel" size={16} />
-          </button>
-          <button className={`wb-icon-btn${layout.aiOpen ? " on" : ""}`} title={zh ? "AI 面板 (Ctrl+L)" : "AI pane (Ctrl+L)"} onClick={() => setLayout({ aiOpen: !layout.aiOpen })}>
-            <Icon name="aipane" size={16} />
-          </button>
+          {mobile && (
+            <button className="wb-icon-btn wb-title-leave" title={zh ? "切换电脑" : "Switch computer"} aria-label={zh ? "切换电脑" : "Switch computer"} onClick={() => leaveComputer()}>
+              <Icon name="computer" size={16} />
+            </button>
+          )}
+          <div className="wb-title-toggles">
+            <button className={`wb-icon-btn${layout.sideOpen ? " on" : ""}`} title={zh ? "侧边栏 (Ctrl+B)" : "Side bar (Ctrl+B)"} onClick={() => setLayout({ sideOpen: !layout.sideOpen })}>
+              <Icon name="sidebar" size={16} />
+            </button>
+            <button className={`wb-icon-btn${layout.bottomOpen ? " on" : ""}`} title={zh ? "底部面板 (Ctrl+J)" : "Bottom panel (Ctrl+J)"} onClick={() => setLayout({ bottomOpen: !layout.bottomOpen })}>
+              <Icon name="panel" size={16} />
+            </button>
+            <button className={`wb-icon-btn${layout.aiOpen ? " on" : ""}`} title={zh ? "AI 面板 (Ctrl+L)" : "AI pane (Ctrl+L)"} onClick={() => setLayout({ aiOpen: !layout.aiOpen })}>
+              <Icon name="aipane" size={16} />
+            </button>
+          </div>
         </div>
       </header>
       <div className="wb-main">

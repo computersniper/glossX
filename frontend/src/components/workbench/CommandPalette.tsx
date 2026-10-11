@@ -11,6 +11,7 @@ import { activityOf, useSessions } from "../../sessionStore";
 import { relativeTime } from "../session/toolMeta";
 import { requestCloseTab } from "./EditorArea";
 import { focusAiPane } from "./focus";
+import { openWorkspaceFolder } from "./openFolder";
 import { branchName, commitChanges, createBranch, mergeBranch, switchBranch, useVcs, useVcsEntry } from "../../vcsStore";
 import { openInstructions } from "./WorkspaceView";
 import { browserApi } from "../../api/browser";
@@ -163,6 +164,7 @@ export function CommandPalette() {
       { id: "search", group: G.papers, icon: Search, label: L("Search scholar", "学术搜索"), run: () => st.setLayout({ activity: "search", sideOpen: true }) },
       { id: "library", group: G.go, icon: Library, label: L("Show library", "显示论文库"), run: () => st.setLayout({ activity: "library", sideOpen: true }) },
       { id: "workspace", group: G.go, icon: FolderTree, label: L("Show workspace files", "显示工作区文件"), run: () => st.setLayout({ activity: "workspace", sideOpen: true }) },
+      { id: "openFolder", group: G.go, icon: FolderTree, label: L("Open folder…", "打开文件夹…"), run: () => { void openWorkspaceFolder(); } },
       { id: "browser", group: G.go, icon: Search, label: L("Open browser", "打开浏览器"), run: () => openBrowser() },
       { id: "browserUrl", group: G.go, icon: Search, label: L("Open URL in browser…", "在浏览器中打开网址…"), run: toMode("browserUrl"), keepOpen: true },
       { id: "browserImport", group: G.papers, icon: Upload, label: L("Import current browser page as paper", "把当前浏览器页面导入为论文"), run: async () => { const id = st.browserSessionId || useSessions.getState().activeId; if (!id) return st.notify(L("Open a browser page first", "请先打开浏览器页面")); try { await browserApi.input(id, { type: "import_paper" }); await st.loadPapers(); st.notify(L("Paper import started", "论文导入已开始")); } catch (e: any) { st.notify(String(e?.message || e)); } } },

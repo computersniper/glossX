@@ -1298,6 +1298,28 @@ button.gx-chip { cursor: pointer; padding-right: 8px; }
 .wb.compact .wb-titlebar { gap: 6px; }
 .wb.compact .gx-quota-chip { flex-shrink: 0; max-width: 105px; font-size: 11px; padding: 4px; }
 .wb.compact .gx-quota-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Equal outer columns keep the search itself centered, even with window controls. */
+.wb-titlebar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 40%) minmax(0, 1fr); }
+.wb-title-left, .wb-title-right, .wb-title-center { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wb-title-right { justify-content: flex-end; }
+.wb-title-left .wb-project-switch { min-width: 0; }
+.gx-project-switch { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.wb-title-center { gap: 4px; padding-right: 64px; }
+.wb-title-navigation { display: flex; gap: 0; flex: 0 0 60px; }
+.wb-title-navigation .wb-icon-btn { width: 30px; min-width: 30px; }
+.wb-title-navigation .wb-icon-btn:disabled { opacity: .3; cursor: default; }
+.wb-titlebar .wb-title-center .wb-title-search { flex: 1 1 0; min-width: 0; width: 100%; }
+@media (max-width: 1399px) {
+  .wb-title-left .wb-menubar, .wb-title-left .wb-title-sep { display: none; }
+}
+@media (max-width: 720px) {
+  .wb-titlebar { grid-template-columns: minmax(0, 1fr) 130px minmax(0, 1fr); gap: 4px; }
+  .wb-title-center { padding-right: 0; }
+  .wb-title-left { gap: 3px; }
+  .wb-title-left .wb-project-switch { max-width: 40px; }
+  .wb-title-right { gap: 3px; }
+}
 .wb.compact .wb-side-host { position: absolute; inset: 0; z-index: 15; width: auto !important; }
 .wb.compact .wb-ai-host.overlay { left: 0; width: auto !important; max-width: none; border-left: 0; box-shadow: none; }
 .wb.compact .wb-bottom-host { max-height: 45vh; }

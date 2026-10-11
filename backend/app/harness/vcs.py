@@ -404,6 +404,14 @@ def status(key: str) -> dict[str, Any]:
     if not available():
         return unavailable_status()
     with lock_for(workspace.key_for(key)):
+        from ..agent import projects
+        root = _root(key)
+        if projects.attached_folder(key) and not is_repo(root):
+            # Opening an existing folder is read-only with respect to Git.
+            # An explicit version-control operation or agent turn may initialize it.
+            return {"available": True, "initialized": False, "branch": None,
+                    "head": None, "detached": False, "branches": [], "changes": [],
+                    "ahead_of": None, "clean": True, "stashes": [], "root": str(root)}
         root = ensure_repo(key)
         return _status(root)
 

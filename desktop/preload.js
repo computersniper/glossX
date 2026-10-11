@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("glossxDesktop", {
   shell: "electron",
   platform: process.platform,
   command: (action) => ipcRenderer.invoke("glossx:window", String(action)),
+  openFolder: () => ipcRenderer.invoke("glossx:open-folder"),
   setTitleBar: (bar) => ipcRenderer.invoke("glossx:titlebar", { color: String(bar.color), symbolColor: String(bar.symbolColor), height: Number(bar.height) }),
   recent: (entry) => ipcRenderer.invoke("glossx:recent", { kind: String(entry.kind), id: String(entry.id), title: String(entry.title || "") }),
   cancelExit: () => ipcRenderer.invoke("glossx:exit-cancel"),

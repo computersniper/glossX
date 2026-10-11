@@ -253,6 +253,19 @@ async def create_project(body: ProjectCreateBody):
     return {**projects.workspace_detail(project), "runs": []}
 
 
+class OpenFolderBody(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+
+
+@router.post("/projects/open-folder")
+async def open_folder(body: OpenFolderBody):
+    try:
+        project = projects.open_folder(body.path)
+    except (ValueError, OSError) as error:
+        raise HTTPException(400, str(error)) from error
+    return projects.workspace_detail(project)
+
+
 class ProjectPatchBody(BaseModel):
     name: str | None = Field(default=None, max_length=200)
     category: str | None = Field(default=None, max_length=200)

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Command, FolderTree, MessageSquare, Upload, Globe, type LucideIcon } from "lucide-react";
 import { splitWorkspaceId, tabKey, useStore, type EditorTab } from "../../store";
 import { useSessions } from "../../sessionStore";
+import { openWorkspaceFolder } from "./openFolder";
 import { Outline } from "../Outline";
 import { Logo } from "../Logo";
 import { PdfViewer } from "../../pdf/PdfViewer";
@@ -191,7 +192,7 @@ function Welcome({ visible }: { visible: boolean }) {
   const actions: { icon: LucideIcon; title: string; hint: string; keys?: string; run: () => void }[] = [
     { icon: Upload, title: T.imp, hint: T.impH, run: () => openPalette("import") },
     { icon: MessageSquare, title: T.chat, hint: T.chatH, keys: "Ctrl+L", run: () => { newChat(); compose({}); } },
-    { icon: FolderTree, title: T.ws, hint: T.wsH, run: () => setLayout({ activity: "workspace", sideOpen: true }) },
+    { icon: FolderTree, title: T.ws, hint: zh ? "选择文件夹作为项目工作区" : "Choose a folder as a project workspace", run: () => { void openWorkspaceFolder(); } },
     { icon: Globe, title: zh ? "打开浏览器" : "Open browser", hint: zh ? "实时网页与接管控制" : "Live pages and shared control", run: () => { void openBrowser(); } },
     { icon: Command, title: T.pal, hint: zh ? "所有操作，一处可达" : "Every action in one place", keys: "Ctrl+K", run: () => openPalette("commands") },
   ];
