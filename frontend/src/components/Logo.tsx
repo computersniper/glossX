@@ -3,7 +3,7 @@ import { useId } from "react";
 // Logos use theme CSS vars so they adapt to every theme.
 //  - Gloss  (classic reader): light illuminating a page (annotation + illumination).
 //  - GlossX (agent workbench, `x`): the same lit page, with an X at its lower
-//    right, under the lamp and sized like it.
+//    right, centred under the lamp and its rays.
 export function Logo({ size = 22, x = false }: { size?: number; x?: boolean }) {
   const id = useId();
   if (x) {
@@ -12,7 +12,7 @@ export function Logo({ size = 22, x = false }: { size?: number; x?: boolean }) {
     return (
       <svg width={size} height={size} viewBox="0 0 96 96" fill="none" aria-hidden="true">
         <defs>
-          <linearGradient id={grad} x1="60.1" y1="62.5" x2="79.1" y2="81.5" gradientUnits="userSpaceOnUse">
+          <linearGradient id={grad} x1="59.4" y1="57" x2="85.4" y2="83" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="var(--accent2)" />
             <stop offset="1" stopColor="var(--accent)" />
           </linearGradient>
@@ -23,7 +23,7 @@ export function Logo({ size = 22, x = false }: { size?: number; x?: boolean }) {
           {/* the page gives way around the X so the two never touch */}
           <mask id={cut} maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96">
             <rect width="96" height="96" fill="#fff" />
-            <circle cx="69.6" cy="72" r="16.5" fill="#000" />
+            <circle cx="72.4" cy="70" r="20.5" fill="#000" />
           </mask>
         </defs>
         {/* the Gloss mark: a page lit by a lamp … */}
@@ -46,9 +46,9 @@ export function Logo({ size = 22, x = false }: { size?: number; x?: boolean }) {
           <line x1="54.4" y1="10.4" x2="58" y2="14" />
         </g>
         {/* … and the X of the agent edition at the page's lower right */}
-        <g stroke={`url(#${grad})`} strokeWidth={small ? 7 : 5.8} strokeLinecap="round">
-          <line x1="60.1" y1="62.5" x2="79.1" y2="81.5" />
-          <line x1="79.1" y1="62.5" x2="60.1" y2="81.5" />
+        <g stroke={`url(#${grad})`} strokeWidth={small ? 8.4 : 7} strokeLinecap="round">
+          <line x1="59.4" y1="57" x2="85.4" y2="83" />
+          <line x1="85.4" y1="57" x2="59.4" y2="83" />
         </g>
       </svg>
     );
