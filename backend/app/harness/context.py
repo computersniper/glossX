@@ -604,7 +604,7 @@ def materialize(rt: Any, attachments: list[dict[str, Any]], *, budget_tokens: in
                 if workspace_root is None:
                     raise LookupError("no workspace")
                 target = workspace.resolve(workspace_root, ref)
-                text = workspace.read_text(target)
+                text = workspace.read_document(target)
                 rel = workspace.relpath(workspace_root, target)
                 att["ref"] = rel
                 label = rel

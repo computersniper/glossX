@@ -1,4 +1,5 @@
-"""Non-PDF sources (Markdown, plain text, HTML pages, PowerPoint slides) as PDFs.
+"""Non-PDF sources (Markdown, plain text, HTML pages, slides, Word and Excel
+files, OpenDocument, GoodNotes notebooks) as PDFs.
 
 Every source in the library is a PDF so that evidence spans keep a page and a
 box and stay clickable in the reader. Other formats are rendered to a simple
@@ -13,7 +14,9 @@ import re
 import zipfile
 from pathlib import PurePath
 
-SUFFIXES = {".md", ".markdown", ".txt", ".html", ".htm", ".pptx"}
+# read through app.office (blocks), then laid out like the other formats
+OFFICE_SUFFIXES = {".docx", ".docm", ".xlsx", ".xlsm", ".odt", ".ods", ".odp", ".goodnotes"}
+SUFFIXES = {".md", ".markdown", ".txt", ".html", ".htm", ".pptx"} | OFFICE_SUFFIXES
 # what the upload endpoint converts; plain .txt stays an internal format (saved web pages)
 UPLOAD_SUFFIXES = SUFFIXES - {".txt"}
 MAX_BYTES = 30 * 1024 * 1024
@@ -167,6 +170,83 @@ def render_pdf(chunks: list[str], title: str = "") -> bytes:
     return buf.getvalue()
 
 
+def blocks_to_chunks(blocks: list[dict]) -> list[str]:
+    """HTML chunks (one per slide, sheet or page) from ``app.office`` blocks."""
+    esc = lambda t: htmllib.escape(t, quote=False).replace("\n", "<br/>")  # noqa: E731
+    chunks: list[list[str]] = [[]]
+    items: list[str] = []
+
+    def flush_list() -> None:
+        if items:
+            chunks[-1].append("<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>")
+            items.clear()
+
+    for block in blocks:
+        kind = block["t"]
+        if kind == "p" and block.get("list"):
+            items.append(esc(block["text"]))
+            continue
+        flush_list()
+        if kind == "section":
+            if any(chunks[-1]):
+                chunks.append([])
+            chunks[-1].append(f"<h2>{esc(block['text'])}</h2>")
+        elif kind == "h":
+            level = min(3, block["level"])
+            chunks[-1].append(f"<h{level}>{esc(block['text'])}</h{level}>")
+        elif kind == "note":
+            chunks[-1].append(f"<blockquote><i>Notes:</i> {esc(block['text'])}</blockquote>")
+        elif kind == "table":
+            rows = block["rows"]
+            if block.get("columns"):
+                rows = [["", *block["columns"]]] + [[str(n), *r] for n, r in zip(block.get("row_numbers") or [], rows)]
+            body = "".join("<tr>" + "".join(f"<td>{esc(c)}</td>" for c in r) + "</tr>" for r in rows[:2000])
+            chunks[-1].append(f'<table border="1" cellpadding="3" style="border-collapse: collapse; font-size: 8pt">{body}</table>')
+        elif kind == "p":
+            chunks[-1].append(f"<p>{esc(block['text'])}</p>")
+    flush_list()
+    return ["".join(c) for c in chunks if c]
+
+
+def _office_pdf(filename: str, data: bytes) -> tuple[bytes, str]:
+    import fitz
+
+    from .. import office
+
+    suffix = PurePath(filename or "").suffix.lower()
+    stem = PurePath(filename or "document").stem
+    try:
+        if suffix in (".docx", ".docm"):
+            doc = office.read_docx(data)
+        elif suffix in (".xlsx", ".xlsm"):
+            doc = office.read_xlsx(data)
+        elif suffix == ".goodnotes":
+            doc = office.read_goodnotes(data)
+        else:
+            doc = office.read_odf(data, suffix)
+    except (KeyError, IndexError, zipfile.BadZipFile) as error:
+        raise ValueError(f"not a valid {suffix} file") from error
+    title = doc.get("title") or stem
+    if suffix == ".goodnotes":
+        # the notebook's own PDFs keep their layout; recognized handwriting goes first
+        text = [b for b in doc["blocks"] if b["t"] == "p" and not b.get("embedded")]
+        out = fitz.open()
+        if text:
+            out.insert_pdf(fitz.open("pdf", render_pdf(blocks_to_chunks([{"t": "section", "text": "Recognized handwriting"}, *text]))))
+        for item in office.goodnotes_members(data):
+            raw, mime = office.goodnotes_member(data, item["member"])
+            if mime == "application/pdf":
+                out.insert_pdf(fitz.open("pdf", raw))
+        if not out.page_count:
+            raise ValueError("the notebook has no readable text or PDF pages")
+        out.set_metadata({"title": title[:300]})
+        return out.tobytes(), title
+    chunks = blocks_to_chunks(doc["blocks"])
+    if not chunks:
+        raise ValueError("the document contains no text")
+    return render_pdf(chunks, title), title
+
+
 def to_pdf(filename: str, data: bytes) -> tuple[bytes, str]:
     """Render a supported non-PDF source; returns (pdf bytes, title)."""
     if len(data) > MAX_BYTES:
@@ -175,6 +255,13 @@ def to_pdf(filename: str, data: bytes) -> tuple[bytes, str]:
     stem = PurePath(filename or "document").stem
     if suffix not in SUFFIXES:
         raise ValueError(f"unsupported document type: {suffix or 'none'}")
+    if suffix in OFFICE_SUFFIXES:
+        from .. import office
+
+        try:
+            return _office_pdf(filename, data)
+        except office.DocumentError as error:
+            raise ValueError(str(error)) from error
     if suffix == ".pptx":
         try:
             slides = pptx_slides(data)

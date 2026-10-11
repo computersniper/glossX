@@ -170,6 +170,21 @@ def read_text(path: Path, limit: int = MAX_TEXT_BYTES) -> str:
         return read_utf8_text(path)
 
 
+def read_document(path: Path, limit: int = MAX_TEXT_BYTES) -> str:
+    """Text of a workspace file for reading: office documents, PDFs and
+    notebooks as Markdown, anything else as plain text."""
+    from .. import office
+
+    if office.is_document(path):
+        if not path.is_file():
+            raise WorkspaceError(f"not a file: {path.name}")
+        try:
+            return office.read(path)["markdown"]
+        except (office.DocumentError, OSError) as error:
+            raise WorkspaceError(f"could not read {path.name}: {error}") from error
+    return read_text(path, limit)
+
+
 def _maybe_text(path: Path, limit: int) -> str | None:
     try:
         if not path.is_file() or path.stat().st_size > limit:
