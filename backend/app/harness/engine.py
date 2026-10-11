@@ -29,6 +29,7 @@ from typing import Any
 from ..agent import connections as conn_mod
 from ..agent.context import span_ids_in
 from ..providers import registry as providers
+from ..providers.base import progress_sink
 from . import context as ctx_mod
 from . import execution, extensions, permissions, protocol, workspace
 from . import settings as settings_mod
@@ -58,6 +59,8 @@ from .tools import (
 logger = logging.getLogger(__name__)
 
 PREVIEW_CHARS = 2000          # result_preview shown on the tool card
+MAX_THINKING_CHARS = 40_000    # reasoning kept per assistant message
+MAX_STEPS = 80
 INLINE_CHARS = 12_000         # larger results are truncated for the model ...
 INLINE_HEAD = 9_000           # ... to this many characters plus a result_read ref
 ARG_PREVIEW_CHARS = 20_000
@@ -621,9 +624,34 @@ async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
             msg["text"] += piece
             rt.emit("message.delta", {"id": msg["id"], "text": piece, "offset": offset})
 
+    started = time.monotonic()
+
+    def progress(event: dict[str, Any]) -> None:
+        # What the model/CLI is doing while it works: shown live under
+        # "Thinking", and kept on the message as "Thought for N s".
+        # ``at`` (offset / index) makes a replayed event idempotent on the client.
+        kind, text = event.get("kind"), str(event.get("text") or "")
+        if kind == "thinking":
+            at = len(msg.get("thinking", ""))
+            if at >= MAX_THINKING_CHARS:
+                return
+            text = text[: MAX_THINKING_CHARS - at]
+            msg["thinking"] = msg.get("thinking", "") + text
+        elif kind == "step":
+            steps = msg.setdefault("steps", [])
+            at = len(steps)
+            if at >= MAX_STEPS:
+                return
+            text = text[:300]
+            steps.append(text)
+        else:
+            return
+        rt.emit("message.progress", {"id": msg["id"], "kind": kind, "text": text, "at": at})
+
     meter.main = True
     try:
-        with providers.harness_session(session, lambda reason: add_note(rt, "cache_reset", f"Prompt cache reset: {reason}.", reason=reason)):
+        with providers.harness_session(session, lambda reason: add_note(rt, "cache_reset", f"Prompt cache reset: {reason}.", reason=reason)), \
+                progress_sink(progress):
             async for chunk in providers.stream(system, messages, provider=model.get("provider") or None,
                                                 model=model.get("model") or None,
                                                 effort=model.get("effort") or None):
@@ -634,6 +662,7 @@ async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
         push(visible.flush())
     except BaseException as error:
         msg["streaming"] = False
+        msg["thought_ms"] = int((time.monotonic() - started) * 1000)
         if isinstance(error, asyncio.CancelledError):
             msg["interrupted"] = True
         else:
@@ -649,6 +678,7 @@ async def stream_assistant(rt: Runtime, system: str, meter: UsageMeter
     text, calls = protocol.parse_message(raw)
     msg["text"] = text
     msg["streaming"] = False
+    msg["thought_ms"] = int((time.monotonic() - started) * 1000)
     # Keep model history byte-stable: UI parsing collapses blank lines, so use
     # the original protocol-safe reply for future prompts even without tools.
     msg["raw"] = raw.strip()

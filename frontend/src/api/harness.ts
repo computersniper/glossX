@@ -50,7 +50,7 @@ export type UserMessage = { id: string; type: "user"; text: string; attachments?
   /** Client flag: echoed optimistically, not acknowledged by the server yet. */
   pending?: boolean;
 };
-export type AssistantMessage = { id: string; type: "assistant"; text: string; streaming?: boolean; interrupted?: boolean; error?: string | null; compacted?: boolean; created_at?: number };
+export type AssistantMessage = { id: string; type: "assistant"; text: string; thinking?: string; steps?: string[]; thought_ms?: number; streaming?: boolean; interrupted?: boolean; error?: string | null; compacted?: boolean; created_at?: number };
 export type ToolCallMessage = {
   id: string;
   type: "tool_call";
