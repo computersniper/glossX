@@ -123,6 +123,8 @@ interface State {
   activeTabKey: string | null;
   activateTab: (key: string) => Promise<void>;
   closeTab: (key: string) => void;
+  /** Drag a tab in the strip: put `key` next to `target` (before it unless `after`). */
+  moveTab: (key: string, target: string, after?: boolean) => void;
   cycleTab: (dir: 1 | -1) => void;
   openRunTab: (runId: string) => void;
   openWelcome: () => void;
@@ -288,6 +290,17 @@ export const useStore = create<State>((set, get) => ({
       set({ agentRunId: tab.id });
       if (!get().runs[tab.id]) await get().loadRun(tab.id).catch(() => {});
     }
+  },
+  moveTab: (key, target, after = false) => {
+    if (key === target) return;
+    const tabs = get().openTabs;
+    const moving = tabs.find((t) => tabKey(t) === key);
+    if (!moving) return;
+    const rest = tabs.filter((t) => t !== moving);
+    const at = rest.findIndex((t) => tabKey(t) === target);
+    if (at < 0) return;
+    rest.splice(at + (after ? 1 : 0), 0, moving);
+    set({ openTabs: rest });
   },
   closeTab: (key) => {
     const { openTabs, activeTabKey, current } = get();

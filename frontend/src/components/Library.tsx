@@ -15,7 +15,7 @@ export function useLibraryImport() {
   const [creatingImport, setCreatingImport] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function onUpload(files: FileList | null) {
+  async function onUpload(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
     setUploadBusy(true);
     try {

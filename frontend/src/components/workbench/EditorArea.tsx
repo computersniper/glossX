@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { draggedItem, readDrag, startDrag } from "../../dnd";
 import { Command, FolderTree, MessageSquare, Upload, Globe, type LucideIcon } from "lucide-react";
 import { splitWorkspaceId, tabKey, useStore, type EditorTab } from "../../store";
 import { useSessions } from "../../sessionStore";
@@ -14,6 +15,7 @@ import { Icon } from "./icons";
 import { CommitView, VcsDiffView } from "./VcsViews";
 import { SHORTCUTS } from "./shortcuts";
 import { openBrowser } from "../../browserStore";
+import { MOD_KEY } from "../../mobile";
 
 const baseName = (path: string) => path.split("/").pop() || path;
 
@@ -55,11 +57,32 @@ function TabButton({ tab }: { tab: EditorTab }) {
   });
   const zh = useStore((s) => s.uiLang) === "zh";
   const title = useTabTitle(tab);
+  const moveTab = useStore((s) => s.moveTab);
+  const [side, setSide] = useState<"before" | "after" | null>(null);
+  const isTab = () => draggedItem()?.type === "tab";
   return (
     <div
       role="tab"
       aria-selected={active}
-      className={`wb-tab kind-${tab.kind}${active ? " active" : ""}${dirty ? " dirty" : ""}`}
+      draggable
+      onDragStart={(e) => startDrag(e, { type: "tab", key, label: title })}
+      onDragOver={(e) => {
+        if (!isTab()) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const r = e.currentTarget.getBoundingClientRect();
+        setSide(e.clientX < r.left + r.width / 2 ? "before" : "after");
+      }}
+      onDragLeave={() => setSide(null)}
+      onDrop={(e) => {
+        const item = readDrag(e);
+        setSide(null);
+        if (item?.type !== "tab") return;
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        moveTab(item.key, key, e.clientX >= r.left + r.width / 2);
+      }}
+      className={`wb-tab kind-${tab.kind}${active ? " active" : ""}${dirty ? " dirty" : ""}${side ? ` drop-${side}` : ""}`}
       title={tab.kind === "file" || tab.kind === "checkpoint" || tab.kind === "vcsdiff" || tab.kind === "commit" ? splitWorkspaceId(tab.id).ref : title}
       onClick={() => void activateTab(key)}
       onMouseDown={(e) => e.button === 1 && e.preventDefault()}
@@ -174,6 +197,33 @@ function ReportView({ runId, visible }: { runId: string; visible: boolean }) {
   );
 }
 
+/** The editor with nothing open: a faint mark and a few shortcuts, as VS Code does. */
+function EmptyEditor({ zh }: { zh: boolean }) {
+  const openPalette = useStore((s) => s.openPalette);
+  const newThread = useSessions((s) => s.newThread);
+  const openWelcome = useStore((s) => s.openWelcome);
+  const rows: { label: string; keys: string; run: () => void }[] = [
+    { label: zh ? "命令面板" : "Show all commands", keys: `${MOD_KEY} K`, run: () => openPalette("commands") },
+    { label: zh ? "导入论文" : "Import a paper", keys: "", run: () => openPalette("import") },
+    { label: zh ? "新建对话" : "New thread", keys: "", run: () => newThread() },
+    { label: zh ? "打开文件夹" : "Open folder", keys: "", run: () => void openWorkspaceFolder() },
+    { label: zh ? "欢迎页" : "Welcome", keys: "", run: () => openWelcome() },
+  ];
+  return (
+    <div className="wb-empty-editor">
+      <div className="wb-empty-mark"><Logo size={120} x /></div>
+      <dl>
+        {rows.map((r) => (
+          <button key={r.label} type="button" onClick={r.run}>
+            <dt>{r.label}</dt>
+            <dd>{r.keys && <kbd>{r.keys}</kbd>}</dd>
+          </button>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function Welcome({ visible }: { visible: boolean }) {
   const papers = useStore((s) => s.papers);
   const runs = useStore((s) => s.recentRuns);
@@ -280,7 +330,8 @@ export function EditorArea() {
   const current = useStore((s) => s.current);
   const zh = useStore((s) => s.uiLang) === "zh";
   const active = openTabs.find((t) => tabKey(t) === activeTabKey);
-  const showWelcome = !active || active.kind === "welcome";
+  // like VS Code: nothing open is an empty editor; Welcome is a tab you open
+  const showWelcome = active?.kind === "welcome";
   const paperActive = active?.kind === "paper";
   const loading = paperActive && current?.id !== active.id;
 
@@ -321,6 +372,7 @@ export function EditorArea() {
           <CommitView key={t.id} id={t.id} visible={activeTabKey === tabKey(t)} />
         ))}
         <Welcome visible={showWelcome} />
+        {!active && <EmptyEditor zh={zh} />}
       </div>
     </div>
   );

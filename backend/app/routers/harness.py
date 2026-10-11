@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
@@ -321,6 +321,38 @@ async def write_workspace_file(project_id: str, path: str, body: FileBody):
     stat = target.stat()
     return {"path": checkpoint["path"], "size": stat.st_size, "mtime": stat.st_mtime,
             "checkpoint": checkpoint}
+
+
+@workspace_router.post("/{project_id}/upload")
+async def upload_workspace_files(project_id: str, files: list[UploadFile] = File(...), dir: str = Form("")):
+    """Files dropped on the explorer or the composer; a taken name gets a suffix."""
+    root = _root(project_id)
+    key = workspace.key_for(_project(project_id))
+    saved = []
+    for item in files:
+        data = await item.read()
+        try:
+            saved.append(await asyncio.to_thread(
+                workspace.save_upload, key, root, dir, item.filename or "file", data))
+        except workspace.WorkspaceError as error:
+            raise _ws_error(error) from error
+    return {"files": saved}
+
+
+class MoveBody(BaseModel):
+    path: str = Field(min_length=1, max_length=1000)
+    dir: str = Field(default="", max_length=1000)
+
+
+@workspace_router.post("/{project_id}/move")
+async def move_workspace_entry(project_id: str, body: MoveBody):
+    """Drag a file or folder onto another folder in the explorer."""
+    root = _root(project_id)
+    key = workspace.key_for(_project(project_id))
+    try:
+        return await asyncio.to_thread(workspace.move, key, root, body.path, body.dir)
+    except workspace.WorkspaceError as error:
+        raise _ws_error(error) from error
 
 
 @workspace_router.get("/{project_id}/checkpoints")

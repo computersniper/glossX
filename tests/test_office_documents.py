@@ -161,9 +161,10 @@ def test_goodnotes_recognized_text_and_embedded_pdf():
     assert "0F8B8C1A" not in md
     assert "Imported slides" in md
     embeds = office.goodnotes_members(data)
-    assert embeds == [{"member": "attachments/ABCD", "kind": "pdf", "size": len(make_pdf("Imported slides"))}]
     raw, mime = office.goodnotes_member(data, "attachments/ABCD")
     assert mime == "application/pdf" and raw.startswith(b"%PDF")
+    # a fresh make_pdf() can differ by a byte (its timestamp), so compare with what is inside
+    assert embeds == [{"member": "attachments/ABCD", "kind": "pdf", "size": len(raw)}]
     with pytest.raises(office.DocumentError):
         office.goodnotes_member(data, "notes/0001")
 

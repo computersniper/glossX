@@ -11,6 +11,7 @@ import { useBranch, useVcs } from "../../vcsStore";
 import { relativeTime } from "../session/toolMeta";
 import { EmptyState, MenuButton, MenuItem, MenuSep, Spinner } from "../ui";
 import { ask } from "./dialog";
+import { startDrag } from "../../dnd";
 
 const ATTENTION: Record<Exclude<Attention, null>, { icon: LucideIcon; tone: string; en: string; zh: string }> = {
   approval: { icon: ShieldQuestion, tone: "warn", en: "Needs approval", zh: "待批准" },
@@ -90,7 +91,9 @@ function ThreadRow({ s, zh, inbox, groupBranch, onChange }: { s: SessionSummary;
   const branch = s.branch && (inbox || s.branch !== groupBranch) ? s.branch : null;
 
   return (
-    <div className={`gx-th-row${active ? " active" : ""}${s.unread ? " unread" : ""}${inbox ? " inbox" : ""}`}>
+    <div className={`gx-th-row${active ? " active" : ""}${s.unread ? " unread" : ""}${inbox ? " inbox" : ""}`}
+      draggable={editing === null && !moving}
+      onDragStart={(e) => startDrag(e, { type: "thread", id: s.id, label: title, projectId: s.project_id || null })}>
       {editing !== null ? (
         <input
           autoFocus

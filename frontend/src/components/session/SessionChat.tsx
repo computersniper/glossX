@@ -573,8 +573,8 @@ function SessionBar({ zh }: { zh: boolean }) {
       >
         <span className="gx-bell"><MessagesSquare size={15} />{unread > 0 && <i>{unread > 99 ? "99+" : unread}</i>}</span>
       </button>
-      <button type="button" className="gx-icon-btn" title={zh ? "新对话" : "New thread"} onClick={() => newThread()}>
-        <SquarePen size={15} />
+      <button type="button" className="gx-btn sm gx-new-thread" title={zh ? "新建一个空白对话" : "Start an empty thread"} onClick={() => newThread()}>
+        <SquarePen size={14} /><span>{zh ? "新对话" : "New"}</span>
       </button>
       <MenuButton className="gx-icon-btn" chevron={false} placement="bottom-end" width={240} label={<span className="gx-ellipsis">⋯</span>} title={zh ? "更多" : "More"}>
         {(close) => (
