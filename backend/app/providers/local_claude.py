@@ -31,6 +31,7 @@ from .base import (
     normalize_usage,
     report_stream_usage,
     communicate_lines,
+    image_data,
     report_progress,
     wants_progress,
 )
@@ -92,21 +93,20 @@ def _effort() -> str:
 
 def _materialize_message_images(messages: list[Message]) -> tuple[str | None, list[str]]:
     """Create a dedicated read-only attachment directory for Claude's Read tool."""
-    data_urls = [
-        attachment.get("image_data_url") or ""
+    images = [
+        image
         for message in messages
         for attachment in (message.get("attachments") or [])
+        if (image := image_data(attachment.get("image_data_url") or "")) is not None
     ]
-    prefix = "data:image/png;base64,"
-    data_urls = [value for value in data_urls if value.startswith(prefix)]
-    if not data_urls:
+    if not images:
         return None, []
     directory = tempfile.mkdtemp(prefix="gloss-chat-images-")
     paths = []
     try:
-        for index, data_url in enumerate(data_urls, start=1):
-            path = Path(directory) / f"pdf-region-{index}.png"
-            path.write_bytes(base64.b64decode(data_url[len(prefix):], validate=True))
+        for index, (_media, suffix, data) in enumerate(images, start=1):
+            path = Path(directory) / f"image-{index}{suffix}"
+            path.write_bytes(data)
             paths.append(str(path))
         return directory, paths
     except Exception:
@@ -119,7 +119,7 @@ def _image_prompt_suffix(paths: list[str]) -> str:
         return ""
     listed = "\n".join(f"- {path}" for path in paths)
     return (
-        "\n\n[Attached PDF-region screenshots]\n"
+        "\n\n[Attached images]\n"
         f"{listed}\nUse the Read tool to inspect these images before answering."
     )
 

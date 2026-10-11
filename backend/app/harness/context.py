@@ -14,6 +14,7 @@ from it on every model call (:func:`provider_messages`):
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import logging
 import re
@@ -36,6 +37,11 @@ logger = logging.getLogger(__name__)
 AUTO_COMPACT_AT = 0.8
 INSTRUCTIONS_TOKENS = 6000
 ATTACHMENT_KINDS = ("paper", "span", "file", "run")
+# workspace images the model sees as images (the formats the model APIs accept)
+IMAGE_SUFFIXES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                  ".gif": "image/gif", ".webp": "image/webp"}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_PROMPT_IMAGES = 8  # the most recent ones; older images stay as their text line
 # system notes the model sees (others are UI-only: help, command output, errors)
 MODEL_NOTE_KINDS = {"mode", "hook", "interrupt", "plan", "budget"}
 _MENTION = re.compile(r"(?<![\w@/])@(paper|span|file|run):([^\s<>\"']+)")
@@ -267,15 +273,45 @@ def message_prompt(msg: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
-def provider_messages(session: dict[str, Any]) -> list[dict[str, str]]:
+def _prompt_images(ordered: list[dict[str, Any]], session: dict[str, Any]) -> dict[int, list[dict[str, str]]]:
+    """Image attachments of the user messages, as data URLs keyed by message
+    index; only the most recent ``MAX_PROMPT_IMAGES`` are sent."""
+    wanted: list[tuple[int, str, str]] = []
+    for index in range(len(ordered) - 1, -1, -1):
+        msg = ordered[index]
+        if msg.get("type") != "user" or msg.get("local"):
+            continue
+        for att in reversed(msg.get("attachments") or []):
+            if att.get("image") and att.get("ok") and not att.get("repeat"):
+                wanted.append((index, att["ref"], att["image"]))
+        if len(wanted) >= MAX_PROMPT_IMAGES:
+            break
+    if not wanted:
+        return {}
+    root = workspace.root_for(session.get("project_id"))
+    out: dict[int, list[dict[str, str]]] = {}
+    for index, ref, media in reversed(wanted[:MAX_PROMPT_IMAGES]):
+        try:
+            data = workspace.resolve(root, ref).read_bytes()
+        except (OSError, workspace.WorkspaceError):
+            continue  # deleted since: the text line still says what it was
+        if len(data) > MAX_IMAGE_BYTES:
+            continue
+        out.setdefault(index, []).append(
+            {"image_data_url": f"data:{media};base64,{base64.b64encode(data).decode('ascii')}"})
+    return out
+
+
+def provider_messages(session: dict[str, Any]) -> list[dict[str, Any]]:
     live = [m for m in session["messages"] if not m.get("compacted")]
     summary = next((m for m in reversed(live)
                     if m.get("type") == "system_note" and m.get("kind") == "compaction"), None)
     ordered = ([summary] if summary else []) + [
         m for m in live if not (m.get("type") == "system_note" and m.get("kind") == "compaction")]
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     latest_user = next((m for m in reversed(ordered) if message_prompt(m) and message_prompt(m)[0] == "user"), None)
-    for msg in ordered:
+    images = _prompt_images(ordered, session)
+    for index, msg in enumerate(ordered):
         item = msg.get("_prompt_item") or message_prompt(msg)
         if item is None:
             continue
@@ -289,6 +325,8 @@ def provider_messages(session: dict[str, Any]) -> list[dict[str, str]]:
             out[-1]["content"] += "\n\n" + content
         else:
             out.append({"role": role, "content": content})
+        if index in images:
+            out[-1].setdefault("attachments", []).extend(images[index])
     if not out or out[0]["role"] != "user":
         out.insert(0, {"role": "user", "content": "(the conversation continues)"})
     if out[-1]["role"] != "user":
@@ -611,14 +649,26 @@ def materialize(rt: Any, attachments: list[dict[str, Any]], *, budget_tokens: in
                 if workspace_root is None:
                     raise LookupError("no workspace")
                 target = workspace.resolve(workspace_root, ref)
-                text = workspace.read_document(target)
                 rel = workspace.relpath(workspace_root, target)
                 att["ref"] = rel
                 label = rel
-                body = truncate_to_tokens(text, per_item)
-                if len(body) < len(text):
-                    body += f"\n[... truncated; use fs_read on {rel} for the rest]"
-                body = f"File: {rel}\n{body}"
+                media = IMAGE_SUFFIXES.get(target.suffix.lower())
+                if media:
+                    if not target.is_file():
+                        raise LookupError("file not found")
+                    data = target.read_bytes()
+                    if len(data) > MAX_IMAGE_BYTES:
+                        raise ValueError("image is larger than 5 MB")
+                    att["image"] = media
+                    # the digest follows the pixels, not this line
+                    body = (f"Image: {rel} ({max(1, len(data) // 1024)} KB), attached to this message as an "
+                            f"image [{hashlib.sha1(data).hexdigest()[:12]}]")
+                else:
+                    text = workspace.read_document(target)
+                    body = truncate_to_tokens(text, per_item)
+                    if len(body) < len(text):
+                        body += f"\n[... truncated; use fs_read on {rel} for the rest]"
+                    body = f"File: {rel}\n{body}"
             else:  # run
                 runs = getattr(rt.manager, "agent_runs", None)
                 if runs is None:

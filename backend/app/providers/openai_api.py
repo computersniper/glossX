@@ -72,6 +72,10 @@ def _cfg() -> dict:
     return load_config()["providers"]["openai"]
 
 
+def _has_images(messages: list[dict]) -> bool:
+    return any(isinstance(m.get("content"), list) and any(p.get("type") == "image_url" for p in m["content"]) for m in messages)
+
+
 class OpenAIProvider(Provider):
     name = "openai"
 
@@ -137,11 +141,11 @@ class OpenAIProvider(Provider):
             body["tool_choice"] = "auto"
         calls: dict[int, dict] = {}
         async with httpx.AsyncClient(timeout=c.get("timeout", 300), trust_env=False) as client:
-            for attempt in range(3):
+            for attempt in range(4):
                 async with client.stream(
                     "POST", self._url(), headers=self._headers(), json=body
                 ) as r:
-                    if attempt < 2 and r.status_code in (400, 422):
+                    if attempt < 3 and r.status_code in (400, 422):
                         error_body = await r.aread()
                         if b"stream_options" in error_body and "stream_options" in body:
                             # Older compatible servers can still stream; label
@@ -152,6 +156,10 @@ class OpenAIProvider(Provider):
                             # an endpoint without function calling: the text protocol still works
                             body.pop("tools", None)
                             body.pop("tool_choice", None)
+                            continue
+                        if _has_images(body["messages"]):
+                            # a text-only model: the images' text lines still name the files
+                            body["messages"] = self._messages(system, [{k: v for k, v in m.items() if k != "attachments"} for m in messages])
                             continue
                         r.raise_for_status()
                     r.raise_for_status()

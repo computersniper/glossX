@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
+import base64
+import binascii
 from typing import Any, AsyncIterator
 
 try:
@@ -287,3 +289,21 @@ class Provider:
     ) -> tuple[str, dict]:
         """Return (text, usage_dict). Must be implemented by subclasses."""
         raise NotImplementedError
+
+
+IMAGE_MEDIA = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+
+
+def image_data(data_url: str) -> tuple[str, str, bytes] | None:
+    """``(media_type, suffix, bytes)`` of a base64 image data URL the model
+    APIs accept (PNG, JPEG, GIF, WebP); anything else is None."""
+    head, _, payload = (data_url or "").partition(",")
+    if not head.startswith("data:") or not head.endswith(";base64"):
+        return None
+    media = head[5:-7].lower()
+    if media not in IMAGE_MEDIA:
+        return None
+    try:
+        return media, IMAGE_MEDIA[media], base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        return None

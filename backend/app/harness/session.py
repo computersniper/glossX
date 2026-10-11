@@ -297,6 +297,9 @@ class Runtime:
         self.spans = SpanStore()
         self.seq = 0
         self.turn_tools: dict[str, Any] = {}
+        # messages the user sent to steer the running turn; the engine adds them
+        # before its next model call (see manager.steer_message)
+        self.pending_steer: list[dict[str, Any]] = []
         self._last_inbox_key: tuple[bool, str | None] = (bool(session.get("unread")),
                                                          session.get("attention"))
 

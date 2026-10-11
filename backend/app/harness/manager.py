@@ -599,6 +599,30 @@ class SessionManager:
                 rt.running = False
                 rt.refresh_status()
 
+    async def steer_message(self, session_id: str, text: str, attachments: Any = None) -> dict[str, Any]:
+        """Send ``text`` into the turn that is running now: the agent reads it
+        before its next model call (after the tools it is running finish). With
+        no turn running this is an ordinary message."""
+        rt = self._rt(session_id)
+        if not rt.busy() or rt.task is None or rt.task.done():
+            return await self.send_message(session_id, text, attachments)
+        text = (text or "").strip()
+        if not text and not attachments:
+            raise ValueError("text must not be empty")
+        if len(text) > 100_000:
+            raise ValueError("text is too long (max 100000 characters)")
+        if extensions.parse_command(text):
+            raise ValueError("commands cannot steer a running turn; queue them instead")
+        rt.pending_steer.append({"text": text, "attachments": list(attachments or [])})
+        rt.emit("steer.queued", {"session_id": rt.id, "count": len(rt.pending_steer)})
+        return {"started": False, "steered": True, "pending": len(rt.pending_steer), "session": rt.public()}
+
+    def add_steer_message(self, rt: Runtime, text: str, attachments: list[dict[str, Any]]) -> dict[str, Any]:
+        root = workspace.root_for(rt.session.get("project_id"))
+        settings = settings_mod.load(root)
+        items = ctx_mod.normalize_attachments(attachments, text, root) if attachments else []
+        return self._add_user(rt, text, items, settings=settings, root=root, steer=True)
+
     @staticmethod
     def _expand(command: dict[str, Any], arguments: str) -> str:
         name = command["name"]
@@ -620,10 +644,12 @@ class SessionManager:
 
     def _add_user(self, rt: Runtime, text: str, attachments: list[dict[str, Any]], *,
                   command: str | None = None, expanded: str | None = None,
-                  settings: dict[str, Any], root: Any) -> dict[str, Any]:
+                  settings: dict[str, Any], root: Any, steer: bool = False) -> dict[str, Any]:
         session = rt.session
         msg: dict[str, Any] = {"id": new_id("m_"), "type": "user", "text": text,
                                "attachments": attachments, "created_at": now()}
+        if steer:
+            msg["steer"] = True
         if command:
             msg["command"] = command
         if expanded:

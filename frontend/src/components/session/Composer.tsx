@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, AtSign, BookOpen, Brain, Compass, CornerDownLeft, Eye, FileCode, FileText, Map, Quote, ScrollText, Slash,
-  Sparkles, Square, TextSelect, X, Zap, type LucideIcon,
+  Sparkles, Square, TextSelect, X, Zap, ListPlus, Pencil, CornerDownRight, Check, Paperclip, type LucideIcon,
 } from "lucide-react";
 import { harnessApi, workspaceApi, type Attachment, type HarnessCommand, type Mention, type SessionMode } from "../../api/harness";
 import { splitWorkspaceId, useStore } from "../../store";
 import { draggedItem, droppedFiles, hasFiles, readDrag, useDropZone } from "../../dnd";
-import { useActiveSession, useSessions } from "../../sessionStore";
+import { useActiveSession, useSessions, type QueuedMessage } from "../../sessionStore";
 import { MenuButton, MenuItem, MenuLabel, MenuSep, Popover, Spinner } from "../ui";
 import { formatTokens } from "./toolMeta";
 import { CacheIndicator } from "./CacheUsage";
@@ -217,6 +217,61 @@ function ModePicker({ zh }: { zh: boolean }) {
   );
 }
 
+/** Messages written while the agent works: edit, delete, or steer one into the running turn. */
+function QueueList({ zh, sessionId, items, busy }: { zh: boolean; sessionId: string; items: QueuedMessage[]; busy: boolean }) {
+  const updateQueued = useSessions((s) => s.updateQueued);
+  const removeQueued = useSessions((s) => s.removeQueued);
+  const steerQueued = useSessions((s) => s.steerQueued);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const T = zh
+    ? { title: busy ? `排队中 · ${items.length}` : `待发送 · ${items.length}`, steer: "引导", steerTip: "立即发送：插入正在进行的回合，智能体会在下一步前读到", send: "发送", sendTip: "现在发送", edit: "编辑", del: "删除", save: "保存 (Enter)", cancel: "取消 (Esc)", auto: "当前回合结束后依次自动发送", stopped: "回合已停止，队列保留" }
+    : { title: busy ? `Queued · ${items.length}` : `Waiting · ${items.length}`, steer: "Steer", steerTip: "Send now: the agent reads it before its next step", send: "Send", sendTip: "Send now", edit: "Edit", del: "Delete", save: "Save (Enter)", cancel: "Cancel (Esc)", auto: "Sent one by one when the turn ends", stopped: "The turn stopped; the queue was kept" };
+  const save = (id: string) => {
+    updateQueued(sessionId, id, draft);
+    setEditing(null);
+  };
+  return (
+    <div className="gx-queue">
+      <div className="gx-queue-head"><ListPlus size={12} /> <span>{T.title}</span><span className="gx-queue-note">{busy ? T.auto : T.stopped}</span></div>
+      {items.map((q) => (
+        <div key={q.id} className={`gx-queue-item${editing === q.id ? " editing" : ""}`}>
+          {editing === q.id ? (
+            <>
+              <textarea
+                autoFocus
+                value={draft}
+                rows={Math.min(6, Math.max(1, draft.split("\n").length))}
+                onChange={(e) => setDraft(e.target.value)}
+                onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(q.id); }
+                  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEditing(null); }
+                }}
+              />
+              <button type="button" className="gx-icon-btn" title={T.save} aria-label={T.save} onClick={() => save(q.id)}><Check size={13} /></button>
+              <button type="button" className="gx-icon-btn" title={T.cancel} aria-label={T.cancel} onClick={() => setEditing(null)}><X size={13} /></button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="gx-queue-text" title={T.edit} onClick={() => { setEditing(q.id); setDraft(q.text); }}>
+                {q.text}
+                {!!q.attachments?.length && <span className="gx-queue-att">+{q.attachments.length}</span>}
+              </button>
+              <button type="button" className="gx-queue-steer" title={busy ? T.steerTip : T.sendTip} onClick={() => void steerQueued(sessionId, q.id)}>
+                <CornerDownRight size={12} /> {busy ? T.steer : T.send}
+              </button>
+              <button type="button" className="gx-icon-btn" title={T.edit} aria-label={T.edit} onClick={() => { setEditing(q.id); setDraft(q.text); }}><Pencil size={12} /></button>
+              <button type="button" className="gx-icon-btn" title={T.del} aria-label={T.del} onClick={() => removeQueued(sessionId, q.id)}><X size={13} /></button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Composer({ disabled }: { disabled?: boolean }) {
   const zh = useStore((s) => s.uiLang) === "zh";
   const current = useStore((s) => s.current);
@@ -230,6 +285,8 @@ export function Composer({ disabled }: { disabled?: boolean }) {
   const interrupt = useSessions((s) => s.interrupt);
   const sending = useSessions((s) => s.sending);
   const activeId = useSessions((s) => s.activeId);
+  const enqueue = useSessions((s) => s.enqueue);
+  const queue = useSessions((s) => (activeId ? s.queues[activeId] : undefined));
   const { status } = useActiveSession();
 
   const [text, setText] = useState("");
@@ -244,8 +301,8 @@ export function Composer({ disabled }: { disabled?: boolean }) {
 
   const busy = status !== "idle";
   const T = zh
-    ? { ph: "提问或布置任务 · @ 引用 · / 命令", phBusy: "智能体正在工作…", send: "发送 (Enter)", stop: "停止", paper: "当前论文", sel: "选中文本", mention: "引用论文、文件或运行", cmd: "命令", none: "没有匹配项", hint: "Enter 发送 · Shift+Enter 换行" }
-    : { ph: "Ask or delegate — @ to reference, / for commands", phBusy: "The agent is working…", send: "Send (Enter)", stop: "Stop", paper: "Current paper", sel: "Selection", mention: "Reference a paper, file or run", cmd: "Commands", none: "No matches", hint: "Enter to send · Shift+Enter for a new line" };
+    ? { ph: "提问或布置任务 · @ 引用 · / 命令", phBusy: "智能体正在工作… 继续输入，Enter 加入队列", queue: "加入队列 (Enter)", attach: "添加图片或文件（也可粘贴、拖入）", send: "发送 (Enter)", stop: "停止", paper: "当前论文", sel: "选中文本", mention: "引用论文、文件或运行", cmd: "命令", none: "没有匹配项", hint: "Enter 发送 · Shift+Enter 换行" }
+    : { ph: "Ask or delegate — @ to reference, / for commands", phBusy: "The agent is working… keep typing, Enter queues it", queue: "Queue (Enter)", attach: "Attach images or files (or paste / drop them)", send: "Send (Enter)", stop: "Stop", paper: "Current paper", sel: "Selection", mention: "Reference a paper, file or run", cmd: "Commands", none: "No matches", hint: "Enter to send · Shift+Enter for a new line" };
 
   // text queued from elsewhere (welcome page, palette, library context menu, suggestions)
   useEffect(() => {
@@ -385,10 +442,19 @@ export function Composer({ disabled }: { disabled?: boolean }) {
 
   async function submit() {
     const body = text.trim();
-    if (!body || busy || sending || disabled) return;
+    if ((!body && !chips.length) || disabled || uploading) return;
     // a PDF selection travels as a span attachment that carries its own text (it has no span id)
     const attachments = chips.map((c): Attachment => (c.kind === "selection" ? { kind: "span", ref: c.ref, label: c.label, text: c.text } : (c as Attachment)));
     const message = body;
+    // while the agent works (or a send is in flight) the message waits in the queue
+    if ((busy || sending) && activeId) {
+      enqueue(message, attachments);
+      setText("");
+      setChips([]);
+      setPicker(null);
+      return;
+    }
+    if (sending) return;
     setText("");
     setChips([]);
     setPicker(null);
@@ -436,6 +502,33 @@ export function Composer({ disabled }: { disabled?: boolean }) {
   // papers, workspace files and editor tabs dragged in become chips; files from
   // the computer are uploaded to the workspace's uploads/ folder first
   const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  async function attachFiles(files: (File | { file: File; path: string })[]) {
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const res = await workspaceApi.upload(projectId, files, "uploads");
+      setChips((c) => mergeChips(c, res.files.map((f) => ({ kind: "file" as const, ref: f.path, label: f.path }))));
+      window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
+    } catch (err: any) {
+      useStore.getState().notify((zh ? "上传失败：" : "Upload failed: ") + String(err?.message || err));
+    } finally {
+      setUploading(false);
+    }
+    taRef.current?.focus();
+  }
+  // a pasted screenshot or copied file is attached like a dropped one
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(e.clipboardData?.files || []);
+    if (!files.length) return;
+    e.preventDefault();
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+    void attachFiles(files.map((f, i) => {
+      // screenshots all arrive as "image.png"
+      const named = !f.name || /^image\.\w+$/i.test(f.name) ? new File([f], `paste-${stamp}${files.length > 1 ? `-${i + 1}` : ""}.${(f.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: f.type }) : f;
+      return named;
+    }));
+  }
   const drop = useDropZone((e) => {
     if (hasFiles(e)) return true;
     const item = draggedItem();
@@ -443,17 +536,7 @@ export function Composer({ disabled }: { disabled?: boolean }) {
   }, async (e) => {
     const files = await droppedFiles(e.dataTransfer);
     if (files.length) {
-      setUploading(true);
-      try {
-        const res = await workspaceApi.upload(projectId, files, "uploads");
-        setChips((c) => mergeChips(c, res.files.map((f) => ({ kind: "file" as const, ref: f.path, label: f.path }))));
-        window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
-      } catch (err: any) {
-        useStore.getState().notify((zh ? "上传失败：" : "Upload failed: ") + String(err?.message || err));
-      } finally {
-        setUploading(false);
-      }
-      taRef.current?.focus();
+      await attachFiles(files);
       return;
     }
     const item = readDrag(e);
@@ -554,6 +637,8 @@ export function Composer({ disabled }: { disabled?: boolean }) {
         </div>
       )}
 
+      {activeId && !!queue?.length && <QueueList zh={zh} sessionId={activeId} items={queue} busy={busy} />}
+
       <textarea
         ref={taRef}
         rows={1}
@@ -565,6 +650,7 @@ export function Composer({ disabled }: { disabled?: boolean }) {
           detect(e.target.value, e.target.selectionStart ?? e.target.value.length);
         }}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         onClick={(e) => detect(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
         onBlur={() => setTimeout(() => setPicker((p) => (document.activeElement === taRef.current ? p : null)), 150)}
       />
@@ -592,15 +678,36 @@ export function Composer({ disabled }: { disabled?: boolean }) {
         >
           <AtSign size={14} />
         </button>
+        <button type="button" className="gx-icon-btn" title={T.attach} aria-label={T.attach} disabled={disabled || uploading} onClick={() => fileInput.current?.click()}>
+          {uploading ? <Spinner size={13} /> : <Paperclip size={14} />}
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            const files = Array.from(e.target.files || []);
+            e.target.value = "";
+            void attachFiles(files);
+          }}
+        />
         <span className="spacer" />
         <ContextMeter zh={zh} />
         <CacheIndicator zh={zh} />
         {busy ? (
-          <button type="button" className="gx-send stop" title={T.stop} aria-label={T.stop} onClick={() => void interrupt()}>
-            <Square size={11} fill="currentColor" />
-          </button>
+          <>
+            {(!!text.trim() || !!chips.length) && (
+              <button type="button" className="gx-send queue" title={T.queue} aria-label={T.queue} disabled={disabled} onClick={() => void submit()}>
+                <ListPlus size={14} />
+              </button>
+            )}
+            <button type="button" className="gx-send stop" title={T.stop} aria-label={T.stop} onClick={() => void interrupt()}>
+              <Square size={11} fill="currentColor" />
+            </button>
+          </>
         ) : (
-          <button type="button" className="gx-send" title={T.send} aria-label={T.send} disabled={!text.trim() || sending || disabled} onClick={() => void submit()}>
+          <button type="button" className="gx-send" title={T.send} aria-label={T.send} disabled={(!text.trim() && !chips.length) || sending || uploading || disabled} onClick={() => void submit()}>
             {sending ? <Spinner size={14} /> : <ArrowUp size={15} strokeWidth={2.25} />}
           </button>
         )}

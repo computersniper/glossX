@@ -106,10 +106,15 @@ function UserMessage({ m, zh, canFork, prevId }: { m: Extract<SessionMessage, { 
   const openPaper = useStore((s) => s.openPaper);
   const [expanded, setExpanded] = useState(false);
   const long = m.text.length > 900 || m.text.split("\n").length > 14;
+  // workspace images the user attached are shown, not just named
+  const images = (m.attachments || []).filter((a) => a.kind === "file" && a.ok !== false && /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(a.ref));
+  const projectId = useSessions((s) => (s.activeId ? s.states[s.activeId]?.session?.project_id : null));
+  const rawUrl = (ref: string) => `/api/workspace/${encodeURIComponent(projectId || "default")}/raw?path=${encodeURIComponent(ref)}`;
   const label = (a: { kind: string; ref: string; label?: string }) =>
     a.label || (a.kind === "paper" ? papers.find((p) => p.id === a.ref)?.title : "") || a.ref;
   return (
     <div className={`gx-msg user${m.pending ? " pending" : ""}${m.command ? " command" : ""}`}>
+      {(m as { steer?: boolean }).steer && <span className="gx-msg-steer" title={zh ? "在智能体工作时插入的消息" : "Sent while the agent was working"}>{zh ? "引导" : "Steer"}</span>}
       {!!m.attachments?.length && (
         <div className="gx-msg-attachments">
           {m.attachments.map((a) => {
@@ -132,7 +137,15 @@ function UserMessage({ m, zh, canFork, prevId }: { m: Extract<SessionMessage, { 
           })}
         </div>
       )}
-      <div className={`gx-msg-text${long && !expanded ? " clamped" : ""}`}>{m.text}</div>
+      {images.length > 0 && (
+        <div className="gx-msg-images">
+          {images.map((a) => (
+            <img key={a.ref} src={rawUrl(a.ref)} alt={label(a)} title={label(a)} loading="lazy"
+              onClick={() => useStore.getState().openFileTab(useSessions.getState().states[useSessions.getState().activeId || ""]?.session?.workspace?.key || "default", a.ref)} />
+          ))}
+        </div>
+      )}
+      {!!m.text && <div className={`gx-msg-text${long && !expanded ? " clamped" : ""}`}>{m.text}</div>}
       {long && (
         <button type="button" className="gx-link" onClick={() => setExpanded(!expanded)}>{expanded ? (zh ? "收起" : "Show less") : zh ? "展开全文" : "Show more"}</button>
       )}
