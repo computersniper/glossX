@@ -14,6 +14,7 @@ from it on every model call (:func:`provider_messages`):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 import time
@@ -580,6 +581,12 @@ def materialize(rt: Any, attachments: list[dict[str, Any]], *, budget_tokens: in
     per_item = max(200, budget_tokens // len(attachments))
     blocks = []
     session = rt.session
+    # Context already in the live (not compacted) conversation is not added again:
+    # re-attaching the same paper, span, selection or unchanged file costs one line.
+    present = {(a.get("kind"), a.get("digest"))
+               for m in session.get("messages") or []
+               if m.get("type") == "user" and not m.get("compacted")
+               for a in m.get("attachments") or [] if a.get("ok") and a.get("digest")}
     for att in attachments:
         kind, ref = att["kind"], att["ref"]
         try:
@@ -636,5 +643,12 @@ def materialize(rt: Any, attachments: list[dict[str, Any]], *, budget_tokens: in
             continue
         att["ok"] = True
         att.setdefault("label", label)
+        att["digest"] = hashlib.sha1(body.encode("utf-8", "replace")).hexdigest()[:16]
+        if (kind, att["digest"]) in present:
+            att["repeat"] = True
+            blocks.append(f"(attached {kind} {label!r} again: it is unchanged and already "
+                          "earlier in this conversation, so it is not repeated here)")
+            continue
+        present.add((kind, att["digest"]))
         blocks.append(wrap_untrusted(f"attachment:{kind}:{ref}"[:80], protocol.neutralize(body)))
     return "The user attached the following context:\n" + "\n\n".join(blocks)

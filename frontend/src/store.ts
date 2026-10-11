@@ -21,7 +21,7 @@ import { evictPdfDoc } from "./pdf/docCache";
 // ---- workbench layout + editor tabs ----
 export type UiMode = "gloss" | "glossx"; // classic reader | agent workbench
 export type Activity = "library" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings";
-export type AiMode = "agent" | "threads" | "chat" | "tools" | "browser";
+export type AiMode = "agent" | "threads" | "tools" | "browser";
 export type BottomTab = "trace" | "runs" | "tasks" | "terminal";
 export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme" | "branches" | "newBranch" | "commit" | "tryBranch" | "browserUrl";
 // file / checkpoint ids are `<workspace key>|<path or checkpoint id>`;
@@ -143,6 +143,11 @@ interface State {
   recentRuns: AgentRun[];
   projects: AgentProject[];
   agentPrefill: { goal?: string; paperIds?: string[]; id: number } | null;
+  /** GlossX side chat: quick questions next to the agent thread that never enter its context. */
+  sideChatOpen: boolean;
+  sideAsk: { text: string; id: number } | null;
+  openSideChat: (ask?: string) => void;
+  closeSideChat: () => void;
   setAgentRunId: (id: string | null) => void;
   setAgentProjectId: (id: string | null) => void;
   /** paper id → its own project id (GET /api/papers/{id}/project), false = the backend has no such route. */
@@ -241,6 +246,8 @@ export const useStore = create<State>((set, get) => ({
     // The browser lives in the right pane; older layouts may still point the side bar at it.
     // The browser and the thread list live in the right pane now; older layouts may still point the side bar at them.
     activity: ["browser", "threads"].includes(saved.activity as string) ? DEFAULT_LAYOUT.activity : saved.activity,
+    // paper chat became the agent's side chat
+    aiMode: (saved.aiMode as string) === "chat" ? "agent" : saved.aiMode,
   }))(readJson<Layout>(LAYOUT_KEY, DEFAULT_LAYOUT)),
   setLayout: (patch) => {
     const layout = { ...get().layout, ...patch };
@@ -395,6 +402,18 @@ export const useStore = create<State>((set, get) => ({
   recentRuns: [],
   projects: [],
   agentPrefill: null,
+  sideChatOpen: readStr("glossx.sideChat", "") === "1",
+  sideAsk: null,
+  openSideChat: (ask) => {
+    try { localStorage.setItem("glossx.sideChat", "1"); } catch { /* private mode */ }
+    get().setLayout({ aiOpen: true, aiMode: "agent" });
+    const text = (ask || "").trim();
+    set(text ? { sideChatOpen: true, sideAsk: { text, id: Date.now() } } : { sideChatOpen: true });
+  },
+  closeSideChat: () => {
+    try { localStorage.setItem("glossx.sideChat", ""); } catch { /* private mode */ }
+    set({ sideChatOpen: false });
+  },
   setAgentRunId: (id) => set({ agentRunId: id }),
   setAgentProjectId: (id) => {
     try {
@@ -758,12 +777,14 @@ export const useStore = create<State>((set, get) => ({
   runSelectionAction: (kind) => {
     const sel = get().selection;
     if (!sel) return;
+    if (kind === "ask" && get().mode === "glossx") return get().openSideChat(sel.text);
     routeTab(kind === "ask" ? "chat" : kind);
     set({ selectionAction: { kind, selection: sel, id: Date.now() } });
   },
   askAboutText: (text) => {
     const t = (text || "").trim();
     if (!t) return;
+    if (get().mode === "glossx") return get().openSideChat(t);
     const sel = { text: t, page: 0, rects: [] as [number, number, number, number][] };
     // jump to chat and let ChatPanel's "ask" effect answer about the selection
     routeTab("chat");
@@ -819,7 +840,7 @@ function addTab(tab: EditorTab) {
 function routeTab(t: string) {
   const st = useStore.getState();
   if (st.mode === "gloss") useStore.setState({ activeTab: t });
-  else if (t === "chat") st.setLayout({ aiOpen: true, aiMode: "chat" });
+  else if (t === "chat") st.openSideChat();
   else if (t === "agent") st.setLayout({ aiOpen: true, aiMode: "agent" });
   else if (t === "settings") st.setLayout({ activity: "settings", sideOpen: true });
   else if (t === "extensions") st.setLayout({ activity: "capabilities", sideOpen: true });
