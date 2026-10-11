@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { harnessApi, workspaceApi, type Attachment, type HarnessCommand, type Mention, type SessionMode } from "../../api/harness";
 import { splitWorkspaceId, useStore } from "../../store";
-import { draggedItem, hasFiles, readDrag, useDropZone } from "../../dnd";
+import { draggedItem, droppedFiles, hasFiles, readDrag, useDropZone } from "../../dnd";
 import { useActiveSession, useSessions } from "../../sessionStore";
 import { MenuButton, MenuItem, MenuLabel, MenuSep, Popover, Spinner } from "../ui";
 import { formatTokens } from "./toolMeta";
@@ -441,7 +441,7 @@ export function Composer({ disabled }: { disabled?: boolean }) {
     const item = draggedItem();
     return item?.type === "paper" || (item?.type === "file" && !item.dir) || (item?.type === "tab" && /^(paper|file):/.test(item.key));
   }, async (e) => {
-    const files = Array.from(e.dataTransfer.files || []);
+    const files = await droppedFiles(e.dataTransfer);
     if (files.length) {
       setUploading(true);
       try {

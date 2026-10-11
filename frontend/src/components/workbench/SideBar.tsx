@@ -18,7 +18,7 @@ import { Icon } from "./icons";
 import { MobileAccess } from "../MobileAccess";
 import { WorkspaceLocation } from "./WorkspaceLocation";
 import { openWorkspaceFolder } from "./openFolder";
-import { draggedItem, hasFiles, readDrag, startDrag, useDropZone, type DragItem } from "../../dnd";
+import { draggedItem, droppedFiles, hasFiles, readDrag, startDrag, useDropZone, type DragItem } from "../../dnd";
 
 export const ACTIVITIES: { id: Activity; icon: string; en: string; zh: string }[] = [
   { id: "library", icon: "library", en: "Library", zh: "论文库" },
@@ -107,7 +107,9 @@ function LibraryView() {
     }
   }
 
-  const libraryDrop = useDropZone(hasFiles, (e) => void onUpload(Array.from(e.dataTransfer.files)));
+  // a dropped folder adds the papers and documents inside it
+  const libraryDrop = useDropZone(hasFiles, (e) => void droppedFiles(e.dataTransfer).then((all) =>
+    onUpload(all.filter((f) => /\.(pdf|md|markdown|html?|pptx|docx|xlsx|odt|ods|odp|goodnotes)$/i.test(f.path)).map((f) => f.file))));
 
   return (
     <div className={`wb-side-body gx-library${libraryDrop.over ? " gx-drop-over" : ""}`} {...libraryDrop.props} data-drop-hint={zh ? "松开导入到论文库" : "Drop to add to the library"}>

@@ -460,12 +460,18 @@ def save_upload(
 ) -> dict[str, Any]:
     """Store a dropped / uploaded file in ``dir_rel``; never overwrites (a taken
     name gets a `` (2)`` suffix). Text files get a checkpoint like any edit."""
-    clean = Path(str(name or "").replace("\\", "/")).name.strip()
-    if not clean or clean in {".", ".."} or "\0" in clean:
+    # a dropped folder sends "folder/sub/file.txt": keep the structure, drop tricks
+    parts = [p.strip() for p in str(name or "").replace("\\", "/").split("/")]
+    parts = [p for p in parts if p and p not in {".", ".."}]
+    if not parts or any("\0" in p for p in parts):
         raise WorkspaceError("invalid file name")
     if len(data) > MAX_UPLOAD_BYTES:
         raise WorkspaceError(f"file is larger than {MAX_UPLOAD_BYTES} bytes")
-    directory = resolve(root, dir_rel or ".")
+    base = resolve(root, dir_rel or ".")
+    if base.exists() and not base.is_dir():
+        raise WorkspaceError("not a directory")
+    directory = resolve(root, relpath(root, base) + "/" + "/".join(parts[:-1])) if len(parts) > 1 else base
+    clean = parts[-1]
     if directory.exists() and not directory.is_dir():
         raise WorkspaceError("not a directory")
     blocked = is_protected_rel(relpath(root, directory / clean))

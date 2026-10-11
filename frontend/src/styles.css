@@ -1056,3 +1056,4 @@ button.small { font-size: 12px; padding: 3px 8px; margin-top: 6px; }
 .settings-model-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }
 .settings-model-chip button { background: none; border: 0; color: var(--fg-dim); cursor: pointer; padding: 0 2px; }
 .settings-model-chips input { flex: 1; min-width: 160px; }
+.hl-menu-note { padding: 6px 8px 2px; max-width: 280px; font-size: 12px; color: var(--fg-dim); white-space: pre-wrap; }

@@ -324,16 +324,21 @@ async def write_workspace_file(project_id: str, path: str, body: FileBody):
 
 
 @workspace_router.post("/{project_id}/upload")
-async def upload_workspace_files(project_id: str, files: list[UploadFile] = File(...), dir: str = Form("")):
-    """Files dropped on the explorer or the composer; a taken name gets a suffix."""
+async def upload_workspace_files(project_id: str, files: list[UploadFile] = File(...), dir: str = Form(""),
+                                 paths: list[str] = Form(default=[])):
+    """Files dropped on the explorer or the composer; a taken name gets a
+    suffix. ``paths`` (one per file) carries a dropped folder's structure."""
     root = _root(project_id)
     key = workspace.key_for(_project(project_id))
     saved = []
-    for item in files:
+    if len(files) > 2000:
+        raise HTTPException(413, "too many files in one drop (limit 2000)")
+    for i, item in enumerate(files):
         data = await item.read()
+        name = (paths[i] if i < len(paths) and paths[i] else None) or item.filename or "file"
         try:
             saved.append(await asyncio.to_thread(
-                workspace.save_upload, key, root, dir, item.filename or "file", data))
+                workspace.save_upload, key, root, dir, name, data))
         except workspace.WorkspaceError as error:
             raise _ws_error(error) from error
     return {"files": saved}

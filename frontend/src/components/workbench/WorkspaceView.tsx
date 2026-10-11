@@ -1,6 +1,6 @@
 // Side bar: file tree of the active project's workspace + its checkpoints.
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
-import { draggedItem, hasFiles, readDrag, startDrag, useDropZone } from "../../dnd";
+import { draggedItem, droppedFiles, hasFiles, readDrag, startDrag, useDropZone } from "../../dnd";
 import {
   ChevronRight, File, FileCode, FileJson, FilePlus, FileSpreadsheet, FileText, Folder, FolderCog, FolderOpen, FolderTree, History, Image,
   NotebookText, Presentation, RefreshCw, Undo2, type LucideIcon,
@@ -86,8 +86,9 @@ function fileIcon(name: string): LucideIcon {
 export async function dropIntoWorkspace(project: string, dir: string, e: DragEvent): Promise<string[]> {
   const { notify, uiLang } = useStore.getState();
   const zh = uiLang === "zh";
+  const pending = droppedFiles(e.dataTransfer);  // before any await
   try {
-    const files = Array.from(e.dataTransfer.files || []);
+    const files = await pending;
     if (files.length) {
       const res = await workspaceApi.upload(project, files, dir);
       notify(zh ? `已上传 ${res.files.length} 个文件${dir ? `到 ${dir}` : ""}` : `Uploaded ${res.files.length} file${res.files.length === 1 ? "" : "s"}${dir ? ` to ${dir}` : ""}`);

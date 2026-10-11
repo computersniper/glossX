@@ -21,7 +21,7 @@ import { MOD_KEY, isMobileClient, isTouchClient, leaveComputer, useCompact } fro
 import type { Activity } from "../../store";
 import { api } from "../../api/client";
 import { workspaceApi } from "../../api/harness";
-import { hasFiles } from "../../dnd";
+import { dropHasFolder, droppedFiles, hasFiles } from "../../dnd";
 
 const NARROW = "(max-width: 1099px)";
 
@@ -94,21 +94,24 @@ function WindowDrop({ zh }: { zh: boolean }) {
       end();
       if (!hasFiles(e)) return;
       e.preventDefault();
-      const files = Array.from(e.dataTransfer?.files || []);
-      if (!files.length) return;
+      // a folder goes to the workspace whole; loose papers to the library
+      const folder = dropHasFolder(e.dataTransfer);
+      const pending = droppedFiles(e.dataTransfer);
       const st = useStore.getState();
-      const papers = files.filter((f) => LIBRARY_TYPES.test(f.name));
-      const others = files.filter((f) => !LIBRARY_TYPES.test(f.name));
       void (async () => {
         try {
+          const all = await pending;
+          if (!all.length) return;
+          const papers = folder ? [] : all.filter((f) => LIBRARY_TYPES.test(f.path)).map((f) => f.file);
+          const others = folder ? all : all.filter((f) => !LIBRARY_TYPES.test(f.path));
           for (const f of papers) {
             const p = await api.uploadPaper(f);
             st.notify((zh ? "已导入论文库：" : "Added to the library: ") + (p.title || f.name).slice(0, 40));
           }
           if (papers.length) await st.loadPapers();
           if (others.length) {
-            const res = await workspaceApi.upload(st.agentProjectId, others, "uploads");
-            st.notify(zh ? `已上传 ${res.files.length} 个文件到工作区 uploads/` : `Uploaded ${res.files.length} file${res.files.length === 1 ? "" : "s"} to the workspace's uploads/`);
+            const res = await workspaceApi.upload(st.agentProjectId, others, folder ? "" : "uploads");
+            st.notify(zh ? `已上传 ${res.files.length} 个文件到工作区${folder ? "" : " uploads/"}` : `Uploaded ${res.files.length} file${res.files.length === 1 ? "" : "s"} to the workspace${folder ? "" : "'s uploads/"}`);
             window.dispatchEvent(new CustomEvent("glossx:workspace-changed"));
           }
         } catch (err: any) {
@@ -132,7 +135,7 @@ function WindowDrop({ zh }: { zh: boolean }) {
   if (!dragging) return null;
   return (
     <div className="gx-window-drop" aria-hidden>
-      {zh ? "拖到论文库导入 · 拖到工作区文件夹上传 · 拖到输入框作为附件 · 其他位置：论文和文档进论文库，其余进工作区 uploads/"
+      {zh ? "拖到论文库导入 · 拖到工作区（或其中的文件夹）上传，整个文件夹也行 · 拖到输入框作为附件 · 其他位置：文件夹进工作区，论文和文档进论文库，其余进 uploads/"
         : "Library: import · Explorer folder: upload · Composer: attach · Elsewhere: papers and documents to the library, other files to uploads/"}
     </div>
   );
