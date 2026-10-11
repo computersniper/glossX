@@ -7,7 +7,9 @@ import App from "./App";
 import { initDesktopChrome } from "./desktop";
 import { initDesktopActions } from "./desktopActions";
 import { installZoom } from "./zoom";
+import { initMobileClient } from "./mobile";
 
+initMobileClient();
 initDesktopChrome();
 initDesktopActions();
 installZoom();

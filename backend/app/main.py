@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
+from .remote_access import RemoteAuthMiddleware
 from .agent.adapters.mcp_client import MANAGER as mcp_clients
 from .agent.runs import AgentRunManager
 from .harness.manager import SessionManager
@@ -35,6 +36,7 @@ from .routers import (
     mcp,
     papers,
     plugins,
+    remote,
     scholar,
     sessions,
     settings,
@@ -118,6 +120,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=config.APP_NAME, version="1.0.2", lifespan=lifespan)
 
+# Other devices (the mobile app) need the pairing code. Added before CORS so
+# CORS wraps it and a refusal still reaches the app as a readable 401.
+app.add_middleware(RemoteAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -155,6 +160,7 @@ app.include_router(harness.router)
 app.include_router(harness.workspace_router)
 app.include_router(browser.router)
 app.include_router(terminal.router)
+app.include_router(remote.router)
 
 
 # ---------------------------------------------------------------------------

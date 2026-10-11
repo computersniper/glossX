@@ -1,0 +1,21 @@
+{
+  "name": "glossx-mobile",
+  "private": true,
+  "version": "1.0.2",
+  "description": "GlossX for iPhone, iPad and Android: one Capacitor shell that connects to GlossX on your computer.",
+  "scripts": {
+    "sync": "cap sync",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android",
+    "build:android": "cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  }
+}
