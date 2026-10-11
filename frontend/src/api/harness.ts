@@ -402,9 +402,14 @@ export const workspaceApi = {
   revert: (projectId: string | null | undefined, id: string) =>
     request<any>(`${W(projectId)}/checkpoints/${enc(id)}/revert`, { method: "POST", json: {} }),
   /** Files dropped from the computer; a taken name gets a " (2)" suffix. */
-  upload: (projectId: string | null | undefined, files: File[], dir = "") => {
+  upload: (projectId: string | null | undefined, files: (File | { file: File; path: string })[], dir = "") => {
     const fd = new FormData();
-    for (const f of files) fd.append("files", f, f.name);
+    for (const f of files) {
+      const file = f instanceof File ? f : f.file;
+      fd.append("files", file, file.name);
+      // a dropped folder's structure: "folder/sub/file.txt"
+      fd.append("paths", f instanceof File ? file.name : f.path);
+    }
     fd.append("dir", dir);
     return request<{ files: { path: string; size: number }[] }>(`${W(projectId)}/upload`, { method: "POST", body: fd });
   },

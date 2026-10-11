@@ -43,3 +43,15 @@ def test_move_file_and_folder(client):
     assert ok(client.post(url, json={'path': 'b', 'dir': 'a'}))['path'] == 'a/b'
     assert (root / 'a' / 'b' / 'x.txt').exists()
     assert client.post(url, json={'path': 'missing.txt', 'dir': ''}).status_code == 404
+
+
+def test_dropped_folder_keeps_its_structure(client):
+    project = ok(client.post('/api/agent/projects', json={'name': 'Folder drop'}))
+    root = Path(project['workspace']['path'])
+    url = f"/api/workspace/{project['id']}/upload"
+    res = ok(client.post(url, data={'dir': '', 'paths': ['data/raw/a.csv', 'data/readme.md']},
+                         files=[('files', ('a.csv', b'x,y\n1,2\n', 'text/csv')), ('files', ('readme.md', b'# data', 'text/markdown'))]))
+    assert [f['path'] for f in res['files']] == ['data/raw/a.csv', 'data/readme.md']
+    assert (root / 'data/raw/a.csv').read_text() == 'x,y\n1,2\n'
+    escaped = ok(client.post(url, data={'paths': ['../../x/b.txt']}, files=[('files', ('b.txt', b'b', 'text/plain'))]))
+    assert escaped['files'][0]['path'] == 'x/b.txt'

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { useSessions } from "../sessionStore";
+import { api } from "../api/client";
 
 const COLORS = ["#ffd54f", "#a5d6a7", "#90caf9", "#ef9a9a", "#ce93d8"];
 
@@ -23,6 +24,10 @@ export function SelectionPopover({
   const [color, setColor] = useState(COLORS[0]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  // highlights the selection lies on: offer to remove them
+  const highlights = useStore((s) => s.highlights);
+  const overlapping = selection ? highlights.filter((h) => h.page === selection.page && h.rects.some((a) =>
+    selection.rects.some((b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]))) : [];
   const T = {
     en: { explain: "💡 Explain", translate: "🌐 Translate", ask: "💬 Add to chat", agent: "🤖 Ask agent", addThread: "💬 Add to thread", side: "❓ Side question", highlight: "Highlight", copy: "⧉ Copy", note: "📝 Add note", save: "Save note", saving: "Saving…", saveError: "Could not save the highlight.", placeholder: "Optional note…" },
     zh: { explain: "💡 解释", translate: "🌐 翻译", ask: "💬 加入会话", agent: "🤖 问智能体", addThread: "💬 加入对话", side: "❓ 辅助提问", highlight: "高亮", copy: "⧉ 复制", note: "📝 添加笔记", save: "保存笔记", saving: "保存中…", saveError: "高亮保存失败，请重试。", placeholder: "补充你的笔记…" },
@@ -97,6 +102,16 @@ export function SelectionPopover({
             />
           ))}
         </span>
+        {overlapping.length > 0 && (
+          <button
+            title={uiLang === "zh" ? "删除选区所在的高亮" : "Remove the highlights under the selection"}
+            onClick={async () => {
+              await Promise.all(overlapping.map((h) => api.deleteHighlight(h.id))).catch(() => {});
+              await useStore.getState().refreshHighlights();
+              onClose();
+            }}
+          >{uiLang === "zh" ? "✕ 取消高亮" : "✕ Remove highlight"}</button>
+        )}
         <button onClick={() => setNoteOpen((open) => !open)}>{T.note}</button>
         <button
           onClick={() => {

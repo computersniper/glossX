@@ -86,3 +86,41 @@ export function useDropZone(accepts: (e: DragEvent) => boolean, onDrop: (e: Drag
   };
   return { over, props };
 }
+
+export type DroppedFile = { file: File; path: string };
+
+/**
+ * Files from a drop, folders walked with their structure kept (`path` is
+ * "folder/sub/file.txt"). Call it inside the drop handler, before any await:
+ * the browser empties `dataTransfer` once the handler returns.
+ */
+export function droppedFiles(dt: DataTransfer | null): Promise<DroppedFile[]> {
+  if (!dt) return Promise.resolve([]);
+  const entries = Array.from(dt.items || []).filter((i) => i.kind === "file").map((i) => (i as any).webkitGetAsEntry?.() as any).filter(Boolean);
+  const plain = Array.from(dt.files || []);
+  if (!entries.length || !entries.some((e) => e.isDirectory)) return Promise.resolve(plain.map((file) => ({ file, path: file.name })));
+  const out: DroppedFile[] = [];
+  const walk = async (entry: any, prefix: string): Promise<void> => {
+    if (out.length >= 2000) return;
+    if (entry.isFile) {
+      const file: File = await new Promise((ok, err) => entry.file(ok, err));
+      out.push({ file, path: prefix + entry.name });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      // readEntries returns at most ~100 entries per call
+      for (;;) {
+        const batch: any[] = await new Promise((ok, err) => reader.readEntries(ok, err));
+        if (!batch.length) break;
+        for (const child of batch) await walk(child, `${prefix}${entry.name}/`);
+      }
+    }
+  };
+  return (async () => {
+    for (const e of entries) await walk(e, "");
+    return out;
+  })();
+}
+
+/** A drop carries a folder (only knowable inside the drop handler). */
+export const dropHasFolder = (dt: DataTransfer | null) =>
+  !!dt && Array.from(dt.items || []).some((i) => i.kind === "file" && (i as any).webkitGetAsEntry?.()?.isDirectory);

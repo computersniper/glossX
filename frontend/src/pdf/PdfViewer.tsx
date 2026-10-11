@@ -54,6 +54,17 @@ function pointInPolygon(point: [number, number], polygon: [number, number][]) {
 // Use PDF.js's OFFICIAL text layer (v4 `TextLayer`) rather than a hand-rolled one,
 // so selection matches a real browser PDF viewer — this uses the PDF's embedded
 // text (not OCR); it's just rendered/positioned by pdf.js's own builder.
+/**
+ * How much bigger the element looks than it lays out: the window zoom
+ * (Ctrl+=, CSS `zoom` on the root) makes client coordinates visual pixels while
+ * positions inside the page stay layout pixels. Divide client deltas by it.
+ */
+function visualZoom(el: HTMLElement | null): number {
+  if (!el || !el.offsetWidth) return 1;
+  const z = el.getBoundingClientRect().width / el.offsetWidth;
+  return Number.isFinite(z) && z > 0 ? z : 1;
+}
+
 async function renderTextLayer(page: any, viewport: any, layer: HTMLDivElement) {
   layer.innerHTML = "";
   // v4 positions spans relative to this CSS variable
@@ -109,6 +120,16 @@ export function PdfViewer() {
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [popover, setPopover] = useState<{ x: number; y: number } | null>(null);
+  // clicking a highlight: recolour, remove or list it
+  const [hlMenu, setHlMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!hlMenu) return;
+    const close = (e: Event) => { if (!(e.target as HTMLElement)?.closest?.(".hl-menu")) setHlMenu(null); };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setHlMenu(null);
+    window.addEventListener("mousedown", close, true);
+    window.addEventListener("keydown", esc);
+    return () => { window.removeEventListener("mousedown", close, true); window.removeEventListener("keydown", esc); };
+  }, [hlMenu]);
   const [showHighlights, setShowHighlights] = useState(() => localStorage.getItem("gloss.layer.highlights") !== "0");
   const [showNotes, setShowNotes] = useState(() => localStorage.getItem("gloss.layer.notes") !== "0");
   const [showInk, setShowInk] = useState(() => localStorage.getItem("gloss.layer.ink") !== "0");
@@ -169,8 +190,9 @@ export function PdfViewer() {
       const base = pending ?? scaleRef.current;
       pending = Math.round(Math.min(3, Math.max(0.6, base * (step < 0 ? 1.1 : 1 / 1.1))) * 100) / 100;
       const rect = el.getBoundingClientRect();
-      const anchorY = e.clientY - rect.top;
-      const anchorX = e.clientX - rect.left;
+      const vz = visualZoom(el);
+      const anchorY = (e.clientY - rect.top) / vz;
+      const anchorX = (e.clientX - rect.left) / vz;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         const next = pending!;
@@ -347,12 +369,22 @@ export function PdfViewer() {
     return () => clearTimeout(t);
   }, [flash?.id]);
 
-  function onMouseUp() {
+  function onMouseUp(event: React.MouseEvent) {
     if (drawTool !== "select") return;
     const sel = window.getSelection();
     const text = sel?.toString().trim() || "";
     if (!text || !sel || sel.rangeCount === 0) {
       setPopover(null);
+      // the text layer sits above the highlights: a plain click on one opens its menu
+      const pageEl = (event.target as HTMLElement)?.closest?.("[data-page-index]") as HTMLElement | null;
+      if (pageEl && showHighlights && event.button === 0) {
+        const page = parseInt(pageEl.dataset.pageIndex!, 10);
+        const pr = pageEl.getBoundingClientRect();
+        const vz = visualZoom(pageEl);
+        const x = (event.clientX - pr.left) / vz / scale, y = (event.clientY - pr.top) / vz / scale;
+        const hit = [...highlights].reverse().find((h) => h.page === page && h.rects.some((r) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3]));
+        if (hit) setHlMenu({ id: hit.id, x: event.clientX / vz, y: event.clientY / vz + 10 });
+      }
       return;
     }
     // find the page container of the selection
@@ -376,25 +408,31 @@ export function PdfViewer() {
     }
     const pageIndex = parseInt(pageEl.dataset.pageIndex!, 10);
     const pr = pageEl.getBoundingClientRect();
+    const z = visualZoom(pageEl) * scale;
     const range = sel.getRangeAt(0);
-    const clientRects = Array.from(range.getClientRects());
-    const rects = clientRects.map(
-      (r) =>
-        [
-          (r.left - pr.left) / scale,
-          (r.top - pr.top) / scale,
-          (r.right - pr.left) / scale,
-          (r.bottom - pr.top) / scale,
-        ] as [number, number, number, number],
-    );
+    // one rect per line: drop empty boxes and the ones nested in a bigger box
+    // (a span and its text node both report one), then merge per line
+    const clientRects = Array.from(range.getClientRects()).filter((r) => r.width > 0.5 && r.height > 0.5);
+    const lines: [number, number, number, number][] = [];
+    for (const r of clientRects) {
+      const box: [number, number, number, number] = [(r.left - pr.left) / z, (r.top - pr.top) / z, (r.right - pr.left) / z, (r.bottom - pr.top) / z];
+      const same = lines.find((l) => Math.abs((l[1] + l[3]) / 2 - (box[1] + box[3]) / 2) < Math.min(l[3] - l[1], box[3] - box[1]) * 0.5);
+      if (same) {
+        same[0] = Math.min(same[0], box[0]); same[1] = Math.min(same[1], box[1]);
+        same[2] = Math.max(same[2], box[2]); same[3] = Math.max(same[3], box[3]);
+      } else lines.push(box);
+    }
+    const rects = lines;
     setSelection({ text, page: pageIndex, rects });
     const last = clientRects[clientRects.length - 1];
     if (last) {
       // position the popover in viewport coords, right beside the selection
       // (rendered position:fixed), clamped so it can't run off the right edge
+      // (a fixed box inside the zoomed root is zoomed too)
+      const vz = visualZoom(pageEl);
       setPopover({
-        x: Math.max(8, Math.min(last.left, window.innerWidth - 330)),
-        y: last.bottom + 8,
+        x: Math.max(8, Math.min(last.left / vz, window.innerWidth / vz - 330)),
+        y: last.bottom / vz + 8,
       });
     }
   }
@@ -402,9 +440,10 @@ export function PdfViewer() {
   function pointOnPage(event: React.PointerEvent<SVGSVGElement>, page: number): [number, number] {
     const holder = pageRefs.current[page];
     const rect = holder?.getBoundingClientRect() || event.currentTarget.getBoundingClientRect();
+    const z = visualZoom(holder || null) * scale;
     return [
-      Math.max(0, (event.clientX - rect.left) / scale),
-      Math.max(0, (event.clientY - rect.top) / scale),
+      Math.max(0, (event.clientX - rect.left) / z),
+      Math.max(0, (event.clientY - rect.top) / z),
     ];
   }
 
@@ -521,9 +560,10 @@ export function PdfViewer() {
     const extractedText = Array.from(holder.querySelectorAll(".textLayer span"))
       .filter((span) => {
         const rect = span.getBoundingClientRect();
+        const z = visualZoom(holder) * scale;
         const center: [number, number] = [
-          (rect.left + rect.width / 2 - holderRect.left) / scale,
-          (rect.top + rect.height / 2 - holderRect.top) / scale,
+          (rect.left + rect.width / 2 - holderRect.left) / z,
+          (rect.top + rect.height / 2 - holderRect.top) / z,
         ];
         return pointInPolygon(center, completed.points);
       })
@@ -763,7 +803,11 @@ export function PdfViewer() {
                             height: (r[3] - r[1]) * scaleFromPdf,
                             background: h.color + (h.kind === "auto" ? "66" : "99"),
                           }}
-                          onClick={() => useStore.getState().setTab("highlights")}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            const vz = visualZoom(ev.currentTarget as HTMLElement);
+                            setHlMenu({ id: h.id, x: ev.clientX / vz, y: ev.clientY / vz + 10 });
+                          }}
                         />
                       )),
                     )}
@@ -857,6 +901,30 @@ export function PdfViewer() {
           );
         })}
       </div>
+      {hlMenu && (() => {
+        const h = highlights.find((x) => x.id === hlMenu.id);
+        if (!h) return null;
+        const zh = uiLang === "zh";
+        const change = async (fn: () => Promise<unknown>) => {
+          setHlMenu(null);
+          try { await fn(); await useStore.getState().refreshHighlights(); } catch (e: any) { notify(String(e?.message || e)); }
+        };
+        return (
+          <div className="sel-popover hl-menu" style={{ position: "fixed", left: Math.min(hlMenu.x, window.innerWidth - 300), top: hlMenu.y }}>
+            <div className="sel-popover-main">
+              <span className="hl-colors">
+                {["#ffd54f", "#a5d6a7", "#90caf9", "#ef9a9a", "#ce93d8"].map((c) => (
+                  <button key={c} className={`hl-dot ${h.color === c ? "selected" : ""}`} style={{ background: c }} title={zh ? "换颜色" : "Change colour"}
+                    onClick={() => void change(() => api.patchHighlight(h.id, { color: c }))} />
+                ))}
+              </span>
+              <button onClick={() => void change(() => api.deleteHighlight(h.id))}>{zh ? "✕ 取消高亮" : "✕ Remove"}</button>
+              <button onClick={() => { setHlMenu(null); useStore.getState().setTab("highlights"); }}>{zh ? "全部高亮" : "All highlights"}</button>
+            </div>
+            {h.note && <div className="hl-menu-note">{h.note}</div>}
+          </div>
+        );
+      })()}
       {popover && (
         <SelectionPopover pos={popover} onClose={() => setPopover(null)} />
       )}
