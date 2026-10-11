@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { MobileAccess } from "./MobileAccess";
 import { api, type AiUsageSummary } from "../api/client";
 import { useStore } from "../store";
 import { PROVIDER_EFFORTS, effortsFor, refreshModelCatalog, useModelCatalog } from "../modelCatalog";
@@ -164,8 +163,6 @@ export function SettingsPanel() {
         </span>
         <b>›</b>
       </button>
-
-      <MobileAccess zh={uiLang === "zh"} />
 
       <label>Interface language / 界面语言</label>
       <div className="seg">

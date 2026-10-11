@@ -2,7 +2,7 @@
 // one stroke weight, one optical size per context.
 import {
   Blocks, Bot, Command, Ellipsis, FileText, FolderKanban, FolderTree, History, Home, Library, MessageSquare,
-  PanelBottom, PanelLeft, PanelRight, Plus, ScrollText, Search, Settings, Sparkles, Upload, Wrench, X, FileCode,
+  PanelBottom, PanelLeft, PanelRight, Plus, ScrollText, Search, Settings, Smartphone, Sparkles, Upload, Wrench, X, FileCode,
   GitCompareArrows, GitCommitHorizontal, MessagesSquare, Globe, MonitorSmartphone, type LucideIcon,
 } from "lucide-react";
 
@@ -17,6 +17,7 @@ const ICONS: Record<string, LucideIcon> = {
   search: Search,
   plugins: Blocks,
   settings: Settings,
+  phone: Smartphone,
   agent: Sparkles,
   bot: Bot,
   chat: MessageSquare,

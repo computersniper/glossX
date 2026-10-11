@@ -20,7 +20,7 @@ import { evictPdfDoc } from "./pdf/docCache";
 
 // ---- workbench layout + editor tabs ----
 export type UiMode = "gloss" | "glossx"; // classic reader | agent workbench
-export type Activity = "library" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "settings";
+export type Activity = "library" | "workspace" | "scm" | "projects" | "search" | "capabilities" | "mobile" | "settings";
 export type AiMode = "agent" | "threads" | "tools" | "browser";
 export type BottomTab = "trace" | "runs" | "tasks" | "terminal";
 export type PaletteMode = "commands" | "papers" | "import" | "ask" | "runs" | "chats" | "projects" | "newProject" | "theme" | "branches" | "newBranch" | "commit" | "tryBranch" | "browserUrl";

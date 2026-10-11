@@ -190,9 +190,7 @@ export function CommandPalette() {
       { id: "prevTab", group: G.view, icon: ArrowLeft, label: L("Previous tab", "上一个标签页"), keys: "Ctrl+Shift+Tab", run: () => st.cycleTab(-1) },
       { id: "settings", group: G.prefs, icon: Settings, label: L("Open settings", "打开设置"), run: () => { st.setLayout({ activity: "settings", sideOpen: true }); useStore.setState({ settingsFocus: null }); } },
       { id: "mobile", group: G.prefs, icon: Smartphone, label: L("Mobile access: use from iPhone, iPad or Android (QR code)", "手机 / 平板访问：扫码连接这台电脑"), run: () => {
-        st.setLayout({ activity: "settings", sideOpen: true });
-        useStore.setState({ settingsFocus: null });
-        window.setTimeout(() => document.querySelector(".mobile-access")?.scrollIntoView({ block: "start", behavior: "smooth" }), 150);
+        st.setLayout({ activity: "mobile", sideOpen: true });
       } },
       { id: "theme", group: G.prefs, icon: Palette, label: L("Switch theme…", "切换主题…"), run: toMode("theme"), keepOpen: true },
       { id: "lang", group: G.prefs, icon: Languages, label: zh ? "Switch interface language to English" : "切换界面语言为中文", run: () => st.setUiLang(zh ? "en" : "zh") },
