@@ -39,11 +39,15 @@ export const useZoom = create<ZoomState>((set) => ({
 export const zoomIn = () => useZoom.getState().setApp(useZoom.getState().app + APP_STEP);
 export const zoomOut = () => useZoom.getState().setApp(useZoom.getState().app - APP_STEP);
 export const zoomReset = () => useZoom.getState().setApp(1);
+/** The window zoom: client sizes (innerHeight, clientX…) divided by it give CSS pixels. */
+export const appZoom = () => useZoom.getState().app || 1;
 export const contentZoomReset = () => useZoom.getState().setContent(1);
 
 function apply({ app, content }: ZoomState) {
   const root = document.documentElement;
   root.style.zoom = app === 1 ? "" : String(app);
+  // vh / vw inside the zoomed root grow with it; CSS divides them by this
+  root.style.setProperty("--gx-app-zoom", String(app));
   root.style.setProperty("--gx-content-zoom", String(content));
 }
 
