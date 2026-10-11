@@ -6,9 +6,10 @@ import asyncio
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
+from .. import office
 from ..agent import connections as conn_mod
 from ..agent import projects
 from ..harness import extensions, home, vcs, workspace
@@ -18,6 +19,8 @@ from ..library import store
 
 router = APIRouter(prefix="/api/harness", tags=["harness"])
 workspace_router = APIRouter(prefix="/api/workspace", tags=["workspace"])
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+               ".webp": "image/webp", ".bmp": "image/bmp"}
 
 
 # -- helpers ----------------------------------------------------------------------------
@@ -260,12 +263,49 @@ async def read_workspace_file(project_id: str, path: str):
         target = workspace.resolve(root, path)
         if not target.is_file():
             raise HTTPException(404, "file not found")
+        stat = target.stat()
+        rel = workspace.relpath(root, target)
+        meta = {"path": rel, "size": stat.st_size, "mtime": stat.st_mtime}
+        suffix = target.suffix.lower()
+        if suffix in IMAGE_TYPES:
+            return {**meta, "content": "", "readonly": True, "viewer": "image"}
+        if office.is_document(target):
+            try:
+                doc = await asyncio.to_thread(office.read, target)
+            except office.DocumentError as error:
+                raise HTTPException(422, f"could not read {target.name}: {error}") from error
+            return {**meta, "content": doc["markdown"], "readonly": True, "viewer": doc.get("viewer") or "document",
+                    "document": {k: doc.get(k) for k in ("format", "title", "blocks", "notice")}}
         content = workspace.read_text(target)
     except workspace.WorkspaceError as error:
         raise _ws_error(error) from error
-    stat = target.stat()
-    return {"path": workspace.relpath(root, target), "content": content, "size": stat.st_size,
-            "mtime": stat.st_mtime}
+    return {**meta, "content": content}
+
+
+@workspace_router.get("/{project_id}/raw")
+async def raw_workspace_file(project_id: str, path: str, member: str | None = None):
+    """Bytes of a PDF or image in the workspace (or one embedded in a GoodNotes notebook)."""
+    root = _root(project_id)
+    try:
+        target = workspace.resolve(root, path)
+    except workspace.WorkspaceError as error:
+        raise _ws_error(error) from error
+    if not target.is_file():
+        raise HTTPException(404, "file not found")
+    suffix = target.suffix.lower()
+    headers = {"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"}
+    if member is not None:
+        if suffix != ".goodnotes":
+            raise HTTPException(400, "only GoodNotes notebooks have embedded files")
+        try:
+            data, mime = await asyncio.to_thread(lambda: office.goodnotes_member(target.read_bytes(), member))
+        except office.DocumentError as error:
+            raise HTTPException(404, str(error)) from error
+        return Response(data, media_type=mime, headers=headers)
+    mime = IMAGE_TYPES.get(suffix) or ("application/pdf" if suffix == ".pdf" else None)
+    if not mime:
+        raise HTTPException(415, "only PDFs and images are served raw")
+    return FileResponse(target, media_type=mime, headers=headers)
 
 
 @workspace_router.put("/{project_id}/file")

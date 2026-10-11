@@ -15,6 +15,7 @@ from typing import Any
 
 from ..agent import builtin as kernel_builtins
 from ..agent import projects
+from .. import office
 from ..agent.capabilities import Capability
 from ..library import store
 from ..pdf import structure
@@ -81,7 +82,7 @@ async def _fs_list(args: dict[str, Any], ctx: HarnessContext) -> Any:
 async def _fs_read(args: dict[str, Any], ctx: HarnessContext) -> Any:
     root = _root(ctx)
     target = workspace.resolve(root, _s(args, "path"))
-    text = workspace.read_text(target)
+    text = await asyncio.to_thread(workspace.read_document, target)
     lines = text.splitlines(keepends=True)
     offset = _clamp(args.get("offset"), 1, 1, max(1, len(lines)))
     limit = _clamp(args.get("limit"), 2000, 1, 5000)
@@ -162,14 +163,23 @@ async def _fs_grep(args: dict[str, Any], ctx: HarnessContext) -> Any:
             rel = workspace.relpath(root, path)
             if file_glob and not (fnmatch.fnmatch(path.name, file_glob) or fnmatch.fnmatch(rel, file_glob)):
                 continue
-            try:
-                if path.stat().st_size > MAX_GREP_FILE:
+            if office.is_document(path):
+                # converted documents are cached; old binary formats need LibreOffice, too slow here
+                try:
+                    if path.suffix.lower() in office.LEGACY or path.stat().st_size > 20 * 1024 * 1024:
+                        continue
+                    data = office.read(path)["markdown"].encode()
+                except (office.DocumentError, OSError):
                     continue
-                data = path.read_bytes()
-            except OSError:
-                continue
-            if b"\0" in data[:8192]:
-                continue
+            else:
+                try:
+                    if path.stat().st_size > MAX_GREP_FILE:
+                        continue
+                    data = path.read_bytes()
+                except OSError:
+                    continue
+                if b"\0" in data[:8192]:
+                    continue
             scanned += 1
             for no, line in enumerate(data.decode("utf-8", errors="replace").splitlines(), 1):
                 if regex.search(line):
@@ -658,7 +668,7 @@ def harness_capabilities() -> list[Capability]:
         _cap("fs_list", "List files and folders in the project workspace.", _fs_list, "read",
              {"path": _p("string", "directory (default '.')"), "depth": _p("integer", "levels (default 2)")},
              [], permissions=["workspace:read"]),
-        _cap("fs_read", "Read a text file in the workspace (optionally a line range).", _fs_read, "read",
+        _cap("fs_read", "Read a workspace file (optionally a line range). Text files as is; Word, PowerPoint, Excel, OpenDocument, PDF and GoodNotes files as Markdown (headings, slides with notes, sheets as tables, pages).", _fs_read, "read",
              {"path": path, "offset": _p("integer", "first line, 1-based"),
               "limit": _p("integer", "number of lines (default 2000)")},
              ["path"], permissions=["workspace:read"], primary_arg="path"),

@@ -1,8 +1,8 @@
 // Side bar: file tree of the active project's workspace + its checkpoints.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ChevronRight, File, FileCode, FileJson, FilePlus, FileText, Folder, FolderCog, FolderOpen, FolderTree, History, Image,
-  NotebookText, RefreshCw, Undo2, type LucideIcon,
+  ChevronRight, File, FileCode, FileJson, FilePlus, FileSpreadsheet, FileText, Folder, FolderCog, FolderOpen, FolderTree, History, Image,
+  NotebookText, Presentation, RefreshCw, Undo2, type LucideIcon,
 } from "lucide-react";
 import { isMissing, workspaceApi, type Checkpoint, type TreeEntry } from "../../api/harness";
 import { useStore } from "../../store";
@@ -72,7 +72,10 @@ function buildTree(entries: TreeEntry[]): Node[] {
 
 function fileIcon(name: string): LucideIcon {
   if (/\.(md|markdown|txt|tex|bib|rst)$/i.test(name)) return FileText;
-  if (/\.(json|ya?ml|toml|csv|tsv)$/i.test(name)) return FileJson;
+  if (/\.(docx?|docm|odt|rtf|goodnotes)$/i.test(name)) return FileText;
+  if (/\.(xlsx?|xlsm|ods|csv|tsv)$/i.test(name)) return FileSpreadsheet;
+  if (/\.(pptx?|pptm|odp)$/i.test(name)) return Presentation;
+  if (/\.(json|ya?ml|toml)$/i.test(name)) return FileJson;
   if (/\.(png|jpe?g|gif|svg|webp|pdf)$/i.test(name)) return Image;
   if (/\.(py|ipynb|js|ts|tsx|jsx|sh|r|jl|c|cpp|rs|go|java|sql|html|css)$/i.test(name)) return FileCode;
   return File;

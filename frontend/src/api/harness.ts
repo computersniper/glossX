@@ -140,7 +140,11 @@ export type HarnessSettings = {
 export type Mention = { kind: AttachmentKind; ref: string; label: string; detail?: string; insert?: string };
 
 export type TreeEntry = { path: string; type: "dir" | "file"; size?: number; mtime?: number };
-export type WorkspaceFile = { path: string; content: string; mtime?: number; truncated?: boolean };
+export type WorkspaceFile = {
+  path: string; content: string; mtime?: number; truncated?: boolean;
+  /** office documents, PDFs and images: a read-only preview */
+  readonly?: boolean; viewer?: "document" | "pdf" | "image"; document?: { format?: string; title?: string; blocks?: any[]; notice?: string };
+};
 export type Checkpoint = {
   id: string;
   path: string;
