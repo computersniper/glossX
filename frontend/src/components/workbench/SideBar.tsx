@@ -6,10 +6,10 @@ import { ScholarPanel } from "../ScholarPanel";
 import { SettingsPanel } from "../SettingsPanel";
 import { ExtensionsPanel } from "../ExtensionsPanel";
 import { CapabilityGroups, ProjectDetail } from "../AgentWorkspace";
-import { BookOpen, BookOpenText, FolderKanban, FolderTree, GitBranch, MessageSquarePlus, MessagesSquare, Plus, Search, SquarePen, Trash2, FileText, X } from "lucide-react";
+import { BookOpen, BookOpenText, ChevronRight, FolderKanban, FolderTree, GitBranch, Layers, MessageSquarePlus, MessagesSquare, Pencil, Plus, Search, SquarePen, Tag, Trash2, FileText, X } from "lucide-react";
 import { agentApi } from "../../api/agent";
 import { HarnessSettings } from "../HarnessSettings";
-import { EmptyState, MenuButton, MenuItem, Segmented } from "../ui";
+import { EmptyState, MenuButton, MenuItem, MenuLabel, MenuSep, Segmented } from "../ui";
 import { useSessions } from "../../sessionStore";
 import { WorkspaceView } from "./WorkspaceView";
 import { ScmHeadActions, ScmView } from "./ScmView";
@@ -37,6 +37,22 @@ function LibraryView() {
   const { importQ, setImportQ, uploadBusy, creatingImport, fileRef, onUpload, onImport, deletePaper } = useLibraryImport();
   const [filter, setFilter] = useState("");
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const projects = useStore((s) => s.projects);
+  const [direction, setDirection] = useState<string | null>(null);
+  useEffect(() => { if (!projects.length) void useStore.getState().refreshProjects(); }, []);
+  // a paper's directions: those of the (non-hub) projects that hold it
+  const directions = useMemo(() => {
+    const byPaper = new Map<string, Set<string>>();
+    for (const project of projects) {
+      if (!project.category || project.hub_category) continue;
+      for (const id of project.paper_ids || []) {
+        if (!byPaper.has(id)) byPaper.set(id, new Set());
+        byPaper.get(id)!.add(project.category);
+      }
+    }
+    return byPaper;
+  }, [projects]);
+  const allDirections = useMemo(() => [...new Set([...directions.values()].flatMap((d) => [...d]))].sort((a, b) => a.localeCompare(b)), [directions]);
   const T = zh
     ? { filter: "筛选论文…", ph: "arXiv 编号 / DOI / 链接", imp: "导入", upload: "上传 PDF", empty: "还没有论文 — 导入 arXiv 编号或上传 PDF。", none: "没有匹配的论文", open: "打开", ask: "问智能体", ws: "打开工作区", thread: "就这篇论文新建对话", del: "删除", confirm: "删除这篇论文？", noWs: "当前后端还没有论文工作区。" }
     : { filter: "Filter papers…", ph: "arXiv id / DOI / URL", imp: "Import", upload: "Upload PDF", empty: "No papers yet — import an arXiv id or upload a PDF.", none: "No matching papers", open: "Open", ask: "Ask agent about it", ws: "Open workspace", thread: "New thread about this paper", del: "Delete", confirm: "Delete this paper?", noWs: "This backend has no paper workspaces yet." };
@@ -53,10 +69,13 @@ function LibraryView() {
   }, [menu]);
 
   const q = filter.trim().toLowerCase();
+  const inDirection = direction === null ? papers
+    : direction === "" ? papers.filter((p) => !directions.get(p.id)?.size)
+    : papers.filter((p) => directions.get(p.id)?.has(direction));
   const shown = q
-    ? papers.filter((p) =>
+    ? inDirection.filter((p) =>
         [p.title, (p.authors || []).join(" "), p.year, p.arxiv_id, p.source].join(" ").toLowerCase().includes(q))
-    : papers;
+    : inDirection;
   const openIds = new Set(openTabs.filter((t) => t.kind === "paper").map((t) => t.id));
 
   async function act(kind: "open" | "ask" | "ws" | "thread" | "del", id: string) {
@@ -105,6 +124,13 @@ function LibraryView() {
         <input placeholder={T.filter} value={filter} onChange={(e) => setFilter(e.target.value)} />
         {papers.length > 0 && <span>{shown.length}</span>}
       </label>
+      {allDirections.length > 0 && (
+        <div className="gx-dir-chips" role="tablist" aria-label={zh ? "研究方向" : "Research directions"}>
+          <button type="button" className={direction === null ? "on" : ""} onClick={() => setDirection(null)}>{zh ? "全部" : "All"}</button>
+          {allDirections.map((d) => <button key={d} type="button" className={direction === d ? "on" : ""} title={d} onClick={() => setDirection(direction === d ? null : d)}>{d}</button>)}
+          <button type="button" className={direction === "" ? "on" : ""} onClick={() => setDirection(direction === "" ? null : "")}>{zh ? "未分类" : "Unfiled"}</button>
+        </div>
+      )}
       <div className="wb-list">
         {papers.length === 0 && <EmptyState icon={<BookOpenText size={20} />} title={zh ? "论文库是空的" : "Your library is empty"} hint={T.empty} />}
         {papers.length > 0 && shown.length === 0 && <div className="muted wb-empty">{T.none}</div>}
@@ -264,9 +290,36 @@ function ProjectsView() {
     return n;
   }, [sessions]);
   const shown = q ? projects.filter((p) => p.name.toLowerCase().includes(q)) : projects;
-  const research = shown.filter((p) => p.kind !== "paper");
-  const paper = shown.filter((p) => p.kind === "paper");
+  const categories = useMemo(() => [...new Set(projects.flatMap((p) => [p.category || "", p.hub_category || ""]).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [projects]);
+  const unfiled = shown.filter((p) => !p.category && !p.hub_category);
+  const research = unfiled.filter((p) => p.kind !== "paper");
+  const paper = unfiled.filter((p) => p.kind === "paper");
   const active = projects.find((p) => p.id === projectId);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("glossx.categories.collapsed") || "[]")); } catch { return new Set(); }
+  });
+  const toggle = (c: string) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    if (next.has(c)) next.delete(c); else next.add(c);
+    try { localStorage.setItem("glossx.categories.collapsed", JSON.stringify([...next])); } catch { /* private mode */ }
+    return next;
+  });
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const file = async (id: string, category: string) => {
+    try { await agentApi.patchProject(id, { category }); await refreshProjects(); } catch (e: any) { notify(String(e?.message || e)); }
+  };
+  const openHub = async (category: string) => {
+    try {
+      const hub = await agentApi.categoryHub(category);
+      await refreshProjects();
+      setProjectId(hub.id);
+    } catch (e: any) { notify(String(e?.message || e)); }
+  };
+  const rename = async (from: string, to: string) => {
+    setRenaming(null);
+    if (!to.trim() || to.trim() === from) return;
+    try { await agentApi.renameCategory(from, to.trim()); await refreshProjects(); } catch (e: any) { notify(String(e?.message || e)); }
+  };
 
   const row = (p: (typeof projects)[number]) => {
     const n = (p.paper_ids || []).length;
@@ -276,14 +329,46 @@ function ProjectsView() {
       p.kind === "paper" ? "" : zh ? `${n} 篇论文` : `${n} paper${n === 1 ? "" : "s"}`,
       t ? (zh ? `${t} 个对话` : `${t} thread${t === 1 ? "" : "s"}`) : "",
     ].filter(Boolean).join(" · ");
-    const I = p.kind === "paper" ? BookOpen : FolderKanban;
+    const I = p.hub_category ? Layers : p.kind === "paper" ? BookOpen : FolderKanban;
     return (
-      <div key={p.id} className={`wb-item gx-proj-row${projectId === p.id ? " active" : ""}`} onClick={() => setProjectId(p.id)} title={p.description || p.name}>
+      <div key={p.id} className={`wb-item gx-proj-row${projectId === p.id ? " active" : ""}${p.hub_category ? " hub" : ""}`} onClick={() => setProjectId(p.id)} title={p.description || p.name}>
         <I size={14} strokeWidth={1.7} className="gx-proj-icon" />
         <div className="gx-proj-text">
-          <div className="gx-proj-name">{p.name}</div>
+          <div className="gx-proj-name">{p.hub_category ? (zh ? "整个方向" : "Whole direction") : p.name}</div>
           {(meta || branch) && <div className="wb-item-meta">{meta}{branch && <span className="gx-branch"><GitBranch size={10} /><span>{branch}</span></span>}</div>}
         </div>
+        {!p.hub_category && (
+          <span className="gx-proj-tag" onClick={(e) => e.stopPropagation()}>
+            <CategoryMenu zh={zh} categories={categories} value={p.category || ""} onPick={(c) => void file(p.id, c)} />
+          </span>
+        )}
+      </div>
+    );
+  };
+  const group = (c: string) => {
+    const members = shown.filter((p) => p.category === c || p.hub_category === c);
+    if (q && !members.length) return null;
+    const hub = members.find((p) => p.hub_category === c);
+    const rest = members.filter((p) => p !== hub).sort((a, b) => Number(a.kind === "paper") - Number(b.kind === "paper"));
+    const papers = new Set(members.flatMap((p) => p.paper_ids || [])).size;
+    const open = !collapsed.has(c) || !!q;
+    return (
+      <div key={`cat:${c}`} className="gx-cat">
+        <div className={`gx-cat-head${open ? " open" : ""}`} onClick={() => toggle(c)}>
+          <ChevronRight size={12} className="gx-cat-chev" />
+          {renaming === c ? (
+            <input className="wb-input gx-cat-rename" autoFocus defaultValue={c} onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => { if (e.key === "Enter") void rename(c, e.currentTarget.value); if (e.key === "Escape") setRenaming(null); }}
+              onBlur={(e) => void rename(c, e.currentTarget.value)} />
+          ) : <span className="gx-cat-name" title={c}>{c}</span>}
+          <i>{zh ? `${papers} 篇` : `${papers}`}</i>
+          <span className="spacer" />
+          <button type="button" className="gx-icon-btn" title={zh ? "重命名方向" : "Rename direction"} onClick={(e) => { e.stopPropagation(); setRenaming(c); }}><Pencil size={11} /></button>
+          <button type="button" className="gx-btn ghost sm gx-cat-hub" title={zh ? "把这个方向的全部论文放进一个研究项目，一起读、一起问" : "Gather every paper of this direction in one research project"} onClick={(e) => { e.stopPropagation(); void openHub(c); }}>
+            <Layers size={11} /> {zh ? "合在一起看" : "View together"}
+          </button>
+        </div>
+        {open && <>{hub && row(hub)}{rest.map(row)}</>}
       </div>
     );
   };
@@ -303,6 +388,8 @@ function ProjectsView() {
       )}
       <div className="wb-list wb-list-compact gx-proj-list">
         {projects.length === 0 && <EmptyState icon={<FolderKanban size={20} />} title={zh ? "还没有项目" : "No projects yet"} hint={T.empty} />}
+        {categories.map(group)}
+        {categories.length > 0 && unfiled.length > 0 && <div className="gx-menu-heading gx-cat-unfiled">{zh ? "未分类" : "Unfiled"}</div>}
         {research.length > 0 && <div className="gx-menu-heading">{T.research}<i>{research.length}</i></div>}
         {research.map(row)}
         {paper.length > 0 && <div className="gx-menu-heading">{T.paper}<i>{paper.length}</i></div>}
@@ -320,7 +407,8 @@ function ProjectsView() {
       {active && (
         <div className="wb-project agent-panel">
           <div className="gx-proj-detail-head">
-            <span className={`gx-tag${active.kind === "paper" ? " warn" : ""}`}>{active.kind === "paper" ? (zh ? "论文工作区" : "Paper workspace") : zh ? "研究项目" : "Research project"}</span>
+            <span className={`gx-tag${active.kind === "paper" ? " warn" : ""}`}>{active.hub_category ? (zh ? `方向：${active.hub_category}` : `Direction: ${active.hub_category}`) : active.kind === "paper" ? (zh ? "论文工作区" : "Paper workspace") : zh ? "研究项目" : "Research project"}</span>
+            {!active.hub_category && <CategoryMenu zh={zh} categories={categories} value={active.category || ""} onPick={(c) => void file(active.id, c)} labelled />}
             <span className="spacer" />
             <button type="button" className="gx-btn ghost sm" onClick={() => setLayout({ activity: "workspace", sideOpen: true })}><FolderTree size={12} /> {zh ? "文件" : "Files"}</button>
             <button type="button" className="gx-btn sm" onClick={() => useSessions.getState().newThread({ projectId: active.id })}><SquarePen size={12} /> {zh ? "新对话" : "New thread"}</button>
@@ -331,6 +419,39 @@ function ProjectsView() {
         </div>
       )}
     </div>
+  );
+}
+
+/** File a project under a research direction: pick one, type a new one, or unfile. */
+function CategoryMenu({ zh, categories, value, onPick, labelled }: { zh: boolean; categories: string[]; value: string; onPick: (c: string) => void; labelled?: boolean }) {
+  return (
+    <MenuButton
+      className={labelled ? "gx-btn ghost sm" : "gx-icon-btn"}
+      chevron={false}
+      placement="bottom-end"
+      width={220}
+      title={zh ? "归入研究方向" : "File under a research direction"}
+      label={<><Tag size={labelled ? 12 : 11} />{labelled && <span>{value || (zh ? "分类" : "Category")}</span>}</>}
+    >
+      {(close) => (
+        <>
+          <MenuLabel>{zh ? "研究方向" : "Research direction"}</MenuLabel>
+          {categories.map((c) => <MenuItem key={c} label={c} selected={c === value} onSelect={() => { close(); if (c !== value) onPick(c); }} />)}
+          <div className="gx-cat-new">
+            <input
+              className="wb-input"
+              placeholder={zh ? "新方向，回车确定" : "New direction, press Enter"}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                const v = e.currentTarget.value.trim();
+                if (e.key === "Enter" && v) { close(); onPick(v); }
+              }}
+            />
+          </div>
+          {value && <><MenuSep /><MenuItem icon={<X size={13} />} label={zh ? "移出分类" : "Remove from direction"} onSelect={() => { close(); onPick(""); }} /></>}
+        </>
+      )}
+    </MenuButton>
   );
 }
 

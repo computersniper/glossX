@@ -7,7 +7,7 @@ export type SessionMode = "ask" | "agent" | "auto" | "plan";
 export type SessionStatus = "idle" | "running" | "awaiting_approval" | "awaiting_input";
 export type ToolStatus = "pending" | "awaiting_approval" | "running" | "done" | "error" | "denied";
 export type AttachmentKind = "paper" | "span" | "file" | "run" | "selection";
-export type Attachment = { kind: AttachmentKind; ref: string; label?: string; text?: string; ok?: boolean; error?: string };
+export type Attachment = { kind: AttachmentKind; ref: string; label?: string; text?: string; ok?: boolean; error?: string; /** already earlier in the live conversation, sent as a one-line reference */ repeat?: boolean };
 
 export type SessionContext = { tokens_est: number; limit: number; compactions: number; percent?: number; system_tokens_est?: number; compacted_through?: string | null };
 export type SessionUsage = { input_tokens?: number; input_tokens_est?: number; cached_input_tokens?: number; cache_write_tokens?: number; output_tokens?: number; output_tokens_est?: number; reasoning_tokens?: number; llm_calls: number; cache_hit_rate?: number; exact?: boolean; duration_seconds?: number; last_call?: { input?: number; cached?: number; output?: number; hit_rate?: number; exact?: boolean } };

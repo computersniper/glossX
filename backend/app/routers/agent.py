@@ -212,6 +212,46 @@ async def create_project(body: ProjectCreateBody):
     return {**projects.workspace_detail(project), "runs": []}
 
 
+class ProjectPatchBody(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+    category: str | None = Field(default=None, max_length=200)
+
+
+class CategoryBody(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    new_name: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/categories/hub")
+async def category_hub(body: CategoryBody, request: Request):
+    """The research project gathering every paper of one direction."""
+    try:
+        hub = await asyncio.to_thread(projects.category_hub, body.name)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return _project_detail(hub["id"], request)
+
+
+@router.post("/categories/rename")
+async def rename_category(body: CategoryBody):
+    try:
+        changed = await asyncio.to_thread(projects.rename_category, body.name, body.new_name or "")
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return {"changed": changed}
+
+
+@router.patch("/projects/{project_id}")
+async def patch_project(project_id: str, body: ProjectPatchBody, request: Request):
+    try:
+        await asyncio.to_thread(projects.update, project_id, name=body.name, category=body.category)
+    except projects.ProjectNotFoundError as error:
+        raise HTTPException(404, "project not found") from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return _project_detail(project_id, request)
+
+
 @router.get("/projects/{project_id}")
 async def get_project(project_id: str, request: Request):
     return _project_detail(project_id, request)

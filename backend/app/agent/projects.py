@@ -4,6 +4,8 @@ Each project is one JSON file::
 
     {id, name, description, created_at, kind: "paper" | "research",
      paper_ids: [...], source_paper_id: <the paper a "paper" project was made for>,
+     category: <research direction, "" when unfiled>, hub_category: <set on the
+     research project that gathers every paper filed under that direction>,
      memory: [{id, text, source_run, ts, span_ids}], run_ids: [...]}
 
 Every project has a workspace directory ``<DATA_DIR>/workspaces/<id>/``. A
@@ -76,6 +78,7 @@ def _read(project_id: str) -> dict[str, Any]:
     if not isinstance(data.get("paper_ids"), list):
         data["paper_ids"] = []
     data.setdefault("source_paper_id", None)
+    data.setdefault("category", "")
     return data
 
 
@@ -182,6 +185,8 @@ def link_paper(project_id: str, paper_id: str) -> dict[str, Any]:
                 raise ValueError(f"a project holds at most {MAX_PAPERS} papers")
             project["paper_ids"].append(paper_id)
             _write(project)
+            if project.get("category") and not project.get("hub_category"):
+                _sync_hub(project["category"], _all())
     return workspace_detail(project)
 
 
@@ -327,6 +332,106 @@ def mirror_memory(project: dict[str, Any]) -> None:
     except Exception:
         logger.warning("could not mirror the memory of project %s", project.get("id"),
                        exc_info=True)
+
+
+# -- categories (research directions) ---------------------------------------------
+MAX_CATEGORY = 60
+
+
+def _category(value: Any) -> str:
+    return " ".join(str(value or "").split())[:MAX_CATEGORY]
+
+
+def _all() -> list[dict[str, Any]]:
+    out = []
+    for path in _dir().glob("*.json"):
+        try:
+            out.append(_read(path.stem))
+        except ProjectNotFoundError:
+            continue
+    return out
+
+
+def _sync_hub(category: str, everyone: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Add the papers of every project filed under ``category`` to its hub."""
+    hub = next((p for p in everyone if p.get("hub_category") == category), None)
+    if hub is None:
+        return None
+    papers = list(hub["paper_ids"])
+    for project in everyone:
+        if project is not hub and project.get("category") == category:
+            papers.extend(project["paper_ids"])
+    merged = list(dict.fromkeys(papers))[:MAX_PAPERS]
+    if merged != hub["paper_ids"]:
+        hub["paper_ids"] = merged
+        _write(hub)
+    return hub
+
+
+def update(project_id: str, *, name: Any = None, category: Any = None) -> dict[str, Any]:
+    """Rename a project or file it under a research direction ("" unfiles it)."""
+    with _lock:
+        project = _read(project_id)
+        if name is not None:
+            clean = " ".join(str(name).split())
+            if not clean:
+                raise ValueError("project name must not be empty")
+            project["name"] = clean[:120]
+        if category is not None:
+            if project.get("hub_category"):
+                raise ValueError("a direction's own project cannot be moved to another direction")
+            project["category"] = _category(category)
+        _write(project)
+        if project.get("category"):
+            _sync_hub(project["category"], _all())
+    return workspace_detail(project)
+
+
+def rename_category(old: str, new: str) -> int:
+    """Rename a direction everywhere (merging into ``new`` when it exists)."""
+    old, new = _category(old), _category(new)
+    if not old or not new:
+        raise ValueError("category names must not be empty")
+    changed = 0
+    with _lock:
+        everyone = _all()
+        has_hub = any(p.get("hub_category") == new for p in everyone)
+        for project in everyone:
+            dirty = False
+            if project.get("category") == old:
+                project["category"] = new
+                dirty = True
+            if project.get("hub_category") == old:
+                if has_hub:  # the target direction already has one; keep this as a plain project
+                    project.pop("hub_category", None)
+                else:
+                    project["hub_category"] = new
+                    if project["name"] == old:
+                        project["name"] = new
+                dirty = True
+            if dirty:
+                _write(project)
+                changed += 1
+        _sync_hub(new, everyone)
+    return changed
+
+
+def category_hub(category: str) -> dict[str, Any]:
+    """The research project of one direction, holding all of its papers; created
+    on first use and kept in sync as projects are filed under the direction."""
+    category = _category(category)
+    if not category:
+        raise ValueError("category must not be empty")
+    with _lock:
+        everyone = _all()
+        if not any(p.get("hub_category") == category for p in everyone):
+            hub = create(category, f"Every paper filed under the research direction “{category}”.")
+            hub["category"] = category
+            hub["hub_category"] = category
+            _write(hub)
+            everyone.append(hub)
+        hub = _sync_hub(category, everyone)
+    return workspace_detail(hub)
 
 
 def get(project_id: str) -> dict[str, Any]:

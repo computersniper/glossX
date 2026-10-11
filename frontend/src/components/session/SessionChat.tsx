@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, Archive, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleDot, Copy, FileCode, FileText, FlaskConical,
   GitBranch, GitBranchPlus, GitCommitHorizontal, GitFork, Inbox, Layers, ListChecks, MessageCircleQuestion, MessagesSquare, NotebookPen, Pencil, Quote, Undo2,
-  RefreshCw, Scale, ScrollText, Shrink, SquarePen, Telescope, TextSelect, Trash2, WifiOff, X, type LucideIcon,
+  MessageSquareQuote, RefreshCw, Scale, ScrollText, Shrink, SquarePen, Telescope, TextSelect, Trash2, WifiOff, X, type LucideIcon,
 } from "lucide-react";
 import type { ApprovalRequest, InputRequest, SessionMessage, SpanRef, Todo, ToolCallMessage } from "../../api/harness";
 import { useStore } from "../../store";
@@ -105,8 +105,8 @@ function UserMessage({ m, zh, canFork, prevId }: { m: Extract<SessionMessage, { 
               <button
                 key={`${a.kind}:${a.ref}`}
                 type="button"
-                className={`gx-chip${a.ok === false ? " missing" : ""}`}
-                title={a.ok === false ? `${zh ? "未找到，未附加" : "Not found — not attached"}: ${a.ref}` : label(a)}
+                className={`gx-chip${a.ok === false ? " missing" : ""}${a.repeat ? " repeat" : ""}`}
+                title={a.ok === false ? `${zh ? "未找到，未附加" : "Not found — not attached"}: ${a.ref}` : a.repeat ? `${label(a)} · ${zh ? "上文已有相同内容，未重复加入上下文" : "Already earlier in this thread; not added to the context again"}` : label(a)}
                 onClick={() => {
                   if (a.ok === false) return;
                   if (a.kind === "paper") void openPaper(a.ref).catch(() => {});
@@ -561,6 +561,7 @@ function SessionBar({ zh }: { zh: boolean }) {
         {recentOpen && <RecentMenu zh={zh} close={() => setRecentOpen(false)} />}
       </Popover>
       <span className="spacer" />
+      <SideChatToggle zh={zh} />
       <button
         type="button"
         className="gx-icon-btn gx-bell-btn"
@@ -789,5 +790,20 @@ export function SessionChat() {
         <Composer disabled={available === false} />
       </div>
     </div>
+  );
+}
+
+function SideChatToggle({ zh }: { zh: boolean }) {
+  const open = useStore((s) => s.sideChatOpen);
+  return (
+    <button
+      type="button"
+      className={`gx-icon-btn${open ? " on" : ""}`}
+      aria-pressed={open}
+      title={zh ? "辅助对话：随手问，不进入主对话的上下文" : "Side chat: quick questions that stay out of this thread's context"}
+      onClick={() => (open ? useStore.getState().closeSideChat() : useStore.getState().openSideChat())}
+    >
+      <MessageSquareQuote size={15} />
+    </button>
   );
 }

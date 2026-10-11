@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useStore, type AiMode } from "../../store";
 import { SessionChat } from "../session/SessionChat";
-import { ChatPanel } from "../ChatPanel";
+import { SideChat } from "../session/SideChat";
 import { SidePanel } from "../SidePanel";
 import { FileText } from "lucide-react";
 import { EmptyState } from "../ui";
@@ -14,7 +14,6 @@ import { ThreadsHeadActions, ThreadsView } from "./ThreadsView";
 const MODES: { id: AiMode; icon: string; en: string; zh: string }[] = [
   { id: "agent", icon: "agent", en: "Agent", zh: "智能体" },
   { id: "threads", icon: "threads", en: "Threads", zh: "对话列表" },
-  { id: "chat", icon: "chat", en: "Paper chat", zh: "论文对话" },
   { id: "tools", icon: "tools", en: "Tools", zh: "论文工具" },
   { id: "browser", icon: "browser", en: "Browser", zh: "浏览器" },
 ];
@@ -25,14 +24,20 @@ function NeedsPaper() {
     <EmptyState
       icon={<FileText size={20} />}
       title={zh ? "先打开一篇论文" : "Open a paper first"}
-      hint={zh ? "论文对话与论文工具针对当前打开的论文工作。" : "Paper chat and the paper tools work on the paper in the active tab."}
+      hint={zh ? "论文工具针对当前打开的论文工作。" : "The paper tools work on the paper in the active tab."}
     />
   );
 }
 
-function ChatSlot() {
-  const current = useStore((s) => s.current);
-  return current ? <ChatPanel /> : <NeedsPaper />;
+/** The agent thread, with its side chat docked below when open. */
+function AgentSlot() {
+  const open = useStore((s) => s.sideChatOpen);
+  return (
+    <div className={`wb-ai-agent${open ? " with-side" : ""}`}>
+      <div className="wb-ai-main"><SessionChat /></div>
+      {open && <SideChat />}
+    </div>
+  );
 }
 
 function ToolsSlot() {
@@ -62,9 +67,8 @@ function BrowserSlot() {
 /** Default slot contents. The pane itself is only a container, so any slot can
  *  be swapped (e.g. a session-based agent chat) without touching the layout. */
 export const DEFAULT_AI_SLOTS: Record<AiMode, () => ReactNode> = {
-  agent: () => <SessionChat />,
+  agent: () => <AgentSlot />,
   threads: () => <ThreadsSlot />,
-  chat: () => <ChatSlot />,
   tools: () => <ToolsSlot />,
   browser: () => <BrowserSlot />,
 };
@@ -98,7 +102,7 @@ export function AiPane({ slots = DEFAULT_AI_SLOTS, onClose }: { slots?: Record<A
             </button>
           ))}
         </div>
-        <span className="wb-ai-context" title={current?.title}>{mode === "chat" || mode === "tools" ? current?.title || "" : ""}</span>
+        <span className="wb-ai-context" title={current?.title}>{mode === "tools" ? current?.title || "" : ""}</span>
         {onClose && (
           <button className="wb-icon-btn" title={zh ? "收起 AI 面板 (Ctrl+L)" : "Hide AI pane (Ctrl+L)"} onClick={onClose}>
             <Icon name="close" size={14} />
