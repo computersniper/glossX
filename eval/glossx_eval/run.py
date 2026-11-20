@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from dataclasses import asdict
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from . import metrics
-from .systems import CodexSystem, GlossXSystem, Output, PiSystem, System
+from .systems import OUTPUT_PROTOCOL, CodexSystem, GlossXSystem, Output, PiSystem, System
 from .tasks import Task, load_tasks
 
 # rough tokens per agent run, by task kind (pilot runs should replace these)
@@ -26,19 +27,42 @@ TOKENS_PER_RUN = {"qa": 40_000, "claim": 25_000, "review": 80_000, "tutor": 30_0
                   "repro": 200_000, "route": 5_000}
 
 
+def error_kind(error: str | None) -> str | None:
+    """Operational diagnostics, kept separate from scientific correctness."""
+    if not error:
+        return None
+    for code, kind in ((429, "rate_limit"), (402, "payment"), (401, "authentication"), (403, "permission")):
+        if re.search(rf"\b{code}\b", error):
+            return kind
+    if "timeout" in error.lower():
+        return "timeout"
+    return "execution"
+
+
 def score(task: Task, out: Output, paper_text) -> dict[str, Any]:
     """Per-run scores for the task's kind; citation grounding for every kind."""
-    s: dict[str, Any] = {}
+    execution_ok = not out.error
+    s: dict[str, Any] = {"execution_ok": execution_ok, "error_kind": error_kind(out.error)}
+    if "format_ok" in out.raw:
+        s["format_ok"] = out.raw["format_ok"]
     gold = task.gold
     if task.kind == "qa" and gold.get("answers"):
-        s["f1"] = metrics.best_f1(out.answer, gold["answers"])
-        s["em"] = metrics.exact_match(out.answer, gold["answers"])
+        s["f1"] = metrics.best_f1(out.answer, gold["answers"]) if execution_ok else 0.0
+        s["em"] = metrics.exact_match(out.answer, gold["answers"]) if execution_ok else 0.0
     if task.kind == "qa" and "correct" in gold:  # judged suites (PaperArena) fill this later
         s["judge_pending"] = True
     if task.kind == "claim":
-        s["pred_label"] = metrics.parse_verdict(out.answer)
+        conflict = out.raw.get("verdict_conflict") or out.raw.get("verdict_error")
+        if conflict:
+            label = None
+        elif "format_ok" in out.raw:
+            label = out.verdict
+        else:  # Legacy/direct Output construction still uses conservative declarations.
+            labels = metrics.verdict_candidates(out.answer)
+            label = out.verdict or (next(iter(labels)) if len(labels) == 1 else None)
+        s["pred_label"] = label if execution_ok else None
         s["gold_label"] = gold.get("label")
-        s["label_correct"] = s["pred_label"] == s["gold_label"]
+        s["label_correct"] = execution_ok and s["pred_label"] == s["gold_label"]
     if task.gold.get("fault"):
         from . import faults
 
@@ -98,7 +122,7 @@ def plan_summary(tasks: list[Task], systems: list[str], repeats: int) -> dict[st
     for t in tasks:
         by_suite[t.suite] = by_suite.get(t.suite, 0) + 1
     return {"tasks": len(tasks), "by_suite": by_suite, "systems": systems, "repeats": repeats,
-            "runs": runs, "tokens_estimate": tokens}
+            "runs": runs, "tokens_estimate": tokens, "protocol": OUTPUT_PROTOCOL}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -139,12 +163,12 @@ def main(argv: list[str] | None = None) -> int:
             for task in tasks:
                 for system in systems:
                     workdir = out_dir / "work" / system.name / f"{task.id}-r{rep}"
-                    stage_papers(task, task_path.parent, workdir)
                     try:
+                        stage_papers(task, task_path.parent, workdir)
                         out = system.run(task, workdir, args.timeout)
                     except Exception as error:  # one broken run must not stop the sweep
                         out = Output(error=f"{type(error).__name__}: {error}")
-                    row = {"task": task.id, "suite": task.suite, "kind": task.kind, "system": system.name,
+                    row = {"protocol": OUTPUT_PROTOCOL, "task": task.id, "suite": task.suite, "kind": task.kind, "system": system.name,
                            "repeat": rep, "output": asdict(out), "scores": score(task, out, paper_text)}
                     fh.write(json.dumps(row, ensure_ascii=False) + "\n")
                     fh.flush()

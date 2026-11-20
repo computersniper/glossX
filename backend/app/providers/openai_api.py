@@ -6,8 +6,13 @@ calls don't get routed through the box's SOCKS/HTTP proxy env vars.
 """
 from __future__ import annotations
 
+import asyncio
+from email.utils import parsedate_to_datetime
 import json
+import math
+import random
 import re
+import time
 from typing import Any, AsyncIterator
 
 import httpx
@@ -16,6 +21,57 @@ from ..config import load_config
 from .base import Message, Provider, normalize_usage, offered_tools, report_progress, report_stream_usage
 
 _FUNCTION_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_MAX_RETRIES = 2
+_MAX_RETRY_DELAY = 30.0
+# Only failures that establish no response/generation are safe to resend.
+# Read/write/protocol failures can occur after the server accepted a request.
+_TRANSPORT_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+
+
+def _retry_delay(error: Exception, retries: int) -> float | None:
+    """Bound retries without retrying auth/payment errors or ignoring Retry-After.
+
+    ``retries`` is the number already taken for this logical provider call;
+    capability negotiation does not replenish this allowance. A long server
+    delay fails immediately rather than retrying sooner than requested.
+    """
+    if retries >= _MAX_RETRIES:
+        return None
+    response = error.response if isinstance(error, httpx.HTTPStatusError) else None
+    if response is not None:
+        if response.status_code not in _RETRYABLE_STATUS:
+            return None
+    elif not isinstance(error, _TRANSPORT_ERRORS):
+        return None
+    delay = 2 ** retries + random.uniform(0, 0.25)
+    value = response.headers.get("retry-after") if response is not None else None
+    if value:
+        try:
+            requested = float(value)
+        except ValueError:
+            try:
+                requested = parsedate_to_datetime(value).timestamp() - time.time()
+            except (TypeError, ValueError, OverflowError):
+                requested = None
+        if requested is not None and math.isfinite(requested) and requested >= 0:
+            delay = max(delay, requested)
+        elif requested is not None and math.isinf(requested) and requested > 0:
+            return None
+    return delay if delay <= _MAX_RETRY_DELAY else None
+
+
+async def _wait_to_retry(error: Exception, retries: int) -> bool:
+    delay = _retry_delay(error, retries)
+    if delay is None:
+        return False
+    reason = (f"HTTP {error.response.status_code}" if isinstance(error, httpx.HTTPStatusError)
+              else type(error).__name__)
+    # Do not echo headers, response bodies, URLs or credentials into progress.
+    report_progress("step", f"OpenAI-compatible request failed ({reason}); retrying "
+                    f"{retries + 1}/{_MAX_RETRIES} in {delay:.1f}s.")
+    await asyncio.sleep(delay)  # cancellation stops the retry, including during backoff
+    return True
 
 
 def _schema(value: Any) -> Any:
@@ -119,9 +175,17 @@ class OpenAIProvider(Provider):
             "stream": False,
         }
         async with httpx.AsyncClient(timeout=c.get("timeout", 300), trust_env=False) as client:
-            r = await client.post(self._url(), headers=self._headers(), json=body)
-            r.raise_for_status()
-            data = r.json()
+            retries = 0
+            while True:
+                try:
+                    r = await client.post(self._url(), headers=self._headers(), json=body)
+                    r.raise_for_status()
+                    data = r.json()
+                    break
+                except (httpx.HTTPStatusError, *_TRANSPORT_ERRORS) as error:
+                    if not await _wait_to_retry(error, retries):
+                        raise
+                    retries += 1
         text = data["choices"][0]["message"].get("content") or ""
         u = data.get("usage", {}) or {}
         usage = normalize_usage(_usage(u), system, messages, text)
@@ -141,55 +205,71 @@ class OpenAIProvider(Provider):
             body["tool_choice"] = "auto"
         calls: dict[int, dict] = {}
         async with httpx.AsyncClient(timeout=c.get("timeout", 300), trust_env=False) as client:
-            for attempt in range(4):
-                async with client.stream(
-                    "POST", self._url(), headers=self._headers(), json=body
-                ) as r:
-                    if attempt < 3 and r.status_code in (400, 422):
-                        error_body = await r.aread()
-                        if b"stream_options" in error_body and "stream_options" in body:
-                            # Older compatible servers can still stream; label
-                            # missing usage as estimated rather than break chat.
-                            body.pop("stream_options", None)
-                            continue
-                        if "tools" in body:
-                            # an endpoint without function calling: the text protocol still works
-                            body.pop("tools", None)
-                            body.pop("tool_choice", None)
-                            continue
-                        if _has_images(body["messages"]):
-                            # a text-only model: the images' text lines still name the files
-                            body["messages"] = self._messages(system, [{k: v for k, v in m.items() if k != "attachments"} for m in messages])
-                            continue
+            retries = 0
+            fallbacks = 0
+            response_started = False
+            while True:
+                try:
+                    async with client.stream(
+                        "POST", self._url(), headers=self._headers(), json=body
+                    ) as r:
+                        if fallbacks < 3 and r.status_code in (400, 422):
+                            error_body = await r.aread()
+                            if b"stream_options" in error_body and "stream_options" in body:
+                                # Older compatible servers can still stream; label
+                                # missing usage as estimated rather than break chat.
+                                body.pop("stream_options", None)
+                                fallbacks += 1
+                                continue
+                            if "tools" in body:
+                                # An endpoint without native tools still has the text protocol.
+                                body.pop("tools", None)
+                                body.pop("tool_choice", None)
+                                fallbacks += 1
+                                continue
+                            if _has_images(body["messages"]):
+                                # A text-only model still receives image file names.
+                                body["messages"] = self._messages(system, [{k: v for k, v in m.items() if k != "attachments"} for m in messages])
+                                fallbacks += 1
+                                continue
                         r.raise_for_status()
-                    r.raise_for_status()
-                    async for line in r.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        payload = line[5:].strip()
-                        if not payload or payload == "[DONE]":
-                            continue
-                        try:
-                            evt = json.loads(payload)
-                        except json.JSONDecodeError:
-                            continue
-                        if evt.get("usage"):
-                            report_stream_usage(_usage(evt["usage"]))
-                        delta = (evt.get("choices") or [{}])[0].get("delta") or {}
-                        thinking = delta.get("reasoning_content") or delta.get("reasoning")
-                        if isinstance(thinking, str) and thinking:
-                            report_progress("thinking", thinking)
-                        for tc in delta.get("tool_calls") or []:
-                            slot = calls.setdefault(int(tc.get("index") or 0), {"name": "", "arguments": ""})
-                            fn = tc.get("function") or {}
-                            if fn.get("name"):
-                                slot["name"] += fn["name"]
-                            if isinstance(fn.get("arguments"), str):
-                                slot["arguments"] += fn["arguments"]
-                        piece = delta.get("content")
-                        if piece:
-                            yield piece
+                        # Once a 2xx response has started, even an empty body,
+                        # keepalive or partial SSE line can conceal a charged
+                        # generation. Do not resend after a transport failure.
+                        response_started = True
+                        async for line in r.aiter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            payload = line[5:].strip()
+                            if not payload:
+                                continue
+                            if payload == "[DONE]":
+                                continue
+                            try:
+                                evt = json.loads(payload)
+                            except json.JSONDecodeError:
+                                continue
+                            if evt.get("usage"):
+                                report_stream_usage(_usage(evt["usage"]))
+                            delta = (evt.get("choices") or [{}])[0].get("delta") or {}
+                            thinking = delta.get("reasoning_content") or delta.get("reasoning")
+                            if isinstance(thinking, str) and thinking:
+                                report_progress("thinking", thinking)
+                            for tc in delta.get("tool_calls") or []:
+                                slot = calls.setdefault(int(tc.get("index") or 0), {"name": "", "arguments": ""})
+                                fn = tc.get("function") or {}
+                                if fn.get("name"):
+                                    slot["name"] += fn["name"]
+                                if isinstance(fn.get("arguments"), str):
+                                    slot["arguments"] += fn["arguments"]
+                            piece = delta.get("content")
+                            if piece:
+                                yield piece
                     tail = _calls_as_text(calls)
                     if tail:
                         yield tail
-                    break
+                    return
+                except (httpx.HTTPStatusError, *_TRANSPORT_ERRORS) as error:
+                    if response_started or not await _wait_to_retry(error, retries):
+                        raise
+                    retries += 1
