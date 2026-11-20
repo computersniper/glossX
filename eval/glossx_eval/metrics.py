@@ -58,6 +58,27 @@ def parse_verdict(answer: str) -> str | None:
     return match.group(1).upper() if match else None
 
 
+_VERDICT_LABEL = r"(?:SUPPORTED|REFUTED|NOT ENOUGH EVIDENCE)"
+_EXPLICIT_VERDICT = re.compile(
+    rf"^\s*(?:\*\*)?verdict(?:\*\*)?\s*[:：]\s*(?:\*\*)?({_VERDICT_LABEL})\b", re.I | re.M
+)
+_LEADING_VERDICT = re.compile(rf"^\s*(?:\*\*)?({_VERDICT_LABEL})\b(?=\*\*|[.\s:]|$)", re.I)
+
+
+def verdict_candidates(answer: str) -> set[str]:
+    """Unambiguous label declarations, never a label mentioned mid-sentence.
+
+    A legacy response may put 'Verdict: REFUTED' outside its final JSON and
+    'Refuted. ...' in the answer field. Only explicit verdict lines and a
+    leading answer label are accepted; conflicts are resolved by the caller.
+    """
+    labels = {match.group(1).upper() for match in _EXPLICIT_VERDICT.finditer(answer or "")}
+    leading = _LEADING_VERDICT.match(answer or "")
+    if leading:
+        labels.add(leading.group(1).upper())
+    return labels
+
+
 def label_scores(pairs: list[tuple[str | None, str]]) -> dict[str, float]:
     """Accuracy and macro-F1 over (predicted, gold) claim labels."""
     if not pairs:

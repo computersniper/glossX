@@ -240,7 +240,7 @@ Rules:
 - The block content must be a single JSON object with "name" and "arguments". No comments, no trailing text inside the block.
 - Put all tool calls at the very end of your message, after any explanation. Calls in the same message run in parallel, so only batch calls that do not depend on each other.
 - Never write <tool_result> blocks yourself. The harness runs your calls and replies with <tool_result name="..." id="..." status="ok|error"> blocks; then you continue.
-- When you have everything you need, reply normally (Markdown) WITHOUT any <tool_call> block; that ends your turn.
+- When you have everything you need, reply in the user's requested format (Markdown by default) WITHOUT any <tool_call> block; that ends your turn.
 - If a tool result says a call was denied, do not retry the same call; adapt or ask the user.
-- Cite paper evidence with the [S:<span_id>] markers that paper tools return.
+- Cite paper evidence with exact [S:<span_id>] markers returned by paper tools; for file-only evidence, use filenames and available source locations in the requested format. Never invent span markers.
 """

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shlex
 import shutil
 import subprocess
@@ -26,18 +25,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from . import metrics
 from .tasks import Task
 
+OUTPUT_PROTOCOL = "answer-fields-v2"
+
 ANSWER_SHAPE = (
-    '{"answer": "<markdown answer>", "citations": [{"claim": "<sentence of the answer>", '
+    '{"answer": "<direct answer only>", "explanation": "<reasoning and limitations>", '
+    '"verdict": <"SUPPORTED", "REFUTED", "NOT ENOUGH EVIDENCE", or null>, '
+    '"citations": [{"claim": "<supported factual statement>", '
     '"paper": "<file name of the paper>", "page": <1-based page>, "quote": "<verbatim text from that page>"}], '
     '"confidence": <0..1>}'
 )
 
 KIND_INSTRUCTIONS = {
     "qa": "Answer the question using only the papers in this directory.",
-    "claim": ("Decide whether the papers in this directory support the claim. The answer must start "
-              "with one line 'Verdict: SUPPORTED', 'Verdict: REFUTED' or 'Verdict: NOT ENOUGH EVIDENCE'."),
+    "claim": ("Decide whether the papers in this directory support the claim. Set the JSON verdict "
+              "field to SUPPORTED, REFUTED or NOT ENOUGH EVIDENCE; keep the answer concise."),
     "review": "Write a short literature review answering the question from the papers in this directory.",
     "tutor": "Teach the topic to a student using the papers, slides or notes in this directory.",
     "repro": "Reproduce the paper's main result in this directory and report what matches the paper.",
@@ -48,10 +52,19 @@ KIND_INSTRUCTIONS = {
 def task_prompt(task: Task) -> str:
     """The task text every system receives (GlossX gets the same goal)."""
     papers = "\n".join(f"- {Path(p).name}" for p in task.papers) or "- (none)"
+    answer_rule = (
+        "For question answering, put only the shortest complete direct answer in answer: "
+        "a yes/no, requested value, or concise phrase as appropriate. If the papers do not answer "
+        "the question, use 'unanswerable'. Put reasoning, uncertainty, qualifications and citations "
+        "in explanation and citations, not in answer. Do not shorten an answer by omitting requested parts. "
+        if task.kind == "qa" else
+        "For reviews, tutoring and reproduction, answer may contain the requested full response. "
+    )
     return (
         f"{KIND_INSTRUCTIONS[task.kind]}\n\n{task.question}\n\nPapers:\n{papers}\n\n"
         "Back every factual sentence with a citation: the paper's file name, the 1-based page "
         "and a verbatim quote from that page. Do not cite anything you did not read. "
+        f"{answer_rule}For non-claim tasks set verdict to null. "
         f"Finish with one JSON object exactly in this shape:\n{ANSWER_SHAPE}"
     )
 
@@ -67,6 +80,8 @@ class Output:
     tool_calls: int | None = None
     error: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    explanation: str = ""
+    verdict: str | None = None
 
 
 class System(Protocol):
@@ -75,26 +90,67 @@ class System(Protocol):
     def run(self, task: Task, workdir: Path, timeout_s: float) -> Output: ...
 
 
-def last_json_object(text: str) -> dict[str, Any] | None:
+def _last_answer_object(text: str) -> tuple[dict[str, Any] | None, int]:
     """The last top-level JSON object in a model's final message."""
-    for match in reversed(list(re.finditer(r"\{", text or ""))):
+    decoder = json.JSONDecoder()
+    answer: tuple[dict[str, Any] | None, int] = (None, len(text or ""))
+    cursor = 0
+    while cursor < len(text or ""):
+        start = text.find("{", cursor)
+        if start < 0:
+            break
         try:
-            obj, _ = json.JSONDecoder().raw_decode(text[match.start():])
+            obj, cursor = decoder.raw_decode(text, start)
         except ValueError:
+            cursor = start + 1
             continue
         if isinstance(obj, dict) and "answer" in obj:
-            return obj
-    return None
+            answer = obj, start
+        # Skip nested objects (including citation objects with an 'answer' key).
+    return answer
+
+
+def last_json_object(text: str) -> dict[str, Any] | None:
+    return _last_answer_object(text)[0]
+
+
+def _verdict(answer: str, prefix: str, field: Any = None) -> tuple[str | None, dict]:
+    """Keep explicit decisions from legacy answers without guessing from prose.
+
+    Only the answer and text preceding the final JSON are inspected. Quotes
+    inside citation objects cannot become a predicted label. Disagreement is
+    retained as a diagnostic instead of picking a convenient label.
+    """
+    labels = metrics.verdict_candidates(answer) | metrics.verdict_candidates(prefix)
+    sources = {}
+    if field is not None:
+        structured = str(field).strip().upper()
+        if structured not in metrics.CLAIM_LABELS:
+            return None, {"verdict_error": "invalid structured verdict"}
+        labels.add(structured)
+        sources["structured_verdict"] = structured
+    if len(labels) > 1:
+        return None, {**sources, "verdict_conflict": sorted(labels)}
+    return next(iter(labels), None), sources
 
 
 def output_from_text(text: str) -> Output:
-    obj = last_json_object(text)
+    obj, start = _last_answer_object(text)
     if obj is None:
-        return Output(answer=text.strip(), error="no JSON answer object")
+        # Missing JSON is an output-format diagnostic, not an API failure.
+        # Legacy answer text remains available for semantic claim scoring.
+        verdict, diagnostic = _verdict(text, "")
+        return Output(answer=text.strip(), verdict=verdict,
+                      raw={"text": text, "format_ok": False,
+                           "format_error": "no JSON answer object", **diagnostic})
     cites = obj.get("citations") if isinstance(obj.get("citations"), list) else []
     conf = obj.get("confidence")
-    return Output(answer=str(obj.get("answer") or ""), citations=[c for c in cites if isinstance(c, dict)],
-                  confidence=float(conf) if isinstance(conf, (int, float)) else None)
+    answer = str(obj.get("answer") or "")
+    verdict, diagnostic = _verdict(answer, text[:start], obj.get("verdict"))
+    return Output(answer=answer, citations=[c for c in cites if isinstance(c, dict)],
+                  confidence=float(conf) if isinstance(conf, (int, float)) else None,
+                  explanation=str(obj.get("explanation") or ""), verdict=verdict,
+                  raw={"text": text, "format_ok": True, **diagnostic})
 
 
 def stage_papers(task: Task, task_dir: Path, workdir: Path) -> None:
@@ -133,7 +189,7 @@ class CommandSystem:
             return Output(error=f"timeout after {timeout_s:.0f}s", latency_s=time.monotonic() - start)
         out = self.parse(proc.stdout)
         out.latency_s = time.monotonic() - start
-        if proc.returncode != 0 and not out.answer:
+        if proc.returncode != 0:
             out.error = f"exit {proc.returncode}: {proc.stderr[-500:]}"
         return out
 
@@ -217,7 +273,7 @@ class GlossXSystem:
         ids = [self.paper_ids[n] for n in names if self.paper_ids.get(n)]
         start = time.monotonic()
         body = {
-            "goal": f"{KIND_INSTRUCTIONS[task.kind]}\n\n{task.question}", "paper_ids": ids,
+            "goal": task_prompt(task), "paper_ids": ids,
             "workflow": self.workflow, "loop": self.loop, "provider": self.provider,
         }
         if task.kind == "route":
@@ -252,9 +308,17 @@ class GlossXSystem:
         claims = result.get("claims") or []
         conf = [c.get("confidence") for c in claims if isinstance(c.get("confidence"), (int, float))]
         budget = snap.get("budget") or {}
-        return Output(
-            answer=str(result.get("answer") or ""), citations=citations,
-            confidence=sum(conf) / len(conf) if conf else None, latency_s=latency,
-            tokens_in=budget.get("tokens_est"), tool_calls=budget.get("steps"),
-            error=snap.get("error"), raw={"stop_reason": result.get("stop_reason"), "route": snap.get("route")},
-        )
+        out = output_from_text(str(result.get("answer") or ""))
+        # The workflow API can produce span citations outside its answer field.
+        # Keep that native evidence mapping instead of asking the scorer to
+        # infer a paper name from model prose.
+        out.citations = citations or out.citations
+        out.confidence = sum(conf) / len(conf) if conf else out.confidence
+        out.latency_s = latency
+        out.tokens_in = budget.get("tokens_est")
+        out.tool_calls = budget.get("steps")
+        out.error = snap.get("error")
+        if snap.get("status") in {"failed", "cancelled"} and not out.error:
+            out.error = f"run {snap['status']}"
+        out.raw.update(stop_reason=result.get("stop_reason"), route=snap.get("route"))
+        return out
